@@ -1,0 +1,9 @@
+[
+  {
+    "event": "postEditFile",
+    "command": "echo",
+    "args": [
+      "Post-edit checklist:\n1. Code follows coding standards (naming, error handling, patterns)\n2. Security: input validation, no SQL injection, no hardcoded secrets, auth checks\n3. Artifact versioning: reference consumed artifact versions, name outputs as <type>-vN.md\n4. Task tracking: update task status in docs/tasks/active-tasks.md if applicable\n5. Run lint and tests before committing\n6. Use conventional commits: <type>(<scope>): <description>"
+    ]
+  }
+]
