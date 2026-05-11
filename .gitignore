@@ -1,0 +1,40 @@
+# Build artifacts
+bin/
+target/
+dist/
+*.exe
+
+# Go
+*.test
+*.out
+coverage.txt
+vendor/
+
+# Rust
+**/Cargo.lock.bak
+**/*.rs.bk
+
+# Node (for mcp-inspector consumer scripts)
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Secrets - belt and suspenders
+*.env
+*.env.local
+.env*
+!.env.example
+secrets/
+*.pem
+*.key
+
+# Local runtime state
+.cwso/
+tmp/
+*.log

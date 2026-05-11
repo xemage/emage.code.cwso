@@ -1,0 +1,25 @@
+# syntax=docker/dockerfile:1.6
+# CWSO Orchestrator (Go) — multi-stage build
+
+FROM golang:1.23-alpine AS builder
+LABEL cwso=dev
+WORKDIR /src
+RUN apk add --no-cache git build-base
+COPY orchestrator/go.mod orchestrator/go.sum* ./
+RUN go mod download || true
+COPY orchestrator/ ./
+ENV CGO_ENABLED=0
+RUN go build -trimpath -ldflags="-s -w" -o /out/cwso-orchestrator ./cmd/cwso-orchestrator
+# demo binary (Phase 1) is optional; placeholder echo for now
+RUN printf '#!/bin/sh\nexec /usr/local/bin/cwso-orchestrator -version\n' > /out/cwso-demo && chmod +x /out/cwso-demo
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates tini && \
+    addgroup -S cwso && adduser -S -G cwso cwso
+COPY --from=builder /out/cwso-orchestrator /usr/local/bin/
+COPY --from=builder /out/cwso-demo /usr/local/bin/
+USER cwso
+WORKDIR /workspace
+EXPOSE 8080
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/cwso-orchestrator"]
+CMD ["-transport", "http", "-addr", ":8080"]

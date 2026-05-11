@@ -1,0 +1,24 @@
+# syntax=docker/dockerfile:1.6
+# cwso-git-shadow — Phase 2 sidecar (libgit2 + tree-sitter)
+FROM rust:1.86-slim AS builder
+LABEL cwso=dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential pkg-config cmake ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY services/Cargo.toml ./Cargo.toml
+COPY services/cwso-git-shadow ./cwso-git-shadow
+RUN cargo build --release -p cwso-git-shadow
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tini && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /run/cwso /var/lib/cwso/shadow && \
+    addgroup --system cwso && adduser --system --ingroup cwso cwso && \
+    chown -R cwso:cwso /run/cwso /var/lib/cwso
+COPY --from=builder /src/target/release/cwso-git-shadow /usr/local/bin/
+USER cwso
+ENV CWSO_GIT_SHADOW_SOCKET=/run/cwso/git-shadow.sock \
+    CWSO_GIT_SHADOW_STORAGE=/var/lib/cwso/shadow \
+    RUST_LOG=info
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/cwso-git-shadow"]

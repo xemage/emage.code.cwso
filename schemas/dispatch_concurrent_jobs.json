@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cwso.dev/schemas/dispatch_concurrent_jobs.json",
+  "title": "dispatch_concurrent_jobs",
+  "type": "object",
+  "properties": {
+    "jobs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "agent_role": { "type": "string" },
+          "objective_prompt": { "type": "string", "minLength": 1 },
+          "target_workspace_uuid": { "type": "string", "format": "uuid" }
+        },
+        "required": ["agent_role", "objective_prompt", "target_workspace_uuid"],
+        "additionalProperties": false
+      }
+    },
+    "execution_timeout_seconds": { "type": "integer", "minimum": 1, "default": 300 }
+  },
+  "required": ["jobs"],
+  "additionalProperties": false
+}

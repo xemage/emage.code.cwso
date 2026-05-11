@@ -1,0 +1,67 @@
+name: cwso
+
+services:
+  orchestrator:
+    image: cwso/orchestrator:dev
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.orchestrator
+    container_name: cwso-orchestrator
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      CWSO_TRANSPORT: "http"
+      CWSO_HTTP_ADDR: ":8080"
+      CWSO_LOG_LEVEL: "info"
+      # POC-DEBT: dev JWT secret injected via .env.dev mounted file; production
+      # must use mounted secret + RS256. See POC-DEBT-SCORECARD-phase1.md.
+      CWSO_JWT_SECRET: "${CWSO_JWT_SECRET:?CWSO_JWT_SECRET must be set; see .env.example}"
+      CWSO_ALLOWED_ORIGINS: "http://localhost,http://127.0.0.1,http://localhost:8080"
+      CWSO_WORKSPACE: "/workspace"
+      CWSO_GIT_SHADOW_SOCKET: "/run/cwso/git-shadow.sock"
+    volumes:
+      - ../sample-workspace:/workspace:ro
+      - cwso-runtime:/run/cwso
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Phase 2+ sidecars (kept disabled until implemented)
+  git-shadow:
+    image: cwso/git-shadow:dev
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.git-shadow
+    profiles: ["phase2"]
+    container_name: cwso-git-shadow
+    volumes:
+      - cwso-runtime:/run/cwso
+    tmpfs:
+      - /var/lib/cwso/shadow:size=128m,mode=1777
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+
+  merge-engine:
+    image: cwso/merge-engine:dev
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.merge-engine
+    profiles: ["phase4"]
+    container_name: cwso-merge-engine
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  cwso-runtime:

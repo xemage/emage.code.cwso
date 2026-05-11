@@ -1,0 +1,14 @@
+# syntax=docker/dockerfile:1.6
+# cwso-merge-engine — Rust sidecar (Phase 4 stub; placeholder for now)
+FROM rust:1.80-slim AS builder
+LABEL cwso=dev
+WORKDIR /src
+RUN cargo init --name cwso-merge-engine --bin && \
+    echo 'fn main() { eprintln!("cwso-merge-engine placeholder — Phase 4 not yet implemented"); std::process::exit(0); }' > src/main.rs && \
+    cargo build --release
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tini && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /src/target/release/cwso-merge-engine /usr/local/bin/
+USER nobody
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/cwso-merge-engine"]

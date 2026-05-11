@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cwso.dev/schemas/merge_concurrent_results.json",
+  "title": "merge_concurrent_results",
+  "type": "object",
+  "properties": {
+    "source_workspace_uuids": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "type": "string", "format": "uuid" }
+    },
+    "target_branch_ref": { "type": "string", "default": "main" },
+    "auto_resolve_heuristic": {
+      "type": "string",
+      "enum": ["ast_semantic_only", "prefer_theirs", "prefer_ours", "fail_rapidly_on_conflict"],
+      "default": "ast_semantic_only"
+    }
+  },
+  "required": ["source_workspace_uuids"],
+  "additionalProperties": false
+}

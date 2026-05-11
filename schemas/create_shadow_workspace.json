@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cwso.dev/schemas/create_shadow_workspace.json",
+  "title": "create_shadow_workspace",
+  "type": "object",
+  "properties": {
+    "base_commit_sha": { "type": "string", "pattern": "^[a-f0-9]{7,40}$" },
+    "sandbox_profile": {
+      "type": "string",
+      "enum": ["gvisor-fast-ephemeral", "firecracker-secure-isolation"]
+    },
+    "injected_memory_context": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "required": ["sandbox_profile"],
+  "additionalProperties": false
+}
