@@ -1,0 +1,176 @@
+# CWSO CI/CD pipeline.
+#
+# Stages:
+#   * lint   — go vet, gofmt check, cargo fmt --check
+#   * build  — orchestrator (Go) + cwso-git-shadow (Rust) Docker images
+#   * test   — go test -race + cargo test (release)
+#   * e2e    — docker-compose-driven Phase-2 integration test
+#   * deploy — placeholder for future container registry pushes
+#
+# All jobs run inside official toolchain images so no host install is required.
+
+stages:
+  - lint
+  - build
+  - test
+  - e2e
+  - deploy
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+  GIT_SUBMODULE_STRATEGY: recursive
+  # Cache cargo registry across jobs.
+  CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+  GOPATH: "$CI_PROJECT_DIR/.gopath"
+
+default:
+  interruptible: true
+
+# -----------------------------------------------------------------------------
+# Lint
+# -----------------------------------------------------------------------------
+
+go:lint:
+  stage: lint
+  image: golang:1.23
+  cache:
+    key: go-mod-$CI_COMMIT_REF_SLUG
+    paths: [.gopath/pkg/mod]
+  script:
+    - cd orchestrator
+    - test -z "$(gofmt -l .)" || (echo 'gofmt issues:' && gofmt -d . && exit 1)
+    - go vet ./...
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+rust:lint:
+  stage: lint
+  image: rust:1.86
+  cache:
+    key: cargo-$CI_COMMIT_REF_SLUG
+    paths: [.cargo, services/target]
+  script:
+    - cd services
+    - rustup component add rustfmt clippy
+    - cargo fmt --all -- --check
+  allow_failure: true   # PoC phase: clippy/fmt warnings should not block.
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# -----------------------------------------------------------------------------
+# Test
+# -----------------------------------------------------------------------------
+
+go:test:
+  stage: test
+  image: golang:1.23
+  cache:
+    key: go-mod-$CI_COMMIT_REF_SLUG
+    paths: [.gopath/pkg/mod]
+  variables:
+    CGO_ENABLED: "1"
+  script:
+    - cd orchestrator
+    - go test ./... -race -coverprofile=coverage.out -covermode=atomic
+    - go tool cover -func=coverage.out | tail -1
+  coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
+  artifacts:
+    when: always
+    paths: [orchestrator/coverage.out]
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+rust:test:
+  stage: test
+  image: rust:1.86-slim
+  cache:
+    key: cargo-$CI_COMMIT_REF_SLUG
+    paths: [.cargo, services/target]
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq build-essential pkg-config cmake ca-certificates >/dev/null
+  script:
+    - cd services
+    - cargo test --release -p cwso-git-shadow
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# -----------------------------------------------------------------------------
+# Build container images
+# -----------------------------------------------------------------------------
+
+.docker-base:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  before_script:
+    - docker info >/dev/null
+
+build:orchestrator:
+  extends: .docker-base
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE/orchestrator:$CI_COMMIT_SHORT_SHA -f deploy/Dockerfile.orchestrator .
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
+build:git-shadow:
+  extends: .docker-base
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE/git-shadow:$CI_COMMIT_SHORT_SHA -f deploy/Dockerfile.git-shadow .
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
+# -----------------------------------------------------------------------------
+# End-to-end integration tests
+# -----------------------------------------------------------------------------
+
+e2e:phase2:
+  stage: e2e
+  image: docker:27
+  services:
+    - docker:27-dind
+  needs: ["build:orchestrator", "build:git-shadow"]
+  variables:
+    CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"
+  before_script:
+    - apk add --no-cache python3 docker-cli-compose
+  script:
+    - python3 scripts/phase2-integration.py
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# -----------------------------------------------------------------------------
+# Deploy (placeholder)
+# -----------------------------------------------------------------------------
+
+deploy:registry:
+  stage: deploy
+  image: docker:27
+  services:
+    - docker:27-dind
+  needs: ["build:orchestrator", "build:git-shadow", "e2e:phase2"]
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - docker tag $CI_REGISTRY_IMAGE/orchestrator:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE/orchestrator:latest
+    - docker tag $CI_REGISTRY_IMAGE/git-shadow:$CI_COMMIT_SHORT_SHA   $CI_REGISTRY_IMAGE/git-shadow:latest
+    - docker push $CI_REGISTRY_IMAGE/orchestrator:latest
+    - docker push $CI_REGISTRY_IMAGE/git-shadow:latest
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG

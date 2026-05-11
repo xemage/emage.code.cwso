@@ -1,0 +1,28 @@
+## CODEOWNERS for CWSO
+#
+# When implemented, GitLab will request approval from the listed
+# owners on MRs touching matching paths.
+# Owners use placeholder handles until the team grows.
+
+# Default — orchestrator owner
+*                                @em-age
+
+# Documentation
+/docs/                           @em-age
+/README.md                       @em-age
+
+# Go orchestrator
+/orchestrator/                   @em-age
+
+# Rust sidecars
+/services/                       @em-age
+
+# Deployment & CI
+/deploy/                         @em-age
+/.gitlab-ci.yml                  @em-age
+/.gitlab/                        @em-age
+
+# Security baseline + scorecards
+/SECURITY.md                                   @em-age
+/docs/artifacts/security-baseline-v1.md        @em-age
+/POC-DEBT-SCORECARD-*.md                       @em-age
