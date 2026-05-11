@@ -1,0 +1,27 @@
+[package]
+name = "cwso-git-shadow"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+# Vendored libgit2 so the build container does not need libgit2-dev.
+git2 = { version = "0.19", default-features = false, features = ["vendored-libgit2"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+base64 = "0.22"
+parking_lot = "0.12"
+# Tree-sitter runtime + Phase-2 grammars (Go, Python).
+# POC-DEBT P2-3: Rust + TypeScript grammars added in T029.
+tree-sitter = "0.22"
+tree-sitter-go = "0.21"
+tree-sitter-python = "0.21"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[dev-dependencies]
+tempfile = "3"
