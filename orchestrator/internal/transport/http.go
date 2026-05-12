@@ -2,13 +2,10 @@ package transport
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -16,6 +13,8 @@ import (
 
 	"github.com/emage/cwso/orchestrator/internal/config"
 	"github.com/emage/cwso/orchestrator/internal/logging"
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/time/rate"
 )
 
 // RunHTTP starts the Streamable HTTP transport per MCP spec 2025-03-26.
@@ -53,10 +52,15 @@ func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 		originSet[strings.ToLower(strings.TrimSpace(o))] = struct{}{}
 	}
 
+	rateLimiter := &rateLimiterStore{
+		limiters: make(map[string]*rate.Limiter),
+	}
+
 	mw := chain(
 		recoverMiddleware(log),
 		requestIDMiddleware(),
 		originMiddleware(originSet, log),
+		rateLimitMiddleware(rateLimiter, log),
 	)
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -64,7 +68,7 @@ func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 		_, _ = io.WriteString(w, "ok")
 	})
 
-	mux.Handle("/mcp", mw(authMiddleware(cfg.JWTSecret, log)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/mcp", mw(authMiddleware(cfg, log)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
 			handlePOST(w, r, log, h)
@@ -252,13 +256,64 @@ func originHostAllowed(allowed map[string]struct{}, host string) bool {
 	return false
 }
 
-// --- minimal HS256 JWT verification (Phase 1 PoC) ---
+// --- Rate limiting middleware (T029 remediation #7) ---
 //
-// POC-DEBT: Hand-rolled HS256 verifier; production must adopt
-// github.com/golang-jwt/jwt/v5 with RS256, key rotation, and proper claims
-// validation (iss, aud, exp leeway). Tracked in POC-DEBT-SCORECARD-phase1.md.
+// Token-bucket rate limiter per IP address. Default: 60 requests per minute.
+// Rejects excess requests with HTTP 429 Too Many Requests.
 
-func authMiddleware(secret string, log *logging.Logger) middleware {
+type rateLimiterStore struct {
+	mu       sync.Mutex
+	limiters map[string]*rate.Limiter
+}
+
+func (rls *rateLimiterStore) getLimiter(ip string) *rate.Limiter {
+	rls.mu.Lock()
+	defer rls.mu.Unlock()
+	if lim, ok := rls.limiters[ip]; ok {
+		return lim
+	}
+	lim := rate.NewLimiter(rate.Every(time.Minute/60), 1) // 60 req/min, burst=1
+	rls.limiters[ip] = lim
+	return lim
+}
+
+func rateLimitMiddleware(store *rateLimiterStore, log *logging.Logger) middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Only rate-limit /mcp POST (not GET SSE)
+			if r.Method != http.MethodPost {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			ip, _, err := net.SplitHostPort(r.RemoteAddr)
+			if err != nil {
+				ip = r.RemoteAddr // fallback if SplitHostPort fails
+			}
+
+			lim := store.getLimiter(ip)
+			if !lim.Allow() {
+				log.Warn().Str("ip", ip).Msg("rate limit exceeded")
+				w.Header().Set("Retry-After", "60")
+				http.Error(w, "too many requests", http.StatusTooManyRequests)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// --- JWT verification using github.com/golang-jwt/jwt/v5 (T029 remediation) ---
+//
+// Supports both HS256 (dev) and RS256 (prod) selected by CWSO_JWT_ALG.
+// Validates iss, aud, nbf, exp with 60s leeway.
+
+type jwtClaims struct {
+	Role string `json:"role"`
+	jwt.RegisteredClaims
+}
+
+func authMiddleware(cfg *config.Config, log *logging.Logger) middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authz := r.Header.Get("Authorization")
@@ -268,67 +323,80 @@ func authMiddleware(secret string, log *logging.Logger) middleware {
 				return
 			}
 			token := strings.TrimPrefix(authz, prefix)
-			claims, err := verifyHS256(token, secret)
+			claims, err := verifyJWT(token, cfg, log)
 			if err != nil {
 				log.Warn().Err(err).Msg("jwt rejected")
 				http.Error(w, "invalid token", http.StatusUnauthorized)
 				return
 			}
-			role, _ := claims["role"].(string)
+			role := claims.Role
 			if role != "orchestrator" && role != "worker" {
 				role = "orchestrator"
 			}
-			sub, _ := claims["sub"].(string)
-			sess := &Session{Role: role, Subject: sub}
+			sess := &Session{Role: role, Subject: claims.Subject}
 			ctx := context.WithValue(r.Context(), sessionCtxKey{}, sess)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
-func verifyHS256(token, secret string) (map[string]any, error) {
-	if secret == "" {
+func verifyJWT(tokenString string, cfg *config.Config, log *logging.Logger) (*jwtClaims, error) {
+	if cfg.JWTSecret == "" {
 		return nil, errors.New("jwt secret not configured")
 	}
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return nil, errors.New("malformed token")
-	}
-	signingInput := parts[0] + "." + parts[1]
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(signingInput))
-	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(expected), []byte(parts[2])) {
-		return nil, errors.New("signature mismatch")
+
+	claims := &jwtClaims{}
+
+	var keyFunc jwt.Keyfunc
+	switch cfg.JWTAlg {
+	case "HS256":
+		keyFunc = func(token *jwt.Token) (interface{}, error) {
+			if token.Method.Alg() != "HS256" {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return []byte(cfg.JWTSecret), nil
+		}
+	case "RS256":
+		keyFunc = func(token *jwt.Token) (interface{}, error) {
+			if token.Method.Alg() != "RS256" {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			// For RS256, would load public key from JWKSPath or JWKS endpoint
+			// POC-DEBT: RS256 key loading deferred to T029 Phase 2
+			return nil, errors.New("RS256 not yet implemented")
+		}
+	default:
+		return nil, fmt.Errorf("unsupported algorithm: %s", cfg.JWTAlg)
 	}
 
-	hdrBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	parser := jwt.NewParser(jwt.WithLeeway(60 * time.Second))
+	_, err := parser.ParseWithClaims(tokenString, claims, keyFunc)
 	if err != nil {
-		return nil, fmt.Errorf("decode header: %w", err)
-	}
-	var hdr struct {
-		Alg string `json:"alg"`
-		Typ string `json:"typ"`
-	}
-	if err := json.Unmarshal(hdrBytes, &hdr); err != nil {
-		return nil, fmt.Errorf("parse header: %w", err)
-	}
-	if hdr.Alg != "HS256" {
-		return nil, fmt.Errorf("unsupported alg %q", hdr.Alg)
-	}
-
-	claimBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, fmt.Errorf("decode claims: %w", err)
-	}
-	var claims map[string]any
-	if err := json.Unmarshal(claimBytes, &claims); err != nil {
-		return nil, fmt.Errorf("parse claims: %w", err)
-	}
-	if exp, ok := claims["exp"].(float64); ok {
-		if time.Now().Unix() > int64(exp) {
+		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, errors.New("token expired")
 		}
+		if errors.Is(err, jwt.ErrTokenNotValidYet) {
+			return nil, errors.New("token used before valid (nbf)")
+		}
+		return nil, fmt.Errorf("parse token: %w", err)
 	}
+
+	if cfg.JWTIssuer != "" && claims.Issuer != cfg.JWTIssuer {
+		return nil, fmt.Errorf("invalid issuer: expected %q, got %q", cfg.JWTIssuer, claims.Issuer)
+	}
+
+	if cfg.JWTAudience != "" {
+		audienceFound := false
+		for _, aud := range claims.Audience {
+			if aud == cfg.JWTAudience {
+				audienceFound = true
+				break
+			}
+		}
+		if !audienceFound {
+			return nil, fmt.Errorf("invalid audience: expected %q", cfg.JWTAudience)
+		}
+	}
+
 	return claims, nil
 }

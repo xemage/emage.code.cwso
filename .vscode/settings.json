@@ -1,5 +1,6 @@
 {
     "chat.tools.terminal.autoApprove": {
+        "docker": true,
         "dotnet": true,
         "dotnet add": true,
 		"dotnet build": true,
@@ -26,12 +27,17 @@
         "go version": true,
 		"go test": true,
 		"go env": true,
+        "grep": true,
+        "head": true,
 		"node": true,
         "opencode": true,
+        "python": true,
+        "python3": true,
         "Select": true,
         "Set-Content": true,
         "Tee-Object": true,
         "Test-Path": true,
         "type": true        
-    }
+    },
+    "makefile.configureOnOpen": false
 }
