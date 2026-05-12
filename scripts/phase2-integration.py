@@ -42,6 +42,7 @@ def resolve_base_url() -> str:
 
 
 BASE_URL = resolve_base_url()
+LAST_RPC_AT = 0.0
 
 if "CWSO_JWT_SECRET" not in os.environ:
     os.environ["CWSO_JWT_SECRET"] = base64.b64encode(secrets.token_bytes(32)).decode()
@@ -55,7 +56,14 @@ def b64url(data: bytes) -> str:
 def mint_jwt(role: str) -> str:
     header = {"alg": "HS256", "typ": "JWT"}
     now = int(time.time())
-    claims = {"sub": "phase2-test", "role": role, "iat": now, "exp": now + 600}
+    claims = {
+        "sub": "phase2-test",
+        "role": role,
+        "iss": "cwso",
+        "aud": ["cwso-mcp"],
+        "iat": now,
+        "exp": now + 600,
+    }
     h = b64url(json.dumps(header, separators=(",", ":")).encode())
     p = b64url(json.dumps(claims, separators=(",", ":")).encode())
     sig = hmac.new(SECRET, f"{h}.{p}".encode(), hashlib.sha256).digest()
@@ -63,6 +71,15 @@ def mint_jwt(role: str) -> str:
 
 
 def rpc(role: str, method: str, params: dict) -> dict:
+    global LAST_RPC_AT
+    # T029 adds a 60 req/min per-IP limiter with burst=1 on POST /mcp.
+    # Pace calls to avoid intentional 429s during integration flow.
+    now = time.monotonic()
+    min_interval = 1.05
+    wait = min_interval - (now - LAST_RPC_AT)
+    if wait > 0:
+        time.sleep(wait)
+
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
     req = urllib.request.Request(
         BASE_URL + "/mcp",
@@ -76,8 +93,10 @@ def rpc(role: str, method: str, params: dict) -> dict:
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
+            LAST_RPC_AT = time.monotonic()
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
+        LAST_RPC_AT = time.monotonic()
         return {"_http_status": e.code, "_body": e.read().decode("utf-8", "replace")}
 
 
