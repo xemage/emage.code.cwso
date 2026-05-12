@@ -145,6 +145,7 @@ e2e:phase2:
   needs: ["build:orchestrator", "build:git-shadow"]
   variables:
     CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"
+    CWSO_BASE_URL: "http://docker:8080"
   before_script:
     - apk add --no-cache python3 docker-cli-compose
   script:

@@ -29,7 +29,19 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 COMPOSE = REPO / "deploy" / "docker-compose.yml"
-BASE_URL = "http://127.0.0.1:8080"
+
+
+def resolve_base_url() -> str:
+    env_url = os.environ.get("CWSO_BASE_URL")
+    if env_url:
+        return env_url
+    docker_host = os.environ.get("DOCKER_HOST", "")
+    if os.environ.get("CI") and "docker:2375" in docker_host:
+        return "http://docker:8080"
+    return "http://127.0.0.1:8080"
+
+
+BASE_URL = resolve_base_url()
 
 if "CWSO_JWT_SECRET" not in os.environ:
     os.environ["CWSO_JWT_SECRET"] = base64.b64encode(secrets.token_bytes(32)).decode()

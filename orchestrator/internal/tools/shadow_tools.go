@@ -5,10 +5,10 @@
 // host filesystem.
 //
 // Permission tiers per architecture-v1.md §4:
-//   * create_shadow_workspace, query_ast       → orchestrator + worker
-//   * read_shadow_file                         → orchestrator + worker
-//   * write_shadow_file, commit_shadow         → worker only
-//   * drop_shadow_workspace                    → orchestrator + worker
+//   - create_shadow_workspace, query_ast       → orchestrator + worker
+//   - read_shadow_file                         → orchestrator + worker
+//   - write_shadow_file, commit_shadow         → worker only
+//   - drop_shadow_workspace                    → orchestrator + worker
 package tools
 
 import (

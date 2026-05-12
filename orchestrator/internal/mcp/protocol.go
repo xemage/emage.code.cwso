@@ -29,10 +29,10 @@ const (
 	ErrInternal       = -32603
 
 	// MCP-specific error codes.
-	ErrUnauthorized      = -32001
-	ErrPermissionDenied  = -32002
-	ErrToolNotFound      = -32010
-	ErrToolExecution     = -32011
+	ErrUnauthorized     = -32001
+	ErrPermissionDenied = -32002
+	ErrToolNotFound     = -32010
+	ErrToolExecution    = -32011
 )
 
 // Request is an inbound JSON-RPC message.
