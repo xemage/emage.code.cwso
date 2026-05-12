@@ -28,8 +28,8 @@ import (
 //
 // Security (FR-7.1, FR-7.2):
 //
-//	* Origin allow-list validated on every request (DNS-rebinding protection)
-//	* JWT (HS256) Bearer token required on /mcp endpoints
+//   - Origin allow-list validated on every request (DNS-rebinding protection)
+//   - JWT (HS256) Bearer token required on /mcp endpoints
 //
 // POC-DEBT: SSE GET endpoint is registered but only emits a heartbeat in
 // Phase 1. Real notifications land in Phase 3 (T030). Tracked in

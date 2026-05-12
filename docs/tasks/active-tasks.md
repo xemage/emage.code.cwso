@@ -6,7 +6,7 @@
 | T023 | Tree-sitter integration | backend-developer | partial — Go+Python only (POC-DEBT P2-3 → T029) | P0 | T020 | 2026-05-11 |
 | T024 | query_ast tool + Unified Symbol Protocol | backend-developer | partial — query_ast wired; USP deferred to T029 | P0 | T023 | 2026-05-11 |
 | T025 | Merkle-hash incremental indexer | backend-developer | deferred → T029 (POC-DEBT P2-2) | P1 | T024 | 2026-05-11 |
-| T028a | Go unit tests for shadow client + shadow_tools | backend-developer | pending | P0 | T028 | 2026-05-11 |
+| T028a | Go unit tests for shadow client + shadow_tools | backend-developer | in_progress | P0 | T028 | 2026-05-11 |
 | T029 | PoC-debt remediation pass | backend-developer | pending | P0 | T028, T028a | 2026-05-11 |
 | T030 | Streamable HTTP full duplex SSE | backend-developer | pending | P0 | T029 | 2026-05-11 |
 | T031 | Async job runner pool | backend-developer | pending | P0 | T030 | 2026-05-11 |
