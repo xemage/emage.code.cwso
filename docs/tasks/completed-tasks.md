@@ -20,3 +20,4 @@ Append-only log. Entries move here after the orchestrator marks a task `done`.
 | T026 | Phase 2 integration test | qa-engineer | 2026-05-11 | [scripts/phase2-integration.py](../../scripts/phase2-integration.py) — **PASS** end-to-end in Docker |
 | T027 | Phase 2 Tech Lead review gate | tech-lead | 2026-05-11 | **VERDICT: CONDITIONAL_PASS** ([gate-T027-phase2-techlead.md](../checkpoints/gate-T027-phase2-techlead.md)); 7 conditions folded into T029 + new T028a |
 | T028 | Phase 2 debt scorecard | backend-developer | 2026-05-11 | [POC-DEBT-SCORECARD-phase2.md](../../POC-DEBT-SCORECARD-phase2.md) (8 items) |
+| T029 | PoC-debt remediation pass | backend-developer | 2026-05-12 | MR !2 merged to `develop` (JWT library migration, mounted secret loading, Rust+TypeScript grammars, POST `/mcp` rate limiting, CI/e2e alignment fixes) |

@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,10 +13,13 @@ import (
 	"time"
 
 	"github.com/emage/cwso/orchestrator/internal/config"
+	"github.com/emage/cwso/orchestrator/internal/eventbus"
 	"github.com/emage/cwso/orchestrator/internal/logging"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/time/rate"
 )
+
+var heartbeatInterval = 15 * time.Second
 
 // RunHTTP starts the Streamable HTTP transport per MCP spec 2025-03-26.
 //
@@ -29,23 +33,45 @@ import (
 //
 //   - Origin allow-list validated on every request (DNS-rebinding protection)
 //   - JWT (HS256) Bearer token required on /mcp endpoints
-//
-// POC-DEBT: SSE GET endpoint is registered but only emits a heartbeat in
-// Phase 1. Real notifications land in Phase 3 (T030). Tracked in
-// POC-DEBT-SCORECARD-phase1.md.
 func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
 ) error {
+	bus := eventbus.New()
 
-	mux := http.NewServeMux()
+	handler := newHTTPHandler(cfg, log, bus, h)
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		log.Info().Str("addr", cfg.HTTPAddr).Msg("http transport listening")
+		err := srv.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return srv.Shutdown(shutdownCtx)
+	case err := <-errCh:
+		return err
+	}
+}
+
+func newHTTPHandler(cfg *config.Config, log *logging.Logger, bus *eventbus.Bus,
+	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
+) http.Handler {
+	mux := http.NewServeMux()
 
 	originSet := make(map[string]struct{}, len(cfg.AllowedOrigins))
 	for _, o := range cfg.AllowedOrigins {
@@ -71,34 +97,18 @@ func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 	mux.Handle("/mcp", mw(authMiddleware(cfg, log)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
-			handlePOST(w, r, log, h)
+			handlePOST(w, r, log, bus, h)
 		case http.MethodGet:
-			handleSSE(w, r, log)
+			handleSSE(w, r, log, bus)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	}))))
 
-	errCh := make(chan error, 1)
-	go func() {
-		log.Info().Str("addr", cfg.HTTPAddr).Msg("http transport listening")
-		err := srv.ListenAndServe()
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
-		}
-	}()
-
-	select {
-	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return srv.Shutdown(shutdownCtx)
-	case err := <-errCh:
-		return err
-	}
+	return mux
 }
 
-func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger,
+func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus *eventbus.Bus,
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
 ) {
 	const maxBody = 8 << 20
@@ -112,26 +122,36 @@ func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger,
 		return
 	}
 
+	var reqMeta struct {
+		Method string `json:"method"`
+	}
+	_ = json.Unmarshal(body, &reqMeta)
+	requestID, _ := r.Context().Value(requestIDCtxKey{}).(string)
+
 	sess, _ := r.Context().Value(sessionCtxKey{}).(*Session)
 	resp, err := h(r.Context(), sess, body)
 	if err != nil {
+		publishSampleEvents(bus, log, reqMeta.Method, requestID, "failed", err.Error())
 		log.Error().Err(err).Msg("handler error")
 		http.Error(w, "handler error", http.StatusInternalServerError)
 		return
 	}
 	if resp == nil {
+		publishSampleEvents(bus, log, reqMeta.Method, requestID, "accepted", "")
 		// Notification — per MCP spec, return 202 Accepted with no body.
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
+	publishSampleEvents(bus, log, reqMeta.Method, requestID, "completed", "")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(resp)
 }
 
-func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger) {
-	// POC-DEBT: SSE only emits heartbeats in Phase 1. Phase 3 (T030) wires
-	// the EventBus → SSE bridge for real telemetry.
+func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus *eventbus.Bus) {
+	if bus == nil {
+		bus = eventbus.New()
+	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
@@ -142,12 +162,21 @@ func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger) {
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 
-	ticker := time.NewTicker(15 * time.Second)
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
 
 	_, _ = fmt.Fprintf(w, "event: ready\ndata: {\"protocolVersion\":\"2025-03-26\"}\n\n")
 	flusher.Flush()
 	log.Debug().Msg("SSE client connected")
+	defer func() {
+		dropped := sub.Dropped()
+		if dropped > 0 {
+			log.Warn().Int("dropped_events", int(dropped)).Msg("SSE subscriber dropped events due to backpressure")
+		}
+	}()
 
 	for {
 		select {
@@ -156,7 +185,64 @@ func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger) {
 		case <-ticker.C:
 			_, _ = fmt.Fprintf(w, ": heartbeat\n\n")
 			flusher.Flush()
+		case msg, ok := <-sub.Messages():
+			if !ok {
+				return
+			}
+			envelope, err := marshalJSONRPCNotification(msg.Topic, msg.Payload)
+			if err != nil {
+				log.Warn().Err(err).Str("topic", msg.Topic).Msg("failed to marshal notification envelope")
+				continue
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", envelope); err != nil {
+				log.Debug().Err(err).Msg("SSE write failed")
+				return
+			}
+			flusher.Flush()
 		}
+	}
+}
+
+func marshalJSONRPCNotification(topic string, payload json.RawMessage) ([]byte, error) {
+	if len(payload) == 0 {
+		payload = json.RawMessage(`{}`)
+	}
+	env := struct {
+		JSONRPC string          `json:"jsonrpc"`
+		Method  string          `json:"method"`
+		Params  json.RawMessage `json:"params"`
+	}{
+		JSONRPC: "2.0",
+		Method:  topic,
+		Params:  payload,
+	}
+	return json.Marshal(env)
+}
+
+func publishSampleEvents(bus *eventbus.Bus, log *logging.Logger, method, requestID, state, errMsg string) {
+	if bus == nil {
+		return
+	}
+	logPayload := map[string]any{
+		"request_id": requestID,
+		"method":     method,
+		"state":      state,
+	}
+	if errMsg != "" {
+		logPayload["error"] = errMsg
+	}
+	if err := bus.Publish(eventbus.TopicNotificationsLog, logPayload); err != nil {
+		log.Warn().Err(err).Msg("publish notifications/log failed")
+	}
+	if method != "tools/call" {
+		return
+	}
+	jobPayload := map[string]any{
+		"request_id": requestID,
+		"state":      state,
+	}
+	if err := bus.Publish(eventbus.TopicNotificationsJobState, jobPayload); err != nil {
+		log.Warn().Err(err).Msg("publish notifications/job-state failed")
 	}
 }
 
