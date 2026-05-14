@@ -2,7 +2,7 @@
 
 - Phase: **3 (Production)** · Owner: **backend-developer** · Priority: **P0**
 - Depends on: T029 · Blocks: T031, T034
-- Status: pending
+- Status: in_progress
 
 ## Objective
 Promote the SSE endpoint from heartbeat-only to a full server→client notification stream. After this task, server-side events (job lifecycle, AST index updates, telemetry) can be pushed unidirectionally to MCP clients without the LLM polling.
