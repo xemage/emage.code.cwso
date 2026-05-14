@@ -34,9 +34,12 @@ var heartbeatInterval = 15 * time.Second
 //   - Origin allow-list validated on every request (DNS-rebinding protection)
 //   - JWT (HS256) Bearer token required on /mcp endpoints
 func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
+	bus *eventbus.Bus,
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
 ) error {
-	bus := eventbus.New()
+	if bus == nil {
+		bus = eventbus.New()
+	}
 
 	handler := newHTTPHandler(cfg, log, bus, h)
 

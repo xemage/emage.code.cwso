@@ -7,6 +7,8 @@ import (
 	"fmt"
 
 	"github.com/emage/cwso/orchestrator/internal/config"
+	"github.com/emage/cwso/orchestrator/internal/eventbus"
+	"github.com/emage/cwso/orchestrator/internal/jobs"
 	"github.com/emage/cwso/orchestrator/internal/logging"
 	"github.com/emage/cwso/orchestrator/internal/mcp"
 	"github.com/emage/cwso/orchestrator/internal/shadow"
@@ -19,16 +21,29 @@ type Server struct {
 	cfg      *config.Config
 	log      *logging.Logger
 	registry *tools.Registry
+	bus      *eventbus.Bus
+	jobs     *jobs.Manager
 }
 
 // New constructs and initializes a Server with all Phase 1 tools registered.
 func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
-	s := &Server{cfg: cfg, log: log, registry: tools.NewRegistry()}
+	bus := eventbus.New()
+	jobMgr, err := jobs.NewManager(jobs.Config{
+		Workers:   cfg.JobWorkers,
+		QueueSize: cfg.JobQueueSize,
+	}, bus)
+	if err != nil {
+		return nil, fmt.Errorf("init job manager: %w", err)
+	}
+
+	s := &Server{cfg: cfg, log: log, registry: tools.NewRegistry(), bus: bus, jobs: jobMgr}
 	if err := s.registerBaselineTools(); err != nil {
+		jobMgr.Close()
 		return nil, fmt.Errorf("register tools: %w", err)
 	}
 	if cfg.ShadowSocket != "" {
 		if err := s.registerShadowTools(cfg.ShadowSocket); err != nil {
+			jobMgr.Close()
 			return nil, fmt.Errorf("register shadow tools: %w", err)
 		}
 		log.Info().Str("socket", cfg.ShadowSocket).Msg("shadow tools enabled")
@@ -68,11 +83,13 @@ func (s *Server) registerBaselineTools() error {
 
 // Run blocks until ctx is cancelled or transport returns.
 func (s *Server) Run(ctx context.Context) error {
+	defer s.jobs.Close()
+
 	switch s.cfg.Transport {
 	case "stdio":
 		return transport.RunStdio(ctx, s.log, s.Handle)
 	case "http":
-		return transport.RunHTTP(ctx, s.cfg, s.log, s.Handle)
+		return transport.RunHTTP(ctx, s.cfg, s.log, s.bus, s.Handle)
 	default:
 		return fmt.Errorf("unsupported transport: %s", s.cfg.Transport)
 	}
@@ -174,3 +191,6 @@ func (s *Server) handleToolsCall(ctx context.Context, sess *transport.Session, r
 
 // Registry exposes the tool registry for tests.
 func (s *Server) Registry() *tools.Registry { return s.registry }
+
+// Jobs exposes the async jobs manager for internal integrations and tests.
+func (s *Server) Jobs() *jobs.Manager { return s.jobs }
