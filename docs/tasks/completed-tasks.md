@@ -21,3 +21,4 @@ Append-only log. Entries move here after the orchestrator marks a task `done`.
 | T027 | Phase 2 Tech Lead review gate | tech-lead | 2026-05-11 | **VERDICT: CONDITIONAL_PASS** ([gate-T027-phase2-techlead.md](../checkpoints/gate-T027-phase2-techlead.md)); 7 conditions folded into T029 + new T028a |
 | T028 | Phase 2 debt scorecard | backend-developer | 2026-05-11 | [POC-DEBT-SCORECARD-phase2.md](../../POC-DEBT-SCORECARD-phase2.md) (8 items) |
 | T029 | PoC-debt remediation pass | backend-developer | 2026-05-12 | MR !2 merged to `develop` (JWT library migration, mounted secret loading, Rust+TypeScript grammars, POST `/mcp` rate limiting, CI/e2e alignment fixes) |
+| T030 | Streamable HTTP full duplex SSE | backend-developer | 2026-05-14 | MR !3 merged to `develop` with bounded in-memory event bus, SSE JSON-RPC notifications, fanout/drop tests, and transport integration updates |

@@ -21,6 +21,8 @@ type Config struct {
 	JWKSPath          string   // path to RS256 public key file (prod)
 	AllowedOrigins    []string // exact origins permitted on HTTP
 	JobTimeoutSeconds int      // default async job timeout (Phase 3)
+	JobWorkers        int      // async job worker pool size
+	JobQueueSize      int      // async job queue capacity
 	Workspace         string   // host path that the orchestrator may serve via baseline FS tools
 	ShadowSocket      string   // UDS path for the cwso-git-shadow sidecar ("" disables shadow tools)
 }
@@ -49,6 +51,8 @@ func Load(_ string) (*Config, error) {
 		JWKSPath:          os.Getenv("CWSO_JWKS_PATH"),
 		AllowedOrigins:    splitCSV(envOr("CWSO_ALLOWED_ORIGINS", "http://localhost,http://127.0.0.1")),
 		JobTimeoutSeconds: envInt("CWSO_JOB_TIMEOUT_SECONDS", 300),
+		JobWorkers:        envInt("CWSO_JOB_WORKERS", 4),
+		JobQueueSize:      envInt("CWSO_JOB_QUEUE_SIZE", 64),
 		Workspace:         envOr("CWSO_WORKSPACE", "/workspace"),
 		ShadowSocket:      os.Getenv("CWSO_GIT_SHADOW_SOCKET"),
 	}
@@ -62,6 +66,12 @@ func Load(_ string) (*Config, error) {
 	}
 	if c.JWTAlg != "HS256" && c.JWTAlg != "RS256" {
 		return nil, fmt.Errorf("invalid JWT algorithm %q (must be HS256 or RS256)", c.JWTAlg)
+	}
+	if c.JobWorkers <= 0 {
+		return nil, fmt.Errorf("CWSO_JOB_WORKERS must be > 0")
+	}
+	if c.JobQueueSize <= 0 {
+		return nil, fmt.Errorf("CWSO_JOB_QUEUE_SIZE must be > 0")
 	}
 	return c, nil
 }
