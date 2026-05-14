@@ -21,6 +21,10 @@ import (
 
 var heartbeatInterval = 15 * time.Second
 
+type eventPublisher interface {
+	Publish(topic string, payload any) error
+}
+
 // RunHTTP starts the Streamable HTTP transport per MCP spec 2025-03-26.
 //
 // Endpoints:
@@ -35,13 +39,17 @@ var heartbeatInterval = 15 * time.Second
 //   - JWT (HS256) Bearer token required on /mcp endpoints
 func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 	bus *eventbus.Bus,
+	samplePublisher eventPublisher,
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
 ) error {
 	if bus == nil {
 		bus = eventbus.New()
 	}
+	if samplePublisher == nil {
+		samplePublisher = bus
+	}
 
-	handler := newHTTPHandler(cfg, log, bus, h)
+	handler := newHTTPHandler(cfg, log, bus, samplePublisher, h)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -72,6 +80,7 @@ func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 }
 
 func newHTTPHandler(cfg *config.Config, log *logging.Logger, bus *eventbus.Bus,
+	samplePublisher eventPublisher,
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
 ) http.Handler {
 	mux := http.NewServeMux()
@@ -100,7 +109,7 @@ func newHTTPHandler(cfg *config.Config, log *logging.Logger, bus *eventbus.Bus,
 	mux.Handle("/mcp", mw(authMiddleware(cfg, log)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
-			handlePOST(w, r, log, bus, h)
+			handlePOST(w, r, log, samplePublisher, h)
 		case http.MethodGet:
 			handleSSE(w, r, log, bus)
 		default:
@@ -111,7 +120,7 @@ func newHTTPHandler(cfg *config.Config, log *logging.Logger, bus *eventbus.Bus,
 	return mux
 }
 
-func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus *eventbus.Bus,
+func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger, publisher eventPublisher,
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
 ) {
 	const maxBody = 8 << 20
@@ -134,18 +143,18 @@ func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus
 	sess, _ := r.Context().Value(sessionCtxKey{}).(*Session)
 	resp, err := h(r.Context(), sess, body)
 	if err != nil {
-		publishSampleEvents(bus, log, reqMeta.Method, requestID, "failed", err.Error())
+		publishSampleEvents(publisher, log, reqMeta.Method, requestID, "failed", err.Error())
 		log.Error().Err(err).Msg("handler error")
 		http.Error(w, "handler error", http.StatusInternalServerError)
 		return
 	}
 	if resp == nil {
-		publishSampleEvents(bus, log, reqMeta.Method, requestID, "accepted", "")
+		publishSampleEvents(publisher, log, reqMeta.Method, requestID, "accepted", "")
 		// Notification — per MCP spec, return 202 Accepted with no body.
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
-	publishSampleEvents(bus, log, reqMeta.Method, requestID, "completed", "")
+	publishSampleEvents(publisher, log, reqMeta.Method, requestID, "completed", "")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(resp)
@@ -222,8 +231,8 @@ func marshalJSONRPCNotification(topic string, payload json.RawMessage) ([]byte, 
 	return json.Marshal(env)
 }
 
-func publishSampleEvents(bus *eventbus.Bus, log *logging.Logger, method, requestID, state, errMsg string) {
-	if bus == nil {
+func publishSampleEvents(publisher eventPublisher, log *logging.Logger, method, requestID, state, errMsg string) {
+	if publisher == nil {
 		return
 	}
 	logPayload := map[string]any{
@@ -234,7 +243,7 @@ func publishSampleEvents(bus *eventbus.Bus, log *logging.Logger, method, request
 	if errMsg != "" {
 		logPayload["error"] = errMsg
 	}
-	if err := bus.Publish(eventbus.TopicNotificationsLog, logPayload); err != nil {
+	if err := publisher.Publish(eventbus.TopicNotificationsLog, logPayload); err != nil {
 		log.Warn().Err(err).Msg("publish notifications/log failed")
 	}
 	if method != "tools/call" {
@@ -244,7 +253,7 @@ func publishSampleEvents(bus *eventbus.Bus, log *logging.Logger, method, request
 		"request_id": requestID,
 		"state":      state,
 	}
-	if err := bus.Publish(eventbus.TopicNotificationsJobState, jobPayload); err != nil {
+	if err := publisher.Publish(eventbus.TopicNotificationsJobState, jobPayload); err != nil {
 		log.Warn().Err(err).Msg("publish notifications/job-state failed")
 	}
 }
