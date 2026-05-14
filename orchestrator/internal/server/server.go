@@ -73,6 +73,7 @@ func (s *Server) registerBaselineTools() error {
 		&tools.ReadFileSync{Workspace: s.cfg.Workspace},
 		&tools.WriteFileSync{Workspace: s.cfg.Workspace},
 		&tools.ListDir{Workspace: s.cfg.Workspace},
+		tools.NewDispatchConcurrentJobs(s.jobs, s.cfg.JobTimeoutSeconds, s.cfg.JobQueueSize),
 	} {
 		if err := s.registry.Register(t); err != nil {
 			return err

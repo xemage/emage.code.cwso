@@ -9,8 +9,8 @@
 | T028a | Go unit tests for shadow client + shadow_tools | backend-developer | done | P0 | T028 | 2026-05-12 |
 | T029 | PoC-debt remediation pass | backend-developer | done | P0 | T028, T028a | 2026-05-12 |
 | T030 | Streamable HTTP full duplex SSE | backend-developer | done | P0 | T029 | 2026-05-14 |
-| T031 | Async job runner pool | backend-developer | in_progress | P0 | T030 | 2026-05-14 |
-| T032 | dispatch_concurrent_jobs tool | backend-developer | pending | P0 | T031 | 2026-05-11 |
+| T031 | Async job runner pool | backend-developer | done | P0 | T030 | 2026-05-14 |
+| T032 | dispatch_concurrent_jobs tool | backend-developer | in_progress | P0 | T031 | 2026-05-14 |
 | T033 | Event-sourced memory broker | backend-developer | pending | P0 | T031 | 2026-05-11 |
 | T034 | Telemetry throttling + JSON-RPC notifications | backend-developer | pending | P1 | T030, T033 | 2026-05-11 |
 | T035 | Phase 3 integration tests | qa-engineer | pending | P0 | T032, T034 | 2026-05-11 |
