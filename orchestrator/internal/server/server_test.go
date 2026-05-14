@@ -51,7 +51,7 @@ func TestToolsList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"read_file_sync", "write_file_sync", "list_dir"} {
+	for _, name := range []string{"read_file_sync", "write_file_sync", "list_dir", "dispatch_concurrent_jobs"} {
 		if !strings.Contains(string(out), `"`+name+`"`) {
 			t.Fatalf("expected tool %q in list, got: %s", name, out)
 		}
@@ -109,6 +109,19 @@ func TestWriteAllowedForWorker(t *testing.T) {
 	got, _ := os.ReadFile(filepath.Join(dir, "out.txt"))
 	if string(got) != "new" {
 		t.Fatalf("file content mismatch: %q", got)
+	}
+}
+
+func TestDispatchPermissionDeniedForWorker(t *testing.T) {
+	s, _ := newTestServer(t)
+	sess := &transport.Session{Role: "worker"}
+	raw := []byte(`{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"dispatch_concurrent_jobs","arguments":{"jobs":[{"agent_role":"worker","objective_prompt":"run","target_workspace_uuid":"11111111-1111-1111-1111-111111111111"}]}}}`)
+	out, err := s.Handle(context.Background(), sess, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "may not invoke") {
+		t.Fatalf("expected permission denial, got: %s", out)
 	}
 }
 
