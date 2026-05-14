@@ -23,3 +23,4 @@ Append-only log. Entries move here after the orchestrator marks a task `done`.
 | T029 | PoC-debt remediation pass | backend-developer | 2026-05-12 | MR !2 merged to `develop` (JWT library migration, mounted secret loading, Rust+TypeScript grammars, POST `/mcp` rate limiting, CI/e2e alignment fixes) |
 | T030 | Streamable HTTP full duplex SSE | backend-developer | 2026-05-14 | MR !3 merged to `develop` with bounded in-memory event bus, SSE JSON-RPC notifications, fanout/drop tests, and transport integration updates |
 | T031 | Async job runner pool | backend-developer | 2026-05-14 | MR !4 merged to `develop` with bounded job manager, lifecycle FSM, cancellation, and notifications/job-state event hooks |
+| T032 | dispatch_concurrent_jobs tool | backend-developer | 2026-05-14 | MR !5 merged to `develop` with orchestrator-only dispatch tool, deterministic per-item acceptance/rejection, queue-pressure handling, and tool/server tests |

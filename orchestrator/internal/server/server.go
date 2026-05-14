@@ -11,39 +11,55 @@ import (
 	"github.com/emage/cwso/orchestrator/internal/jobs"
 	"github.com/emage/cwso/orchestrator/internal/logging"
 	"github.com/emage/cwso/orchestrator/internal/mcp"
+	"github.com/emage/cwso/orchestrator/internal/memorybroker"
 	"github.com/emage/cwso/orchestrator/internal/shadow"
 	"github.com/emage/cwso/orchestrator/internal/tools"
 	"github.com/emage/cwso/orchestrator/internal/transport"
 )
 
+const (
+	defaultMemoryBrokerCapacity    = 4096
+	defaultMemoryBrokerIngressSize = 2048
+)
+
 // Server is the top-level orchestrator handle.
 type Server struct {
-	cfg      *config.Config
-	log      *logging.Logger
-	registry *tools.Registry
-	bus      *eventbus.Bus
-	jobs     *jobs.Manager
+	cfg       *config.Config
+	log       *logging.Logger
+	registry  *tools.Registry
+	bus       *eventbus.Bus
+	memory    *memorybroker.Broker
+	publisher *memorybroker.TeePublisher
+	jobs      *jobs.Manager
 }
 
 // New constructs and initializes a Server with all Phase 1 tools registered.
 func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 	bus := eventbus.New()
+	broker := memorybroker.New(
+		memorybroker.WithCapacity(defaultMemoryBrokerCapacity),
+		memorybroker.WithIngressQueueSize(defaultMemoryBrokerIngressSize),
+	)
+	publisher := memorybroker.NewTeePublisher(bus, broker)
 	jobMgr, err := jobs.NewManager(jobs.Config{
 		Workers:   cfg.JobWorkers,
 		QueueSize: cfg.JobQueueSize,
-	}, bus)
+	}, publisher)
 	if err != nil {
+		broker.Close()
 		return nil, fmt.Errorf("init job manager: %w", err)
 	}
 
-	s := &Server{cfg: cfg, log: log, registry: tools.NewRegistry(), bus: bus, jobs: jobMgr}
+	s := &Server{cfg: cfg, log: log, registry: tools.NewRegistry(), bus: bus, memory: broker, publisher: publisher, jobs: jobMgr}
 	if err := s.registerBaselineTools(); err != nil {
 		jobMgr.Close()
+		broker.Close()
 		return nil, fmt.Errorf("register tools: %w", err)
 	}
 	if cfg.ShadowSocket != "" {
 		if err := s.registerShadowTools(cfg.ShadowSocket); err != nil {
 			jobMgr.Close()
+			broker.Close()
 			return nil, fmt.Errorf("register shadow tools: %w", err)
 		}
 		log.Info().Str("socket", cfg.ShadowSocket).Msg("shadow tools enabled")
@@ -85,12 +101,13 @@ func (s *Server) registerBaselineTools() error {
 // Run blocks until ctx is cancelled or transport returns.
 func (s *Server) Run(ctx context.Context) error {
 	defer s.jobs.Close()
+	defer s.memory.Close()
 
 	switch s.cfg.Transport {
 	case "stdio":
 		return transport.RunStdio(ctx, s.log, s.Handle)
 	case "http":
-		return transport.RunHTTP(ctx, s.cfg, s.log, s.bus, s.Handle)
+		return transport.RunHTTP(ctx, s.cfg, s.log, s.bus, s.publisher, s.Handle)
 	default:
 		return fmt.Errorf("unsupported transport: %s", s.cfg.Transport)
 	}
@@ -195,3 +212,6 @@ func (s *Server) Registry() *tools.Registry { return s.registry }
 
 // Jobs exposes the async jobs manager for internal integrations and tests.
 func (s *Server) Jobs() *jobs.Manager { return s.jobs }
+
+// Memory exposes the event-sourced broker for internal telemetry integrations and tests.
+func (s *Server) Memory() *memorybroker.Broker { return s.memory }

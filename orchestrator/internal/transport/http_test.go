@@ -404,7 +404,7 @@ func newSSETestServer(t *testing.T, bus *eventbus.Bus,
 	}
 	log := logging.New("error")
 
-	handler := newHTTPHandler(cfg, log, bus, h)
+	handler := newHTTPHandler(cfg, log, bus, bus, h)
 	srv := httptest.NewServer(handler)
 
 	claims := &jwtClaims{
