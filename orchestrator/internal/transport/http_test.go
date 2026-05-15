@@ -705,3 +705,73 @@ func TestSSETerminalJobStateBypassesThrottle(t *testing.T) {
 		t.Fatalf("expected terminal state to bypass throttle, got %v", secondEnv.Params["state"])
 	}
 }
+
+func TestVerifyJWT_NoExpiry_Rejected(t *testing.T) {
+	secret := "test-secret-32-bytes-minimum-padding-x"
+	cfg := &config.Config{
+		JWTSecret:   secret,
+		JWTAlg:      "HS256",
+		JWTIssuer:   "cwso",
+		JWTAudience: "cwso-mcp",
+	}
+	log := logging.New("debug")
+
+	// Token without exp claim
+	claims := &jwtClaims{
+		Role: "worker",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:   "cwso",
+			Audience: jwt.ClaimStrings{"cwso-mcp"},
+			Subject:  "no-exp",
+			// ExpiresAt intentionally omitted
+		},
+	}
+	tok := makeJWT(secret, claims)
+	_, err := verifyJWT(tok, cfg, log)
+	if err == nil {
+		t.Fatal("expected error for token without exp claim, got nil")
+	}
+}
+
+func TestAuthMiddleware_UnknownRole_Returns403(t *testing.T) {
+	secret := "test-secret-32-bytes-minimum-padding-x"
+	cfg := &config.Config{
+		JWTSecret:      secret,
+		JWTAlg:         "HS256",
+		JWTIssuer:      "cwso",
+		JWTAudience:    "cwso-mcp",
+		AllowedOrigins: []string{"http://localhost"},
+	}
+	log := logging.New("debug")
+
+	claims := &jwtClaims{
+		Role: "admin", // unrecognised role
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "eve",
+			Issuer:    "cwso",
+			Audience:  jwt.ClaimStrings{"cwso-mcp"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+		},
+	}
+	tok := makeJWT(secret, claims)
+
+	mw := authMiddleware(cfg, log)
+	called := false
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Origin", "http://localhost")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for unknown role, got %d", rr.Code)
+	}
+	if called {
+		t.Fatal("next handler must not be called for forbidden role")
+	}
+}
