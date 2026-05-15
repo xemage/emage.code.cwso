@@ -102,6 +102,7 @@ func newHTTPHandler(ctx context.Context, cfg *config.Config, log *logging.Logger
 		recoverMiddleware(log),
 		requestIDMiddleware(),
 		originMiddleware(originSet, log),
+		securityHeadersMiddleware(),
 		rateLimitMiddleware(rateLimiter, log),
 	)
 
@@ -115,6 +116,12 @@ func newHTTPHandler(ctx context.Context, cfg *config.Config, log *logging.Logger
 		case http.MethodPost:
 			handlePOST(w, r, log, samplePublisher, h)
 		case http.MethodGet:
+			ip, _, _ := strings.Cut(r.RemoteAddr, ":")
+			if !rateLimiter.sseConns.acquire(ip) {
+				http.Error(w, "too many SSE connections", http.StatusTooManyRequests)
+				return
+			}
+			defer rateLimiter.sseConns.release(ip)
 			handleSSE(w, r, log, bus, broker)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -130,7 +137,8 @@ func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger, pub
 	const maxBody = 8 << 20
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
 	if err != nil {
-		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+		log.Warn().Err(err).Str("handler", "POST /mcp").Msg("failed to read request body")
+		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	if len(body) > maxBody {
@@ -345,6 +353,18 @@ func chain(mws ...middleware) middleware {
 		return next
 	}
 }
+func securityHeadersMiddleware() middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("X-Frame-Options", "DENY")
+			if r.Method == http.MethodPost {
+				w.Header().Set("Cache-Control", "no-store")
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
 
 func recoverMiddleware(log *logging.Logger) middleware {
 	return func(next http.Handler) http.Handler {
@@ -431,6 +451,31 @@ func originHostAllowed(allowed map[string]struct{}, host string) bool {
 // Token-bucket rate limiter per IP address. Default: 60 requests per minute.
 // Rejects excess requests with HTTP 429 Too Many Requests.
 
+type sseConnectionStore struct {
+	mu    sync.Mutex
+	conns map[string]int
+}
+
+const maxSSEConnsPerIP = 10
+
+func (s *sseConnectionStore) acquire(ip string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.conns[ip] >= maxSSEConnsPerIP {
+		return false
+	}
+	s.conns[ip]++
+	return true
+}
+
+func (s *sseConnectionStore) release(ip string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.conns[ip] > 0 {
+		s.conns[ip]--
+	}
+}
+
 type rateLimiterEntry struct {
 	lim      *rate.Limiter
 	lastSeen time.Time
@@ -439,11 +484,13 @@ type rateLimiterEntry struct {
 type rateLimiterStore struct {
 	mu       sync.Mutex
 	limiters map[string]*rateLimiterEntry
+	sseConns *sseConnectionStore
 }
 
 func newRateLimiterStore(ctx context.Context) *rateLimiterStore {
 	rls := &rateLimiterStore{
 		limiters: make(map[string]*rateLimiterEntry),
+		sseConns: &sseConnectionStore{conns: make(map[string]int)},
 	}
 	go rls.evictLoop(ctx)
 	return rls
@@ -535,7 +582,8 @@ func authMiddleware(cfg *config.Config, log *logging.Logger) middleware {
 			}
 			role := claims.Role
 			if role != "orchestrator" && role != "worker" {
-				role = "orchestrator"
+				http.Error(w, "forbidden: unrecognised role", http.StatusForbidden)
+				return
 			}
 			sess := &Session{Role: role, Subject: claims.Subject}
 			ctx := context.WithValue(r.Context(), sessionCtxKey{}, sess)
@@ -573,7 +621,7 @@ func verifyJWT(tokenString string, cfg *config.Config, log *logging.Logger) (*jw
 		return nil, fmt.Errorf("unsupported algorithm: %s", cfg.JWTAlg)
 	}
 
-	parser := jwt.NewParser(jwt.WithLeeway(60 * time.Second))
+	parser := jwt.NewParser(jwt.WithLeeway(60*time.Second), jwt.WithExpirationRequired())
 	_, err := parser.ParseWithClaims(tokenString, claims, keyFunc)
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
@@ -585,21 +633,19 @@ func verifyJWT(tokenString string, cfg *config.Config, log *logging.Logger) (*jw
 		return nil, fmt.Errorf("parse token: %w", err)
 	}
 
-	if cfg.JWTIssuer != "" && claims.Issuer != cfg.JWTIssuer {
+	if claims.Issuer != cfg.JWTIssuer {
 		return nil, fmt.Errorf("invalid issuer: expected %q, got %q", cfg.JWTIssuer, claims.Issuer)
 	}
 
-	if cfg.JWTAudience != "" {
-		audienceFound := false
-		for _, aud := range claims.Audience {
-			if aud == cfg.JWTAudience {
-				audienceFound = true
-				break
-			}
+	audienceFound := false
+	for _, aud := range claims.Audience {
+		if aud == cfg.JWTAudience {
+			audienceFound = true
+			break
 		}
-		if !audienceFound {
-			return nil, fmt.Errorf("invalid audience: expected %q", cfg.JWTAudience)
-		}
+	}
+	if !audienceFound {
+		return nil, fmt.Errorf("invalid audience: expected %q", cfg.JWTAudience)
 	}
 
 	return claims, nil

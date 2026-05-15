@@ -14,8 +14,8 @@
 | T033 | Event-sourced memory broker | backend-developer | done | P0 | T031 | 2026-05-14 |
 | T034 | Telemetry throttling + JSON-RPC notifications | backend-developer | done | P1 | T030, T033 | 2026-05-15 |
 | T035 | Phase 3 integration tests | qa-engineer | done | P0 | T032, T034 | 2026-05-15 |
-| T036 | Phase 3 Tech Lead gate | tech-lead | in_progress | P0 | T035 | 2026-05-15 |
-| T037 | Phase 3 Security gate | security-engineer | pending | P0 | T036 | 2026-05-11 |
+| T036 | Phase 3 Tech Lead gate | tech-lead | done | P0 | T035 | 2026-05-15 |
+| T037 | Phase 3 Security gate | security-engineer | in_progress | P0 | T036 | 2026-05-15 |
 | T040 | KVM/Firecracker host validation | devops-engineer | pending | P0 | T037 | 2026-05-11 |
 | T041 | Docker baseline runner | devops-engineer | pending | P0 | T040 | 2026-05-11 |
 | T042 | gVisor runner | devops-engineer | pending | P0 | T041 | 2026-05-11 |
