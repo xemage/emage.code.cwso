@@ -216,3 +216,80 @@ func TestIngestQueueFullIsNonBlocking(t *testing.T) {
 		t.Fatal("expected dropped ingress count to increment when queue is full")
 	}
 }
+
+func TestLiveSubscriptionReceivesSanitizedRecordsInOrder(t *testing.T) {
+	b := New(WithCapacity(16), WithIngressQueueSize(32))
+	defer b.Close()
+
+	sub := b.Subscribe()
+	defer sub.Close()
+
+	if ok := b.Ingest("notifications/log", map[string]any{"job_id": "job-1", "token": "secret", "idx": 1}); !ok {
+		t.Fatal("expected ingest to succeed")
+	}
+	if ok := b.Ingest("notifications/log", map[string]any{"job_id": "job-1", "idx": 2}); !ok {
+		t.Fatal("expected second ingest to succeed")
+	}
+
+	first := waitForLiveRecord(t, sub, 200*time.Millisecond)
+	second := waitForLiveRecord(t, sub, 200*time.Millisecond)
+
+	if first.Sequence >= second.Sequence {
+		t.Fatalf("expected strictly increasing live sequence, got %d then %d", first.Sequence, second.Sequence)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(first.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal first payload: %v", err)
+	}
+	if payload["token"] != "[redacted]" {
+		t.Fatalf("expected live payload redaction, got %v", payload["token"])
+	}
+	if payload["idx"].(float64) != 1 {
+		t.Fatalf("expected first live payload idx=1, got %v", payload["idx"])
+	}
+	if second.Topic != "notifications/log" {
+		t.Fatalf("unexpected second topic: %q", second.Topic)
+	}
+}
+
+func TestLiveSubscriptionDropsWhenSubscriberBackpressures(t *testing.T) {
+	b := New(
+		WithCapacity(8),
+		WithIngressQueueSize(32),
+		WithSubscriberQueueDepth(1),
+		WithSubscriberMaxBytes(128),
+	)
+	defer b.Close()
+
+	sub := b.Subscribe()
+	defer sub.Close()
+
+	for i := 0; i < 12; i++ {
+		_ = b.Ingest("notifications/log", map[string]any{"idx": i, "message": "burst payload to overflow subscriber queue"})
+	}
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if sub.Dropped() > 0 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	t.Fatal("expected live subscriber to drop records under backpressure")
+}
+
+func waitForLiveRecord(t *testing.T, sub *Subscription, timeout time.Duration) Record {
+	t.Helper()
+	select {
+	case rec, ok := <-sub.Messages():
+		if !ok {
+			t.Fatal("subscription closed before record arrived")
+		}
+		return rec
+	case <-time.After(timeout):
+		t.Fatalf("timed out waiting for live record after %v", timeout)
+	}
+	return Record{}
+}

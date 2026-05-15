@@ -15,6 +15,7 @@ import (
 	"github.com/emage/cwso/orchestrator/internal/config"
 	"github.com/emage/cwso/orchestrator/internal/eventbus"
 	"github.com/emage/cwso/orchestrator/internal/logging"
+	"github.com/emage/cwso/orchestrator/internal/memorybroker"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/time/rate"
 )
@@ -39,6 +40,7 @@ type eventPublisher interface {
 //   - JWT (HS256) Bearer token required on /mcp endpoints
 func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 	bus *eventbus.Bus,
+	broker *memorybroker.Broker,
 	samplePublisher eventPublisher,
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
 ) error {
@@ -46,10 +48,14 @@ func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 		bus = eventbus.New()
 	}
 	if samplePublisher == nil {
-		samplePublisher = bus
+		if broker != nil {
+			samplePublisher = memorybroker.NewTeePublisher(bus, broker)
+		} else {
+			samplePublisher = bus
+		}
 	}
 
-	handler := newHTTPHandler(cfg, log, bus, samplePublisher, h)
+	handler := newHTTPHandler(cfg, log, bus, broker, samplePublisher, h)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -79,7 +85,7 @@ func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 	}
 }
 
-func newHTTPHandler(cfg *config.Config, log *logging.Logger, bus *eventbus.Bus,
+func newHTTPHandler(cfg *config.Config, log *logging.Logger, bus *eventbus.Bus, broker *memorybroker.Broker,
 	samplePublisher eventPublisher,
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
 ) http.Handler {
@@ -111,7 +117,7 @@ func newHTTPHandler(cfg *config.Config, log *logging.Logger, bus *eventbus.Bus,
 		case http.MethodPost:
 			handlePOST(w, r, log, samplePublisher, h)
 		case http.MethodGet:
-			handleSSE(w, r, log, bus)
+			handleSSE(w, r, log, bus, broker)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -160,7 +166,11 @@ func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger, pub
 	_, _ = w.Write(resp)
 }
 
-func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus *eventbus.Bus) {
+func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus *eventbus.Bus, broker *memorybroker.Broker) {
+	if broker != nil {
+		handleBrokerSSE(w, r, log, broker)
+		return
+	}
 	if bus == nil {
 		bus = eventbus.New()
 	}
@@ -204,6 +214,70 @@ func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus 
 			envelope, err := marshalJSONRPCNotification(msg.Topic, msg.Payload)
 			if err != nil {
 				log.Warn().Err(err).Str("topic", msg.Topic).Msg("failed to marshal notification envelope")
+				continue
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", envelope); err != nil {
+				log.Debug().Err(err).Msg("SSE write failed")
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
+func handleBrokerSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, broker *memorybroker.Broker) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	sub := broker.Subscribe()
+	defer sub.Close()
+	throttle := newTelemetryThrottle()
+
+	ticker := time.NewTicker(heartbeatInterval)
+	defer ticker.Stop()
+
+	_, _ = fmt.Fprintf(w, "event: ready\ndata: {\"protocolVersion\":\"2025-03-26\"}\n\n")
+	flusher.Flush()
+	log.Debug().Msg("SSE client connected")
+	defer func() {
+		fields := map[string]any{}
+		for topic, counters := range throttle.Snapshot() {
+			fields[topic] = map[string]int{
+				"emitted":    counters.Emitted,
+				"suppressed": counters.Suppressed,
+			}
+		}
+		entry := log.Info().Any("telemetry_counts", fields)
+		if dropped := sub.Dropped(); dropped > 0 {
+			entry = log.Warn().Int("dropped_events", int(dropped)).Any("telemetry_counts", fields)
+		}
+		entry.Msg("SSE telemetry stream closed")
+	}()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			_, _ = fmt.Fprintf(w, ": heartbeat\n\n")
+			flusher.Flush()
+		case rec, ok := <-sub.Messages():
+			if !ok {
+				return
+			}
+			if !throttle.Allow(rec) {
+				continue
+			}
+			envelope, err := marshalJSONRPCNotification(rec.Topic, rec.Payload)
+			if err != nil {
+				log.Warn().Err(err).Str("topic", rec.Topic).Msg("failed to marshal notification envelope")
 				continue
 			}
 			if _, err := fmt.Fprintf(w, "data: %s\n\n", envelope); err != nil {

@@ -12,6 +12,8 @@ import (
 const (
 	defaultRetentionCapacity = 2048
 	defaultIngressQueueSize  = 1024
+	defaultQueueDepth        = 256
+	defaultQueueBytes        = 1 << 20
 )
 
 // Record is an immutable, append-only event in the in-memory broker log.
@@ -38,6 +40,61 @@ type pendingEvent struct {
 	at      time.Time
 }
 
+type queuedRecord struct {
+	record Record
+	size   int
+}
+
+type subscriber struct {
+	id uint64
+
+	mu          sync.Mutex
+	ch          chan queuedRecord
+	queuedBytes int
+	maxBytes    int
+	closed      bool
+	dropped     uint64
+}
+
+func (s *subscriber) offer(record Record, size int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return
+	}
+	if s.queuedBytes+size > s.maxBytes || len(s.ch) >= cap(s.ch) {
+		atomic.AddUint64(&s.dropped, 1)
+		return
+	}
+
+	select {
+	case s.ch <- queuedRecord{record: record, size: size}:
+		s.queuedBytes += size
+	default:
+		atomic.AddUint64(&s.dropped, 1)
+	}
+}
+
+func (s *subscriber) onDequeued(size int) {
+	s.mu.Lock()
+	s.queuedBytes -= size
+	if s.queuedBytes < 0 {
+		s.queuedBytes = 0
+	}
+	s.mu.Unlock()
+}
+
+func (s *subscriber) close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	s.closed = true
+	close(s.ch)
+}
+
 // Broker is an append-only, bounded in-memory event log with non-blocking ingest.
 type Broker struct {
 	now func() time.Time
@@ -52,6 +109,12 @@ type Broker struct {
 	count    int
 	capacity int
 	nextSeq  uint64
+
+	subMu      sync.RWMutex
+	nextSubID  uint64
+	subs       map[uint64]*subscriber
+	queueDepth int
+	queueBytes int
 
 	droppedIngress atomic.Uint64
 }
@@ -86,13 +149,34 @@ func WithNow(now func() time.Time) Option {
 	}
 }
 
+// WithSubscriberQueueDepth configures bounded live subscription depth.
+func WithSubscriberQueueDepth(depth int) Option {
+	return func(b *Broker) {
+		if depth > 0 {
+			b.queueDepth = depth
+		}
+	}
+}
+
+// WithSubscriberMaxBytes configures bounded live subscription bytes.
+func WithSubscriberMaxBytes(maxBytes int) Option {
+	return func(b *Broker) {
+		if maxBytes > 0 {
+			b.queueBytes = maxBytes
+		}
+	}
+}
+
 // New constructs and starts a Broker.
 func New(opts ...Option) *Broker {
 	b := &Broker{
-		now:      time.Now,
-		ingestCh: make(chan pendingEvent, defaultIngressQueueSize),
-		closed:   make(chan struct{}),
-		capacity: defaultRetentionCapacity,
+		now:        time.Now,
+		ingestCh:   make(chan pendingEvent, defaultIngressQueueSize),
+		closed:     make(chan struct{}),
+		capacity:   defaultRetentionCapacity,
+		subs:       make(map[uint64]*subscriber),
+		queueDepth: defaultQueueDepth,
+		queueBytes: defaultQueueBytes,
 	}
 	for _, opt := range opts {
 		opt(b)
@@ -115,6 +199,7 @@ func (b *Broker) Close() {
 	default:
 		close(b.closed)
 	}
+	b.closeSubscribers()
 	b.wg.Wait()
 }
 
@@ -216,6 +301,81 @@ func (b *Broker) Query(opts QueryOptions) []Record {
 	return limited
 }
 
+// Subscription is a live stream of appended broker records.
+type Subscription struct {
+	broker *Broker
+	sub    *subscriber
+	out    chan Record
+	once   sync.Once
+}
+
+// Subscribe registers a new live subscriber for appended records.
+func (b *Broker) Subscribe() *Subscription {
+	select {
+	case <-b.closed:
+		closed := make(chan Record)
+		close(closed)
+		return &Subscription{out: closed}
+	default:
+	}
+
+	id := atomic.AddUint64(&b.nextSubID, 1)
+	sub := &subscriber{
+		id:       id,
+		ch:       make(chan queuedRecord, b.queueDepth),
+		maxBytes: b.queueBytes,
+	}
+
+	b.subMu.Lock()
+	b.subs[id] = sub
+	b.subMu.Unlock()
+
+	s := &Subscription{
+		broker: b,
+		sub:    sub,
+		out:    make(chan Record),
+	}
+	go s.pump()
+	return s
+}
+
+func (s *Subscription) pump() {
+	defer close(s.out)
+	if s.sub == nil {
+		return
+	}
+	for queued := range s.sub.ch {
+		s.out <- cloneRecord(queued.record)
+		s.sub.onDequeued(queued.size)
+	}
+}
+
+// Messages returns the live record stream.
+func (s *Subscription) Messages() <-chan Record {
+	return s.out
+}
+
+// Dropped returns the number of records dropped due to subscriber backpressure.
+func (s *Subscription) Dropped() uint64 {
+	if s.sub == nil {
+		return 0
+	}
+	return atomic.LoadUint64(&s.sub.dropped)
+}
+
+// Close removes the subscription and closes the live record stream.
+func (s *Subscription) Close() {
+	s.once.Do(func() {
+		if s.broker == nil || s.sub == nil {
+			return
+		}
+		s.broker.subMu.Lock()
+		delete(s.broker.subs, s.sub.id)
+		s.broker.subMu.Unlock()
+		s.sub.close()
+	})
+}
+
 func (b *Broker) run() {
 	defer b.wg.Done()
 	for {
@@ -254,6 +414,37 @@ func (b *Broker) appendEvent(e pendingEvent) {
 		b.head = (b.head + 1) % b.capacity
 	}
 	b.mu.Unlock()
+
+	b.offerSubscribers(rec)
+}
+
+func (b *Broker) offerSubscribers(rec Record) {
+	b.subMu.RLock()
+	subs := make([]*subscriber, 0, len(b.subs))
+	for _, sub := range b.subs {
+		subs = append(subs, sub)
+	}
+	b.subMu.RUnlock()
+
+	cloned := cloneRecord(rec)
+	size := len(rec.Topic) + len(rec.Payload)
+	for _, sub := range subs {
+		sub.offer(cloned, size)
+	}
+}
+
+func (b *Broker) closeSubscribers() {
+	b.subMu.Lock()
+	subs := make([]*subscriber, 0, len(b.subs))
+	for id, sub := range b.subs {
+		subs = append(subs, sub)
+		delete(b.subs, id)
+	}
+	b.subMu.Unlock()
+
+	for _, sub := range subs {
+		sub.close()
+	}
 }
 
 func cloneRecord(r Record) Record {

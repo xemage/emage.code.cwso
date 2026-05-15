@@ -18,9 +18,18 @@ import (
 	"github.com/emage/cwso/orchestrator/internal/config"
 	"github.com/emage/cwso/orchestrator/internal/eventbus"
 	"github.com/emage/cwso/orchestrator/internal/logging"
+	"github.com/emage/cwso/orchestrator/internal/memorybroker"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/time/rate"
 )
+
+type sseTestHarness struct {
+	server    *httptest.Server
+	token     string
+	bus       *eventbus.Bus
+	broker    *memorybroker.Broker
+	publisher eventPublisher
+}
 
 func makeJWT(secret string, claims *jwtClaims) string {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -392,7 +401,7 @@ func readSSEFrame(t *testing.T, r *bufio.Reader, timeout time.Duration) (event s
 
 func newSSETestServer(t *testing.T, bus *eventbus.Bus,
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
-) (*httptest.Server, string) {
+) *sseTestHarness {
 	t.Helper()
 	secret := "test-secret-32-bytes-minimum-padding-x"
 	cfg := &config.Config{
@@ -403,9 +412,16 @@ func newSSETestServer(t *testing.T, bus *eventbus.Bus,
 		AllowedOrigins: []string{"http://localhost"},
 	}
 	log := logging.New("error")
+	broker := memorybroker.New(
+		memorybroker.WithCapacity(128),
+		memorybroker.WithIngressQueueSize(128),
+	)
+	t.Cleanup(broker.Close)
+	publisher := memorybroker.NewTeePublisher(bus, broker)
 
-	handler := newHTTPHandler(cfg, log, bus, bus, h)
+	handler := newHTTPHandler(cfg, log, bus, broker, publisher, h)
 	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
 
 	claims := &jwtClaims{
 		Role: "worker",
@@ -417,7 +433,13 @@ func newSSETestServer(t *testing.T, bus *eventbus.Bus,
 		},
 	}
 	tok := makeJWT(secret, claims)
-	return srv, tok
+	return &sseTestHarness{
+		server:    srv,
+		token:     tok,
+		bus:       bus,
+		broker:    broker,
+		publisher: publisher,
+	}
 }
 
 func openSSE(t *testing.T, baseURL, token string) (*http.Response, *bufio.Reader) {
@@ -448,12 +470,11 @@ func TestSSEReadyAndHeartbeat(t *testing.T) {
 	defer func() { heartbeatInterval = oldHeartbeat }()
 
 	bus := eventbus.New()
-	srv, token := newSSETestServer(t, bus, func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
+	harness := newSSETestServer(t, bus, func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
 		return []byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`), nil
 	})
-	defer srv.Close()
 
-	resp, reader := openSSE(t, srv.URL, token)
+	resp, reader := openSSE(t, harness.server.URL, harness.token)
 	defer resp.Body.Close()
 
 	event, data, heartbeat := readSSEFrame(t, reader, 200*time.Millisecond)
@@ -479,21 +500,20 @@ func TestSSEBroadcastToTwoSubscribers(t *testing.T) {
 	defer func() { heartbeatInterval = oldHeartbeat }()
 
 	bus := eventbus.New()
-	srv, token := newSSETestServer(t, bus, func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
+	harness := newSSETestServer(t, bus, func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
 		return []byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`), nil
 	})
-	defer srv.Close()
 
-	resp1, r1 := openSSE(t, srv.URL, token)
+	resp1, r1 := openSSE(t, harness.server.URL, harness.token)
 	defer resp1.Body.Close()
-	resp2, r2 := openSSE(t, srv.URL, token)
+	resp2, r2 := openSSE(t, harness.server.URL, harness.token)
 	defer resp2.Body.Close()
 
 	_, _, _ = readSSEFrame(t, r1, 200*time.Millisecond)
 	_, _, _ = readSSEFrame(t, r2, 200*time.Millisecond)
 
 	start := time.Now()
-	if err := bus.Publish(eventbus.TopicNotificationsJobState, map[string]any{"state": "running"}); err != nil {
+	if err := harness.publisher.Publish(eventbus.TopicNotificationsJobState, map[string]any{"state": "running"}); err != nil {
 		t.Fatalf("publish failed: %v", err)
 	}
 
@@ -537,21 +557,20 @@ func TestSSEWithPOSTNoRegressionAndSampleNotifications(t *testing.T) {
 	defer func() { heartbeatInterval = oldHeartbeat }()
 
 	bus := eventbus.New()
-	srv, token := newSSETestServer(t, bus, func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
+	harness := newSSETestServer(t, bus, func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
 		return []byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`), nil
 	})
-	defer srv.Close()
 
-	resp, reader := openSSE(t, srv.URL, token)
+	resp, reader := openSSE(t, harness.server.URL, harness.token)
 	defer resp.Body.Close()
 	_, _, _ = readSSEFrame(t, reader, 200*time.Millisecond) // ready
 
 	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping","arguments":{}}}`)
-	postReq, err := http.NewRequest(http.MethodPost, srv.URL+"/mcp", bytes.NewReader(body))
+	postReq, err := http.NewRequest(http.MethodPost, harness.server.URL+"/mcp", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("new post request: %v", err)
 	}
-	postReq.Header.Set("Authorization", "Bearer "+token)
+	postReq.Header.Set("Authorization", "Bearer "+harness.token)
 	postReq.Header.Set("Origin", "http://localhost")
 	postReq.Header.Set("Content-Type", "application/json")
 
@@ -588,5 +607,110 @@ func TestSSEWithPOSTNoRegressionAndSampleNotifications(t *testing.T) {
 
 	if !seen[eventbus.TopicNotificationsLog] || !seen[eventbus.TopicNotificationsJobState] {
 		t.Fatalf("expected both sample notification topics, got seen=%v", seen)
+	}
+}
+
+func TestSSETopicAwareTelemetryThrottling(t *testing.T) {
+	oldHeartbeat := heartbeatInterval
+	heartbeatInterval = 500 * time.Millisecond
+	defer func() { heartbeatInterval = oldHeartbeat }()
+
+	bus := eventbus.New()
+	harness := newSSETestServer(t, bus, func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
+		return []byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`), nil
+	})
+
+	resp, reader := openSSE(t, harness.server.URL, harness.token)
+	defer resp.Body.Close()
+	_, _, _ = readSSEFrame(t, reader, 200*time.Millisecond)
+
+	for i := 0; i < 3; i++ {
+		if ok := harness.broker.Ingest(eventbus.TopicNotificationsLog, map[string]any{"idx": i}); !ok {
+			t.Fatalf("ingest %d failed", i)
+		}
+	}
+
+	_, data, heartbeat := readSSEFrame(t, reader, 200*time.Millisecond)
+	if heartbeat {
+		t.Fatal("expected throttled notification, got heartbeat")
+	}
+
+	var env struct {
+		JSONRPC string         `json:"jsonrpc"`
+		Method  string         `json:"method"`
+		Params  map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(data), &env); err != nil {
+		t.Fatalf("unmarshal throttled envelope: %v", err)
+	}
+	if env.JSONRPC != "2.0" || env.Method != eventbus.TopicNotificationsLog {
+		t.Fatalf("unexpected throttled envelope: %s", data)
+	}
+	if env.Params["idx"].(float64) != 0 {
+		t.Fatalf("expected first event in window to be emitted, got %v", env.Params["idx"])
+	}
+
+	time.Sleep(defaultLogThrottleWindow)
+	if ok := harness.broker.Ingest(eventbus.TopicNotificationsLog, map[string]any{"idx": 99}); !ok {
+		t.Fatal("expected post-window ingest to succeed")
+	}
+
+	_, data, heartbeat = readSSEFrame(t, reader, 200*time.Millisecond)
+	if heartbeat {
+		t.Fatal("expected post-window notification, got heartbeat")
+	}
+	if err := json.Unmarshal([]byte(data), &env); err != nil {
+		t.Fatalf("unmarshal post-window envelope: %v", err)
+	}
+	if env.Params["idx"].(float64) != 99 {
+		t.Fatalf("expected new-window payload idx=99, got %v", env.Params["idx"])
+	}
+}
+
+func TestSSETerminalJobStateBypassesThrottle(t *testing.T) {
+	oldHeartbeat := heartbeatInterval
+	heartbeatInterval = 500 * time.Millisecond
+	defer func() { heartbeatInterval = oldHeartbeat }()
+
+	bus := eventbus.New()
+	harness := newSSETestServer(t, bus, func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
+		return []byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`), nil
+	})
+
+	resp, reader := openSSE(t, harness.server.URL, harness.token)
+	defer resp.Body.Close()
+	_, _, _ = readSSEFrame(t, reader, 200*time.Millisecond)
+
+	if ok := harness.broker.Ingest(eventbus.TopicNotificationsJobState, map[string]any{"job_id": "job-1", "state": "running"}); !ok {
+		t.Fatal("expected running ingest to succeed")
+	}
+	if ok := harness.broker.Ingest(eventbus.TopicNotificationsJobState, map[string]any{"job_id": "job-1", "state": "failed"}); !ok {
+		t.Fatal("expected failed ingest to succeed")
+	}
+
+	_, firstData, firstHeartbeat := readSSEFrame(t, reader, 200*time.Millisecond)
+	if firstHeartbeat {
+		t.Fatal("expected running job-state notification first")
+	}
+	_, secondData, secondHeartbeat := readSSEFrame(t, reader, 200*time.Millisecond)
+	if secondHeartbeat {
+		t.Fatal("expected terminal job-state notification second")
+	}
+
+	var firstEnv, secondEnv struct {
+		Method string         `json:"method"`
+		Params map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(firstData), &firstEnv); err != nil {
+		t.Fatalf("unmarshal first job-state envelope: %v", err)
+	}
+	if err := json.Unmarshal([]byte(secondData), &secondEnv); err != nil {
+		t.Fatalf("unmarshal second job-state envelope: %v", err)
+	}
+	if firstEnv.Method != eventbus.TopicNotificationsJobState || firstEnv.Params["state"] != "running" {
+		t.Fatalf("unexpected first job-state envelope: %s", firstData)
+	}
+	if secondEnv.Params["state"] != "failed" {
+		t.Fatalf("expected terminal state to bypass throttle, got %v", secondEnv.Params["state"])
 	}
 }
