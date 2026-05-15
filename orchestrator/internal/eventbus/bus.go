@@ -150,6 +150,7 @@ type Subscription struct {
 	bus  *Bus
 	sub  *subscriber
 	out  chan Message
+	done chan struct{}
 	once sync.Once
 }
 
@@ -167,9 +168,10 @@ func (b *Bus) Subscribe() *Subscription {
 	b.mu.Unlock()
 
 	s := &Subscription{
-		bus: b,
-		sub: sub,
-		out: make(chan Message),
+		bus:  b,
+		sub:  sub,
+		out:  make(chan Message),
+		done: make(chan struct{}),
 	}
 	go s.pump()
 	return s
@@ -178,8 +180,12 @@ func (b *Bus) Subscribe() *Subscription {
 func (s *Subscription) pump() {
 	defer close(s.out)
 	for qm := range s.sub.ch {
-		s.out <- qm.msg
-		s.sub.onDequeued(qm.size)
+		select {
+		case s.out <- qm.msg:
+			s.sub.onDequeued(qm.size)
+		case <-s.done:
+			return
+		}
 	}
 }
 
@@ -196,6 +202,7 @@ func (s *Subscription) Dropped() uint64 {
 // Close removes this subscription and closes its stream.
 func (s *Subscription) Close() {
 	s.once.Do(func() {
+		close(s.done)
 		s.bus.mu.Lock()
 		delete(s.bus.subs, s.sub.id)
 		s.bus.mu.Unlock()

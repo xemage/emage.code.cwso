@@ -35,8 +35,19 @@ func makeJWT(secret string, claims *jwtClaims) string {
 }
 
 // readSSEFrame reads one complete SSE frame from a buffered reader.
-// Returns the event type, data, and whether it was a heartbeat comment.
+// Returns the event type, data, whether it was a heartbeat comment, and ok=false on timeout.
+// When fatal=true, a timeout or read error calls t.Fatalf; when false, ok=false is returned instead.
 func readSSEFrame(t *testing.T, r *bufio.Reader, timeout time.Duration) (event string, data string, heartbeat bool) {
+	t.Helper()
+	ev, d, hb, ok := tryReadSSEFrame(t, r, timeout)
+	if !ok {
+		t.Fatalf("timed out waiting for SSE frame after %v", timeout)
+	}
+	return ev, d, hb
+}
+
+// tryReadSSEFrame is the non-fatal variant: returns ok=false on timeout.
+func tryReadSSEFrame(t *testing.T, r *bufio.Reader, timeout time.Duration) (event string, data string, heartbeat bool, ok bool) {
 	t.Helper()
 	type result struct {
 		event     string
@@ -82,10 +93,9 @@ func readSSEFrame(t *testing.T, r *bufio.Reader, timeout time.Duration) (event s
 		if res.err != nil {
 			t.Fatalf("read SSE frame: %v", res.err)
 		}
-		return res.event, res.data, res.heartbeat
+		return res.event, res.data, res.heartbeat, true
 	case <-time.After(timeout):
-		t.Fatalf("timed out waiting for SSE frame after %v", timeout)
-		return "", "", false
+		return "", "", false, false
 	}
 }
 
@@ -564,7 +574,7 @@ func TestIntegrationEndToEndSignalPath(t *testing.T) {
 
 	for time.Now().Before(deadline) {
 		// Try to read from subscriber 1 with short timeout to not block
-		event1, data1, hb1 := readSSEFrame(t, reader1, 100*time.Millisecond)
+		event1, data1, hb1, _ := tryReadSSEFrame(t, reader1, 100*time.Millisecond)
 		if !hb1 && data1 != "" {
 			frameCount1++
 			t.Logf("subscriber 1: frame %d received", frameCount1)
@@ -574,7 +584,7 @@ func TestIntegrationEndToEndSignalPath(t *testing.T) {
 		}
 
 		// Try to read from subscriber 2 with short timeout
-		event2, data2, hb2 := readSSEFrame(t, reader2, 100*time.Millisecond)
+		event2, data2, hb2, _ := tryReadSSEFrame(t, reader2, 100*time.Millisecond)
 		if !hb2 && data2 != "" {
 			frameCount2++
 			t.Logf("subscriber 2: frame %d received", frameCount2)
