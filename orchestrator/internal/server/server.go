@@ -107,7 +107,7 @@ func (s *Server) Run(ctx context.Context) error {
 	case "stdio":
 		return transport.RunStdio(ctx, s.log, s.Handle)
 	case "http":
-		return transport.RunHTTP(ctx, s.cfg, s.log, s.bus, s.publisher, s.Handle)
+		return transport.RunHTTP(ctx, s.cfg, s.log, s.bus, s.memory, s.publisher, s.Handle)
 	default:
 		return fmt.Errorf("unsupported transport: %s", s.cfg.Transport)
 	}

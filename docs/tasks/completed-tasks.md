@@ -24,3 +24,4 @@ Append-only log. Entries move here after the orchestrator marks a task `done`.
 | T030 | Streamable HTTP full duplex SSE | backend-developer | 2026-05-14 | MR !3 merged to `develop` with bounded in-memory event bus, SSE JSON-RPC notifications, fanout/drop tests, and transport integration updates |
 | T031 | Async job runner pool | backend-developer | 2026-05-14 | MR !4 merged to `develop` with bounded job manager, lifecycle FSM, cancellation, and notifications/job-state event hooks |
 | T032 | dispatch_concurrent_jobs tool | backend-developer | 2026-05-14 | MR !5 merged to `develop` with orchestrator-only dispatch tool, deterministic per-item acceptance/rejection, queue-pressure handling, and tool/server tests |
+| T033 | Event-sourced memory broker | backend-developer | 2026-05-14 | MR !6 merged to `develop` with bounded append-only broker, non-blocking ingestion, filtered query APIs, and jobs/transport integration wiring |

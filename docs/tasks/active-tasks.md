@@ -11,8 +11,8 @@
 | T030 | Streamable HTTP full duplex SSE | backend-developer | done | P0 | T029 | 2026-05-14 |
 | T031 | Async job runner pool | backend-developer | done | P0 | T030 | 2026-05-14 |
 | T032 | dispatch_concurrent_jobs tool | backend-developer | done | P0 | T031 | 2026-05-14 |
-| T033 | Event-sourced memory broker | backend-developer | in_progress | P0 | T031 | 2026-05-14 |
-| T034 | Telemetry throttling + JSON-RPC notifications | backend-developer | pending | P1 | T030, T033 | 2026-05-11 |
+| T033 | Event-sourced memory broker | backend-developer | done | P0 | T031 | 2026-05-14 |
+| T034 | Telemetry throttling + JSON-RPC notifications | backend-developer | in_progress | P1 | T030, T033 | 2026-05-14 |
 | T035 | Phase 3 integration tests | qa-engineer | pending | P0 | T032, T034 | 2026-05-11 |
 | T036 | Phase 3 Tech Lead gate | tech-lead | pending | P0 | T035 | 2026-05-11 |
 | T037 | Phase 3 Security gate | security-engineer | pending | P0 | T036 | 2026-05-11 |
