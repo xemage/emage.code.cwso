@@ -55,7 +55,7 @@ func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 		}
 	}
 
-	handler := newHTTPHandler(cfg, log, bus, broker, samplePublisher, h)
+	handler := newHTTPHandler(ctx, cfg, log, bus, broker, samplePublisher, h)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -85,7 +85,7 @@ func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 	}
 }
 
-func newHTTPHandler(cfg *config.Config, log *logging.Logger, bus *eventbus.Bus, broker *memorybroker.Broker,
+func newHTTPHandler(ctx context.Context, cfg *config.Config, log *logging.Logger, bus *eventbus.Bus, broker *memorybroker.Broker,
 	samplePublisher eventPublisher,
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
 ) http.Handler {
@@ -96,9 +96,7 @@ func newHTTPHandler(cfg *config.Config, log *logging.Logger, bus *eventbus.Bus, 
 		originSet[strings.ToLower(strings.TrimSpace(o))] = struct{}{}
 	}
 
-	rateLimiter := &rateLimiterStore{
-		limiters: make(map[string]*rate.Limiter),
-	}
+	rateLimiter := newRateLimiterStore(ctx)
 
 	mw := chain(
 		recoverMiddleware(log),
@@ -433,19 +431,53 @@ func originHostAllowed(allowed map[string]struct{}, host string) bool {
 // Token-bucket rate limiter per IP address. Default: 60 requests per minute.
 // Rejects excess requests with HTTP 429 Too Many Requests.
 
+type rateLimiterEntry struct {
+	lim      *rate.Limiter
+	lastSeen time.Time
+}
+
 type rateLimiterStore struct {
 	mu       sync.Mutex
-	limiters map[string]*rate.Limiter
+	limiters map[string]*rateLimiterEntry
+}
+
+func newRateLimiterStore(ctx context.Context) *rateLimiterStore {
+	rls := &rateLimiterStore{
+		limiters: make(map[string]*rateLimiterEntry),
+	}
+	go rls.evictLoop(ctx)
+	return rls
+}
+
+func (rls *rateLimiterStore) evictLoop(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cutoff := time.Now().Add(-5 * time.Minute)
+			rls.mu.Lock()
+			for ip, entry := range rls.limiters {
+				if entry.lastSeen.Before(cutoff) {
+					delete(rls.limiters, ip)
+				}
+			}
+			rls.mu.Unlock()
+		}
+	}
 }
 
 func (rls *rateLimiterStore) getLimiter(ip string) *rate.Limiter {
 	rls.mu.Lock()
 	defer rls.mu.Unlock()
-	if lim, ok := rls.limiters[ip]; ok {
-		return lim
+	if entry, ok := rls.limiters[ip]; ok {
+		entry.lastSeen = time.Now()
+		return entry.lim
 	}
 	lim := rate.NewLimiter(rate.Every(time.Minute/60), 1) // 60 req/min, burst=1
-	rls.limiters[ip] = lim
+	rls.limiters[ip] = &rateLimiterEntry{lim: lim, lastSeen: time.Now()}
 	return lim
 }
 

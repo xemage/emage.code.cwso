@@ -306,6 +306,7 @@ type Subscription struct {
 	broker *Broker
 	sub    *subscriber
 	out    chan Record
+	done   chan struct{}
 	once   sync.Once
 }
 
@@ -334,6 +335,7 @@ func (b *Broker) Subscribe() *Subscription {
 		broker: b,
 		sub:    sub,
 		out:    make(chan Record),
+		done:   make(chan struct{}),
 	}
 	go s.pump()
 	return s
@@ -345,8 +347,12 @@ func (s *Subscription) pump() {
 		return
 	}
 	for queued := range s.sub.ch {
-		s.out <- cloneRecord(queued.record)
-		s.sub.onDequeued(queued.size)
+		select {
+		case s.out <- cloneRecord(queued.record):
+			s.sub.onDequeued(queued.size)
+		case <-s.done:
+			return
+		}
 	}
 }
 
@@ -366,6 +372,9 @@ func (s *Subscription) Dropped() uint64 {
 // Close removes the subscription and closes the live record stream.
 func (s *Subscription) Close() {
 	s.once.Do(func() {
+		if s.done != nil {
+			close(s.done)
+		}
 		if s.broker == nil || s.sub == nil {
 			return
 		}

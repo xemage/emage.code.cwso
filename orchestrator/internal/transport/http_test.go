@@ -20,7 +20,6 @@ import (
 	"github.com/emage/cwso/orchestrator/internal/logging"
 	"github.com/emage/cwso/orchestrator/internal/memorybroker"
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/time/rate"
 )
 
 type sseTestHarness struct {
@@ -242,9 +241,7 @@ func TestOriginHostAllowed(t *testing.T) {
 }
 
 func TestRateLimitMiddleware_AllowsFirstRequest(t *testing.T) {
-	store := &rateLimiterStore{
-		limiters: make(map[string]*rate.Limiter),
-	}
+	store := newRateLimiterStore(context.Background())
 	log := logging.New("debug")
 	limiter := rateLimitMiddleware(store, log)
 
@@ -263,9 +260,7 @@ func TestRateLimitMiddleware_AllowsFirstRequest(t *testing.T) {
 }
 
 func TestRateLimitMiddleware_EnforcesLimit(t *testing.T) {
-	store := &rateLimiterStore{
-		limiters: make(map[string]*rate.Limiter),
-	}
+	store := newRateLimiterStore(context.Background())
 	log := logging.New("debug")
 	limiter := rateLimitMiddleware(store, log)
 
@@ -296,9 +291,7 @@ func TestRateLimitMiddleware_EnforcesLimit(t *testing.T) {
 }
 
 func TestRateLimitMiddleware_PerIP(t *testing.T) {
-	store := &rateLimiterStore{
-		limiters: make(map[string]*rate.Limiter),
-	}
+	store := newRateLimiterStore(context.Background())
 	log := logging.New("debug")
 	limiter := rateLimitMiddleware(store, log)
 
@@ -326,9 +319,7 @@ func TestRateLimitMiddleware_PerIP(t *testing.T) {
 }
 
 func TestRateLimitMiddleware_SkipsGET(t *testing.T) {
-	store := &rateLimiterStore{
-		limiters: make(map[string]*rate.Limiter),
-	}
+	store := newRateLimiterStore(context.Background())
 	log := logging.New("debug")
 	limiter := rateLimitMiddleware(store, log)
 
@@ -419,7 +410,7 @@ func newSSETestServer(t *testing.T, bus *eventbus.Bus,
 	t.Cleanup(broker.Close)
 	publisher := memorybroker.NewTeePublisher(bus, broker)
 
-	handler := newHTTPHandler(cfg, log, bus, broker, publisher, h)
+	handler := newHTTPHandler(context.Background(), cfg, log, bus, broker, publisher, h)
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
