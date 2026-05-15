@@ -2,7 +2,7 @@
 
 - Phase: **4 (Production)** · Owner: **devops-engineer** · Priority: **P0**
 - Depends on: T037 · Blocks: T041, T042, T043
-- Status: pending
+- Status: done
 
 ## Objective
 Validate up-front that the target host(s) for Phase 4 swarm execution have the kernel features required for Firecracker microVMs: KVM, vhost-net, kernel ≥ 5.10, and unprivileged user-namespace support for gVisor. Produce a host-readiness report and a documented "degraded mode" fallback path for hosts without KVM.
