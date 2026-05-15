@@ -19,7 +19,7 @@ Validate up-front that the target host(s) for Phase 4 swarm execution have the k
 - Output must be machine-readable so the orchestrator can self-select tier router defaults at boot.
 
 ## Expected outputs
-- `sandbox/probe/host_probe.sh` — bash script printing JSON: `{kvm: bool, vhost_net: bool, kernel_version, runsc_ok: bool, firecracker_ok: bool}`
+- `sandbox/probe/host_probe.sh` — bash script printing JSON: `{kvm: bool, vhost_net: bool, kernel_version, kernel_gte_5_10: bool, runsc_ok: bool, firecracker_ok: bool}`
 - `sandbox/probe/Dockerfile` — minimal probe image
 - `docs/artifacts/host-readiness-v1.md` — report with capability matrix per known host class (laptop, CI runner, bare-metal)
 - `docs/artifacts/degraded-mode-v1.md` — operator runbook for gVisor-only deployments

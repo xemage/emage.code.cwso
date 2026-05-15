@@ -17,7 +17,7 @@
 | T036 | Phase 3 Tech Lead gate | tech-lead | done | P0 | T035 | 2026-05-15 |
 | T037 | Phase 3 Security gate | security-engineer | done | P0 | T036 | 2026-05-15 |
 | T038 | Phase 3 coverage boost | backend-developer | done | P0 | T037 | 2026-05-15 |
-| T040 | KVM/Firecracker host validation | devops-engineer | pending | P0 | T037 | 2026-05-15 |
+| T040 | KVM/Firecracker host validation | devops-engineer | in_progress | P0 | T037 | 2026-05-15 |
 | T041 | Docker baseline runner | devops-engineer | pending | P0 | T040 | 2026-05-11 |
 | T042 | gVisor runner | devops-engineer | pending | P0 | T041 | 2026-05-11 |
 | T043 | Firecracker runner + snapshot CoW | devops-engineer | pending | P0 | T042 | 2026-05-11 |
