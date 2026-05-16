@@ -24,6 +24,7 @@ services:
       CWSO_ALLOWED_ORIGINS: "http://localhost,http://127.0.0.1,http://localhost:8080,http://docker:8080"
       CWSO_WORKSPACE: "/workspace"
       CWSO_GIT_SHADOW_SOCKET: "/run/cwso/git-shadow.sock"
+      CWSO_MERGE_ENGINE_SOCKET: "/run/cwso/merge-engine.sock"
     secrets:
       - jwt_secret
     volumes:
@@ -65,6 +66,11 @@ services:
       dockerfile: deploy/Dockerfile.merge-engine
     profiles: ["phase4"]
     container_name: cwso-merge-engine
+    environment:
+      CWSO_MERGE_ENGINE_SOCKET: "/run/cwso/merge-engine.sock"
+      CWSO_GIT_SHADOW_SOCKET: "/run/cwso/git-shadow.sock"
+    volumes:
+      - cwso-runtime:/run/cwso
     read_only: true
     cap_drop: ["ALL"]
     security_opt:

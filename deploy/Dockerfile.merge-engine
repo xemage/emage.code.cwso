@@ -1,14 +1,25 @@
 # syntax=docker/dockerfile:1.6
-# cwso-merge-engine — Rust sidecar (Phase 4 stub; placeholder for now)
-FROM rust:1.80-slim AS builder
+# cwso-merge-engine — Phase 4 sidecar (baseline semantic three-way merge)
+FROM rust:1.86-slim AS builder
 LABEL cwso=dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential pkg-config cmake ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 WORKDIR /src
-RUN cargo init --name cwso-merge-engine --bin && \
-    echo 'fn main() { eprintln!("cwso-merge-engine placeholder — Phase 4 not yet implemented"); std::process::exit(0); }' > src/main.rs && \
-    cargo build --release
+COPY services/Cargo.toml ./Cargo.toml
+COPY services/cwso-git-shadow ./cwso-git-shadow
+COPY services/cwso-merge-engine ./cwso-merge-engine
+RUN cargo build --release -p cwso-merge-engine
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tini && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tini && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /run/cwso && \
+    addgroup --system cwso && adduser --system --ingroup cwso cwso && \
+    chown -R cwso:cwso /run/cwso
 COPY --from=builder /src/target/release/cwso-merge-engine /usr/local/bin/
-USER nobody
+USER cwso
+ENV CWSO_MERGE_ENGINE_SOCKET=/run/cwso/merge-engine.sock \
+    CWSO_GIT_SHADOW_SOCKET=/run/cwso/git-shadow.sock \
+    RUST_LOG=info
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/cwso-merge-engine"]

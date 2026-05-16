@@ -160,6 +160,53 @@ func TestDispatchConcurrentJobsAllowedRoles(t *testing.T) {
 	}
 }
 
+func TestDispatchJobSpecInvalidSandboxProfileIsRejected(t *testing.T) {
+	mgr, err := jobs.NewManager(jobs.Config{Workers: 1, QueueSize: 4}, nil)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	defer mgr.Close()
+
+	tool := NewDispatchConcurrentJobs(mgr, 300, 4)
+	args := json.RawMessage(`{"jobs":[{"agent_role":"worker","objective_prompt":"do it","target_workspace_uuid":"11111111-1111-1111-1111-111111111111","sandbox_profile":"hacker-tier"}]}`)
+	res, execErr := tool.Execute(context.Background(), args)
+	if execErr != nil {
+		t.Fatalf("execute: %v", execErr)
+	}
+	if res.IsError {
+		t.Fatalf("expected per-item rejection (not tool error), got %+v", res)
+	}
+	out := decodeDispatchResult(t, res)
+	if out.Rejected != 1 || out.Accepted != 0 {
+		t.Fatalf("expected 1 rejected, got %+v", out)
+	}
+	if out.Results[0].Code != "invalid_spec" {
+		t.Fatalf("expected invalid_spec rejection code, got %q", out.Results[0].Code)
+	}
+}
+
+func TestDispatchJobSpecValidSandboxProfileIsAccepted(t *testing.T) {
+	mgr, err := jobs.NewManager(jobs.Config{Workers: 1, QueueSize: 4}, nil)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	defer mgr.Close()
+
+	tool := NewDispatchConcurrentJobs(mgr, 300, 4)
+	args := json.RawMessage(`{"jobs":[{"agent_role":"worker","objective_prompt":"do it","target_workspace_uuid":"11111111-1111-1111-1111-111111111111","sandbox_profile":"gvisor-fast-ephemeral"}]}`)
+	res, execErr := tool.Execute(context.Background(), args)
+	if execErr != nil {
+		t.Fatalf("execute: %v", execErr)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected tool error: %+v", res)
+	}
+	out := decodeDispatchResult(t, res)
+	if out.Accepted != 1 || out.Rejected != 0 {
+		t.Fatalf("expected 1 accepted, got %+v", out)
+	}
+}
+
 func decodeDispatchResult(t *testing.T, res *mcp.ToolCallResult) dispatchBatchResult {
 	t.Helper()
 	if len(res.Content) != 1 {

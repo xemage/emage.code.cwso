@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/emage/cwso/orchestrator/internal/config"
 	"github.com/emage/cwso/orchestrator/internal/eventbus"
@@ -12,6 +13,8 @@ import (
 	"github.com/emage/cwso/orchestrator/internal/logging"
 	"github.com/emage/cwso/orchestrator/internal/mcp"
 	"github.com/emage/cwso/orchestrator/internal/memorybroker"
+	"github.com/emage/cwso/orchestrator/internal/mergeengine"
+	"github.com/emage/cwso/orchestrator/internal/sandbox"
 	"github.com/emage/cwso/orchestrator/internal/shadow"
 	"github.com/emage/cwso/orchestrator/internal/tools"
 	"github.com/emage/cwso/orchestrator/internal/transport"
@@ -31,6 +34,7 @@ type Server struct {
 	memory    *memorybroker.Broker
 	publisher *memorybroker.TeePublisher
 	jobs      *jobs.Manager
+	runner    sandbox.RunnerInterface
 }
 
 // New constructs and initializes a Server with all Phase 1 tools registered.
@@ -50,7 +54,157 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 		return nil, fmt.Errorf("init job manager: %w", err)
 	}
 
-	s := &Server{cfg: cfg, log: log, registry: tools.NewRegistry(), bus: bus, memory: broker, publisher: publisher, jobs: jobMgr}
+	var baselineRunner sandbox.RunnerInterface
+	if cfg.SandboxRunner == "docker" {
+		dockerRunner, runnerErr := sandbox.NewDockerRunner(sandbox.DockerRunnerConfig{
+			Host:            cfg.SandboxDockerHost,
+			DefaultImage:    cfg.SandboxImage,
+			NetworkMode:     cfg.SandboxNetwork,
+			CPUQuotaMicros:  cfg.SandboxCPUQuota,
+			MemoryBytes:     cfg.SandboxMemory,
+			PIDsLimit:       cfg.SandboxPIDs,
+			StopTimeout:     time.Duration(cfg.SandboxStopSecs) * time.Second,
+			CleanupRetries:  3,
+			ReadOnlyRootFS:  true,
+			NoNewPrivileges: true,
+			DropAllCaps:     true,
+		})
+		if runnerErr != nil {
+			jobMgr.Close()
+			broker.Close()
+			return nil, fmt.Errorf("init docker runner: %w", runnerErr)
+		}
+		baselineRunner = dockerRunner
+		log.Info().Str("runner", baselineRunner.Name()).Msg("sandbox baseline enabled")
+	}
+	if cfg.SandboxRunner == "gvisor" {
+		gvisorRunner, runnerErr := sandbox.NewGVisorRunner(sandbox.GVisorRunnerConfig{
+			Host:           cfg.SandboxDockerHost,
+			DefaultImage:   cfg.SandboxImage,
+			Runtime:        cfg.SandboxRuntime,
+			NetworkMode:    cfg.SandboxNetwork,
+			CPUQuotaMicros: cfg.SandboxCPUQuota,
+			MemoryBytes:    cfg.SandboxMemory,
+			PIDsLimit:      cfg.SandboxPIDs,
+			StopTimeout:    time.Duration(cfg.SandboxStopSecs) * time.Second,
+			CleanupRetries: 3,
+			CreateTimeout:  10 * time.Second,
+			ListTimeout:    3 * time.Second,
+		})
+		if runnerErr != nil {
+			jobMgr.Close()
+			broker.Close()
+			return nil, fmt.Errorf("init gvisor runner: %w", runnerErr)
+		}
+		baselineRunner = gvisorRunner
+		log.Info().Str("runner", baselineRunner.Name()).Msg("sandbox baseline enabled")
+	}
+	if cfg.SandboxRunner == "firecracker" {
+		firecrackerRunner, runnerErr := sandbox.NewFirecrackerRunner(sandbox.FirecrackerRunnerConfig{
+			BinaryPath:          cfg.SandboxFCBin,
+			ExecHelperPath:      cfg.SandboxFCHelper,
+			KVMDevicePath:       cfg.SandboxKVMDevice,
+			VhostNetDevicePath:  cfg.SandboxVhostNet,
+			SnapshotTemplateDir: cfg.SandboxSnapshot,
+			VMStateDir:          cfg.SandboxVMState,
+			DefaultCommand:      []string{"/bin/sh", "-lc", "echo ${CWSO_OBJECTIVE_PROMPT:-cwso-job}"},
+			CreateTimeout:       10 * time.Second,
+			StopTimeout:         time.Duration(cfg.SandboxStopSecs) * time.Second,
+			CleanupTimeout:      5 * time.Second,
+			RequireVhostNet:     cfg.SandboxRequireVh,
+			MemoryBytes:         cfg.SandboxMemory,
+			CPUQuotaMicros:      cfg.SandboxCPUQuota,
+		})
+		if runnerErr != nil {
+			jobMgr.Close()
+			broker.Close()
+			return nil, fmt.Errorf("init firecracker runner: %w", runnerErr)
+		}
+		baselineRunner = firecrackerRunner
+		log.Info().Str("runner", baselineRunner.Name()).Msg("sandbox baseline enabled")
+	}
+	if cfg.SandboxRunner == "router" {
+		dockerRunner, dErr := sandbox.NewDockerRunner(sandbox.DockerRunnerConfig{
+			Host:            cfg.SandboxDockerHost,
+			DefaultImage:    cfg.SandboxImage,
+			NetworkMode:     cfg.SandboxNetwork,
+			CPUQuotaMicros:  cfg.SandboxCPUQuota,
+			MemoryBytes:     cfg.SandboxMemory,
+			PIDsLimit:       cfg.SandboxPIDs,
+			StopTimeout:     time.Duration(cfg.SandboxStopSecs) * time.Second,
+			CleanupRetries:  3,
+			ReadOnlyRootFS:  true,
+			NoNewPrivileges: true,
+			DropAllCaps:     true,
+		})
+		if dErr != nil {
+			jobMgr.Close()
+			broker.Close()
+			return nil, fmt.Errorf("init tier-router docker runner: %w", dErr)
+		}
+		gvisorRunner, gErr := sandbox.NewGVisorRunner(sandbox.GVisorRunnerConfig{
+			Host:           cfg.SandboxDockerHost,
+			DefaultImage:   cfg.SandboxImage,
+			Runtime:        cfg.SandboxRuntime,
+			NetworkMode:    cfg.SandboxNetwork,
+			CPUQuotaMicros: cfg.SandboxCPUQuota,
+			MemoryBytes:    cfg.SandboxMemory,
+			PIDsLimit:      cfg.SandboxPIDs,
+			StopTimeout:    time.Duration(cfg.SandboxStopSecs) * time.Second,
+			CleanupRetries: 3,
+			CreateTimeout:  10 * time.Second,
+			ListTimeout:    3 * time.Second,
+		})
+		if gErr != nil {
+			jobMgr.Close()
+			broker.Close()
+			return nil, fmt.Errorf("init tier-router gvisor runner: %w", gErr)
+		}
+		routerCfg := sandbox.TierRouterConfig{
+			DockerRunner:       dockerRunner,
+			GVisorRunner:       gvisorRunner,
+			DegradedMode:       cfg.SandboxDegradedMode,
+			AllowDockerTrusted: cfg.SandboxAllowDockerTrusted,
+		}
+		if !cfg.SandboxDegradedMode {
+			fcRunner, fcErr := sandbox.NewFirecrackerRunner(sandbox.FirecrackerRunnerConfig{
+				BinaryPath:          cfg.SandboxFCBin,
+				ExecHelperPath:      cfg.SandboxFCHelper,
+				KVMDevicePath:       cfg.SandboxKVMDevice,
+				VhostNetDevicePath:  cfg.SandboxVhostNet,
+				SnapshotTemplateDir: cfg.SandboxSnapshot,
+				VMStateDir:          cfg.SandboxVMState,
+				DefaultCommand:      []string{"/bin/sh", "-lc", "echo ${CWSO_OBJECTIVE_PROMPT:-cwso-job}"},
+				CreateTimeout:       10 * time.Second,
+				StopTimeout:         time.Duration(cfg.SandboxStopSecs) * time.Second,
+				CleanupTimeout:      5 * time.Second,
+				RequireVhostNet:     cfg.SandboxRequireVh,
+				MemoryBytes:         cfg.SandboxMemory,
+				CPUQuotaMicros:      cfg.SandboxCPUQuota,
+			})
+			if fcErr != nil {
+				// Treat firecracker init failure as automatic degraded mode rather
+				// than a hard startup failure; the router will fall back to gVisor.
+				log.Warn().Err(fcErr).Msg("firecracker runner unavailable; tier-router entering degraded mode")
+				routerCfg.DegradedMode = true
+			} else {
+				routerCfg.FirecrackerRunner = fcRunner
+			}
+		}
+		tierRouter, rErr := sandbox.NewTierRouter(routerCfg)
+		if rErr != nil {
+			jobMgr.Close()
+			broker.Close()
+			return nil, fmt.Errorf("init tier-router: %w", rErr)
+		}
+		baselineRunner = tierRouter
+		log.Info().
+			Any("degraded_mode", routerCfg.DegradedMode).
+			Any("allow_docker_trusted", routerCfg.AllowDockerTrusted).
+			Msg("sandbox tier-router enabled")
+	}
+
+	s := &Server{cfg: cfg, log: log, registry: tools.NewRegistry(), bus: bus, memory: broker, publisher: publisher, jobs: jobMgr, runner: baselineRunner}
 	if err := s.registerBaselineTools(); err != nil {
 		jobMgr.Close()
 		broker.Close()
@@ -64,7 +218,23 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 		}
 		log.Info().Str("socket", cfg.ShadowSocket).Msg("shadow tools enabled")
 	}
+	if cfg.MergeEngineSocket != "" {
+		if err := s.registerMergeTools(cfg.MergeEngineSocket); err != nil {
+			jobMgr.Close()
+			broker.Close()
+			return nil, fmt.Errorf("register merge tools: %w", err)
+		}
+		log.Info().Str("socket", cfg.MergeEngineSocket).Msg("merge tools enabled")
+	}
 	return s, nil
+}
+
+func (s *Server) registerMergeTools(socket string) error {
+	client := mergeengine.NewClient(socket)
+	if err := s.registry.Register(tools.NewMergeConcurrentResults(client)); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Server) registerShadowTools(socket string) error {
@@ -85,11 +255,15 @@ func (s *Server) registerShadowTools(socket string) error {
 }
 
 func (s *Server) registerBaselineTools() error {
+	dispatchTool := tools.NewDispatchConcurrentJobs(s.jobs, s.cfg.JobTimeoutSeconds, s.cfg.JobQueueSize)
+	if s.runner != nil {
+		dispatchTool = tools.NewDispatchConcurrentJobsWithRunner(s.jobs, s.cfg.JobTimeoutSeconds, s.cfg.JobQueueSize, s.runner, s.cfg.Workspace)
+	}
 	for _, t := range []tools.Tool{
 		&tools.ReadFileSync{Workspace: s.cfg.Workspace},
 		&tools.WriteFileSync{Workspace: s.cfg.Workspace},
 		&tools.ListDir{Workspace: s.cfg.Workspace},
-		tools.NewDispatchConcurrentJobs(s.jobs, s.cfg.JobTimeoutSeconds, s.cfg.JobQueueSize),
+		dispatchTool,
 	} {
 		if err := s.registry.Register(t); err != nil {
 			return err

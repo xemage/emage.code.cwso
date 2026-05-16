@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/emage/cwso/orchestrator/internal/jobs"
 	"github.com/emage/cwso/orchestrator/internal/mcp"
+	"github.com/emage/cwso/orchestrator/internal/sandbox"
 )
 
 const (
@@ -25,22 +27,55 @@ type DispatchConcurrentJobs struct {
 	manager        *jobs.Manager
 	defaultTimeout time.Duration
 	maxBatch       int
+	runner         sandbox.RunnerInterface
+	workspaceRoot  string
 	runFuncBuilder func(dispatchJobSpec) func(context.Context) error
 }
 
 // NewDispatchConcurrentJobs constructs a dispatch tool bound to the async job manager.
 func NewDispatchConcurrentJobs(manager *jobs.Manager, defaultTimeoutSeconds, maxBatch int) *DispatchConcurrentJobs {
+	return NewDispatchConcurrentJobsWithRunner(manager, defaultTimeoutSeconds, maxBatch, nil, "")
+}
+
+// NewDispatchConcurrentJobsWithRunner constructs a dispatch tool and optionally
+// wires asynchronous jobs to a sandbox runner.
+func NewDispatchConcurrentJobsWithRunner(manager *jobs.Manager, defaultTimeoutSeconds, maxBatch int, runner sandbox.RunnerInterface, workspaceRoot string) *DispatchConcurrentJobs {
 	if defaultTimeoutSeconds <= 0 {
 		defaultTimeoutSeconds = defaultDispatchTimeoutSeconds
 	}
 	if maxBatch <= 0 {
 		maxBatch = defaultDispatchMaxBatch
 	}
+	runBuilder := defaultRunFunc
+	if runner != nil {
+		runBuilder = func(spec dispatchJobSpec) func(context.Context) error {
+			return func(ctx context.Context) error {
+				req := sandbox.RunRequest{
+					Name: strings.ReplaceAll(buildDispatchJobName(spec), ":", "-"),
+					Env: map[string]string{
+						"CWSO_AGENT_ROLE":        strings.TrimSpace(spec.AgentRole),
+						"CWSO_OBJECTIVE_PROMPT":  spec.ObjectivePrompt,
+						"CWSO_TARGET_WORKSPACE":  spec.TargetWorkspaceUUID,
+						"CWSO_DISPATCH_JOB_NAME": buildDispatchJobName(spec),
+					},
+					SandboxProfile: sandbox.SandboxProfile(spec.SandboxProfile),
+				}
+				if strings.TrimSpace(workspaceRoot) != "" {
+					req.MountWorkspace = true
+					req.WorkspaceDir = filepath.Clean(workspaceRoot)
+				}
+				_, err := runner.Execute(ctx, req)
+				return err
+			}
+		}
+	}
 	return &DispatchConcurrentJobs{
 		manager:        manager,
 		defaultTimeout: time.Duration(defaultTimeoutSeconds) * time.Second,
 		maxBatch:       maxBatch,
-		runFuncBuilder: defaultRunFunc,
+		runner:         runner,
+		workspaceRoot:  workspaceRoot,
+		runFuncBuilder: runBuilder,
 	}
 }
 
@@ -77,6 +112,15 @@ func (t *DispatchConcurrentJobs) InputSchema() map[string]any {
 						"agent_role":            map[string]any{"type": "string"},
 						"objective_prompt":      map[string]any{"type": "string", "minLength": 1},
 						"target_workspace_uuid": map[string]any{"type": "string", "format": "uuid"},
+						"sandbox_profile": map[string]any{
+							"type": "string",
+							"enum": []string{
+								string(sandbox.ProfileDockerTrusted),
+								string(sandbox.ProfileGVisorFastEphemeral),
+								string(sandbox.ProfileFirecrackerSecure),
+							},
+							"description": "Requested sandbox isolation tier. Server policy enforces routing; callers cannot escalate to docker-trusted.",
+						},
 					},
 					"required":             []string{"agent_role", "objective_prompt", "target_workspace_uuid"},
 					"additionalProperties": false,
@@ -101,6 +145,7 @@ type dispatchJobSpec struct {
 	AgentRole           string `json:"agent_role"`
 	ObjectivePrompt     string `json:"objective_prompt"`
 	TargetWorkspaceUUID string `json:"target_workspace_uuid"`
+	SandboxProfile      string `json:"sandbox_profile,omitempty"`
 }
 
 type dispatchBatchResult struct {
@@ -208,6 +253,9 @@ func validateDispatchSpec(spec dispatchJobSpec) error {
 	}
 	if !looksLikeUUID(spec.TargetWorkspaceUUID) {
 		return errors.New("target_workspace_uuid must be a valid UUID")
+	}
+	if spec.SandboxProfile != "" && !sandbox.ValidSandboxProfiles[sandbox.SandboxProfile(spec.SandboxProfile)] {
+		return fmt.Errorf("sandbox_profile %q is not a valid tier", spec.SandboxProfile)
 	}
 	return nil
 }

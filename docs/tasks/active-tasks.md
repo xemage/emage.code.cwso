@@ -18,13 +18,13 @@
 | T037 | Phase 3 Security gate | security-engineer | done | P0 | T036 | 2026-05-15 |
 | T038 | Phase 3 coverage boost | backend-developer | done | P0 | T037 | 2026-05-15 |
 | T040 | KVM/Firecracker host validation | devops-engineer | done | P0 | T037 | 2026-05-15 |
-| T041 | Docker baseline runner | devops-engineer | pending | P0 | T040 | 2026-05-11 |
-| T042 | gVisor runner | devops-engineer | pending | P0 | T041 | 2026-05-11 |
-| T043 | Firecracker runner + snapshot CoW | devops-engineer | pending | P0 | T042 | 2026-05-11 |
-| T044 | Sandbox tier router | backend-developer | pending | P0 | T043 | 2026-05-11 |
-| T045 | cwso-merge-engine Rust crate | backend-developer | pending | P0 | T044 | 2026-05-11 |
-| T046 | AST diff + semantic merge algorithm | backend-developer | pending | P0 | T045 | 2026-05-11 |
-| T047 | merge_concurrent_results tool | backend-developer | pending | P0 | T046 | 2026-05-11 |
+| T041 | Docker baseline runner | devops-engineer | done | P0 | T040 | 2026-05-15 |
+| T042 | gVisor runner | devops-engineer | done | P0 | T041 | 2026-05-15 |
+| T043 | Firecracker runner + snapshot CoW | devops-engineer | done | P0 | T042 | 2026-05-15 |
+| T044 | Sandbox tier router | backend-developer | done | P0 | T043 | 2026-05-15 |
+| T045 | cwso-merge-engine Rust crate | backend-developer | done | P0 | T044 | 2026-05-15 |
+| T046 | AST diff + semantic merge algorithm | backend-developer | done | P0 | T045 | 2026-05-15 |
+| T047 | merge_concurrent_results tool | backend-developer | done | P0 | T046 | 2026-05-16 |
 | T048 | Conflict matrix escalation | backend-developer | pending | P1 | T047 | 2026-05-11 |
 | T049 | Phase 4 swarm e2e suite | qa-engineer | pending | P0 | T048 | 2026-05-11 |
 | T050 | Phase 4 Tech Lead gate | tech-lead | pending | P0 | T049 | 2026-05-11 |

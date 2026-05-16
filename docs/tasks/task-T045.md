@@ -2,7 +2,7 @@
 
 - Phase: **4 (Production)** · Owner: **backend-developer (Rust)** · Priority: **P0**
 - Depends on: T044 · Blocks: T046, T047, T048
-- Status: pending
+- Status: done
 
 ## Objective
 Stand up the Rust sidecar that performs AST-aware semantic merge of multiple shadow workspaces. T045 establishes the crate, IPC protocol, tree-sitter integration, and a baseline three-way merge that handles trivially disjoint edits. Real auto-resolution algorithm and conflict-matrix output land in T046–T048.
@@ -59,3 +59,14 @@ Response (deferred conflict):
 
 ## Blocker protocol
 Same as T020.
+
+## Completion notes (2026-05-15)
+- Implemented baseline `cwso-merge-engine` Rust crate with framed UDS IPC and `stat`/`merge_three_way` ops.
+- Added language-aware parse validation (Go, Rust, Python, TypeScript) and deterministic trivial three-way merge handling.
+- Non-trivial collisions return structured `unimplemented_conflict` errors as required for T046 follow-on.
+- Wired compose and merge-engine Docker image build path for Phase 4 runtime profile.
+
+Validation summary:
+- `cargo test -p cwso-merge-engine` in Docker: PASS (5 tests).
+- `docker build -f deploy/Dockerfile.merge-engine -t cwso/merge-engine:test .`: PASS.
+- Trivy image scan (`HIGH`,`CRITICAL`) on `cwso/merge-engine:test`: 0 vulnerabilities.
