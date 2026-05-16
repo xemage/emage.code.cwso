@@ -26,8 +26,8 @@
 | T046 | AST diff + semantic merge algorithm | backend-developer | done | P0 | T045 | 2026-05-15 |
 | T047 | merge_concurrent_results tool | backend-developer | done | P0 | T046 | 2026-05-16 |
 | T048 | Conflict matrix escalation | backend-developer | done | P1 | T047 | 2026-05-16 |
-| T049 | Phase 4 swarm e2e suite | qa-engineer | pending | P0 | T048 | 2026-05-16 |
-| T050 | Phase 4 Tech Lead gate | tech-lead | pending | P0 | T049 | 2026-05-11 |
+| T049 | Phase 4 swarm e2e suite | qa-engineer | done | P0 | T048 | 2026-05-16 |
+| T050 | Phase 4 Tech Lead gate | tech-lead | pending | P0 | T049 | 2026-05-16 |
 | T051 | OWASP Top-10 security audit | security-engineer | pending | P0 | T050 | 2026-05-11 |
 | T052 | Release manager: changelog + v0.1.0 artifacts | release-manager | pending | P0 | T051 | 2026-05-11 |
 | T053 | Final checkpoint + budget variance | orchestrator | pending | P0 | T052 | 2026-05-11 |
