@@ -51,6 +51,10 @@ pub enum Response {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ErrorObj {
     pub code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub class: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
     pub message: String,
 }
 
@@ -60,10 +64,21 @@ impl Response {
     }
 
     pub fn error(code: &str, message: &str) -> Self {
+        Self::error_with_meta(code, None, None, message)
+    }
+
+    pub fn error_with_meta(
+        code: &str,
+        class: Option<&str>,
+        reason_code: Option<&str>,
+        message: &str,
+    ) -> Self {
         Self::Err {
             ok: false,
             error: ErrorObj {
                 code: code.to_string(),
+                class: class.map(ToString::to_string),
+                reason_code: reason_code.map(ToString::to_string),
                 message: message.to_string(),
             },
         }

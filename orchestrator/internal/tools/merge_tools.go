@@ -91,12 +91,14 @@ type mergeInput struct {
 }
 
 type mergeResultItem struct {
-	Path          string `json:"path"`
-	Language      string `json:"language"`
-	Status        string `json:"status"`
-	ReasonCode    string `json:"reason_code"`
-	MergedContent string `json:"merged_content,omitempty"`
-	Message       string `json:"message,omitempty"`
+	Path             string `json:"path"`
+	Language         string `json:"language"`
+	Status           string `json:"status"`
+	ReasonCode       string `json:"reason_code"`
+	EscalationClass  string `json:"escalation_class,omitempty"`
+	EscalationAction string `json:"escalation_action,omitempty"`
+	MergedContent    string `json:"merged_content,omitempty"`
+	Message          string `json:"message,omitempty"`
 }
 
 type mergeConcurrentOutput struct {
@@ -152,9 +154,7 @@ func (t *MergeConcurrentResults) Execute(_ context.Context, args json.RawMessage
 	for _, input := range inputs {
 		item := mergeResultItem{Path: input.Path, Language: input.Language}
 		if input.Path == "" || input.Language == "" {
-			item.Status = "error"
-			item.ReasonCode = "invalid_input"
-			item.Message = "path and language are required"
+			applyEscalation(&item, "policy_conflict", "invalid_input", "path and language are required")
 			out.FailureCount++
 			out.Results = append(out.Results, item)
 			continue
@@ -174,9 +174,7 @@ func (t *MergeConcurrentResults) Execute(_ context.Context, args json.RawMessage
 
 		mergedBytes, decodeErr := base64.StdEncoding.DecodeString(engineResult.MergedB64)
 		if decodeErr != nil {
-			item.Status = "error"
-			item.ReasonCode = "invalid_engine_payload"
-			item.Message = "merge-engine returned invalid merged payload"
+			applyEscalation(&item, "runtime_error", "invalid_engine_payload", "merge-engine returned invalid merged payload")
 			out.FailureCount++
 			out.Results = append(out.Results, item)
 			continue
@@ -217,24 +215,58 @@ func (t *MergeConcurrentResults) mergeThreeWay(input mergeInput) (mergeEngineSuc
 func mapToolMergeError(item *mergeResultItem, err error) {
 	var sidecarErr *mergeengine.SidecarError
 	if errors.As(err, &sidecarErr) {
-		switch sidecarErr.Code {
-		case "unimplemented_conflict":
-			item.Status = "conflict"
-			item.ReasonCode = "semantic_conflict"
-			item.Message = sidecarErr.Message
-		case "invalid_input":
-			item.Status = "error"
-			item.ReasonCode = "invalid_input"
-			item.Message = "merge-engine rejected input"
-		default:
-			item.Status = "error"
-			item.ReasonCode = "merge_engine_error"
-			item.Message = sidecarErr.Message
-		}
+		class, reason := classifySidecarError(sidecarErr)
+		applyEscalation(item, class, reason, sidecarErr.Message)
 		return
 	}
 
-	item.Status = "error"
-	item.ReasonCode = "merge_engine_unavailable"
-	item.Message = "merge-engine IPC call failed"
+	applyEscalation(item, "runtime_error", "merge_engine_unavailable", "merge-engine IPC call failed")
+}
+
+func classifySidecarError(err *mergeengine.SidecarError) (string, string) {
+	if err == nil {
+		return "runtime_error", "merge_engine_error"
+	}
+
+	if err.Class != "" {
+		reason := err.ReasonCode
+		if reason == "" {
+			reason = err.Code
+			if reason == "" {
+				reason = "merge_engine_error"
+			}
+		}
+		return err.Class, reason
+	}
+
+	switch err.Code {
+	case "merge_conflict", "unimplemented_conflict":
+		return "semantic_conflict", "semantic_conflict"
+	case "invalid_input", "policy_conflict":
+		return "policy_conflict", err.Code
+	default:
+		return "runtime_error", "merge_engine_error"
+	}
+}
+
+func applyEscalation(item *mergeResultItem, class, reason, message string) {
+	item.EscalationClass = class
+	item.ReasonCode = reason
+	item.Message = message
+
+	switch class {
+	case "semantic_conflict":
+		item.Status = "conflict"
+		item.EscalationAction = "manual_merge_review"
+	case "policy_conflict":
+		item.Status = "error"
+		item.EscalationAction = "fix_input_and_retry"
+	default:
+		item.Status = "error"
+		item.EscalationClass = "runtime_error"
+		item.EscalationAction = "retry_or_investigate_runtime"
+		if item.ReasonCode == "" {
+			item.ReasonCode = "merge_engine_error"
+		}
+	}
 }

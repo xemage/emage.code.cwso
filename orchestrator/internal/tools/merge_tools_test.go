@@ -135,8 +135,10 @@ func TestMergeConcurrentResultsSuccess(t *testing.T) {
 func TestMergeConcurrentResultsConflict(t *testing.T) {
 	socket := startMergeToolSidecar(t, func(req mergeSidecarRequest) mergeSidecarResponse {
 		return mergeSidecarResponse{ID: req.ID, OK: false, Error: map[string]any{
-			"code":    "unimplemented_conflict",
-			"message": "AST semantic overlap conflict",
+			"code":        "merge_conflict",
+			"class":       "semantic_conflict",
+			"reason_code": "ast_overlap_conflict",
+			"message":     "AST semantic overlap conflict",
 		}}
 	})
 
@@ -165,8 +167,11 @@ func TestMergeConcurrentResultsConflict(t *testing.T) {
 	if out.MergedCount != 0 || out.ConflictCount != 1 || out.FailureCount != 0 {
 		t.Fatalf("unexpected counters: %+v", out)
 	}
-	if out.Results[0].Status != "conflict" || out.Results[0].ReasonCode != "semantic_conflict" {
+	if out.Results[0].Status != "conflict" || out.Results[0].ReasonCode != "ast_overlap_conflict" {
 		t.Fatalf("unexpected conflict item: %+v", out.Results[0])
+	}
+	if out.Results[0].EscalationClass != "semantic_conflict" || out.Results[0].EscalationAction != "manual_merge_review" {
+		t.Fatalf("unexpected escalation mapping: %+v", out.Results[0])
 	}
 }
 
@@ -198,6 +203,88 @@ func TestMergeConcurrentResultsRuntimeFailure(t *testing.T) {
 	}
 	if out.Results[0].ReasonCode != "merge_engine_unavailable" {
 		t.Fatalf("unexpected reason code: %+v", out.Results[0])
+	}
+	if out.Results[0].EscalationClass != "runtime_error" || out.Results[0].EscalationAction != "retry_or_investigate_runtime" {
+		t.Fatalf("unexpected runtime escalation mapping: %+v", out.Results[0])
+	}
+}
+
+func TestMapToolMergeErrorMatrix(t *testing.T) {
+	tests := []struct {
+		name           string
+		err            error
+		wantStatus     string
+		wantClass      string
+		wantReasonCode string
+		wantAction     string
+	}{
+		{
+			name: "semantic conflict class from sidecar metadata",
+			err: &mergeengine.SidecarError{
+				Code:       "merge_conflict",
+				Class:      "semantic_conflict",
+				ReasonCode: "ast_overlap_conflict",
+				Message:    "AST semantic overlap conflict",
+			},
+			wantStatus:     "conflict",
+			wantClass:      "semantic_conflict",
+			wantReasonCode: "ast_overlap_conflict",
+			wantAction:     "manual_merge_review",
+		},
+		{
+			name: "legacy semantic conflict fallback",
+			err: &mergeengine.SidecarError{
+				Code:    "unimplemented_conflict",
+				Message: "legacy conflict",
+			},
+			wantStatus:     "conflict",
+			wantClass:      "semantic_conflict",
+			wantReasonCode: "semantic_conflict",
+			wantAction:     "manual_merge_review",
+		},
+		{
+			name: "policy conflict",
+			err: &mergeengine.SidecarError{
+				Code:       "invalid_input",
+				Class:      "policy_conflict",
+				ReasonCode: "invalid_payload_encoding",
+				Message:    "bad payload",
+			},
+			wantStatus:     "error",
+			wantClass:      "policy_conflict",
+			wantReasonCode: "invalid_payload_encoding",
+			wantAction:     "fix_input_and_retry",
+		},
+		{
+			name: "runtime fallback",
+			err: &mergeengine.SidecarError{
+				Code:    "sidecar_timeout",
+				Message: "timeout",
+			},
+			wantStatus:     "error",
+			wantClass:      "runtime_error",
+			wantReasonCode: "merge_engine_error",
+			wantAction:     "retry_or_investigate_runtime",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			item := &mergeResultItem{}
+			mapToolMergeError(item, tc.err)
+			if item.Status != tc.wantStatus {
+				t.Fatalf("status mismatch: got=%q want=%q", item.Status, tc.wantStatus)
+			}
+			if item.EscalationClass != tc.wantClass {
+				t.Fatalf("class mismatch: got=%q want=%q", item.EscalationClass, tc.wantClass)
+			}
+			if item.ReasonCode != tc.wantReasonCode {
+				t.Fatalf("reason mismatch: got=%q want=%q", item.ReasonCode, tc.wantReasonCode)
+			}
+			if item.EscalationAction != tc.wantAction {
+				t.Fatalf("action mismatch: got=%q want=%q", item.EscalationAction, tc.wantAction)
+			}
+		})
 	}
 }
 

@@ -96,13 +96,25 @@ fn dispatch(request: Request) -> Response {
 
             let (base, ours, theirs) = match decoded {
                 Ok(v) => v,
-                Err(error) => return Response::error("invalid_input", &error.to_string()),
+                Err(error) => {
+                    return Response::error_with_meta(
+                        "invalid_input",
+                        Some("policy_conflict"),
+                        Some("invalid_payload_encoding"),
+                        &error.to_string(),
+                    )
+                }
             };
 
             match merge_three_way(language, &base, &ours, &theirs) {
                 Ok(merged) => Response::ok(json!({ "merged_b64": B64.encode(merged) })),
                 Err(MergeError::SemanticConflict) => {
-                    Response::error("unimplemented_conflict", "AST semantic overlap conflict")
+                    Response::error_with_meta(
+                        "merge_conflict",
+                        Some("semantic_conflict"),
+                        Some("ast_overlap_conflict"),
+                        "AST semantic overlap conflict",
+                    )
                 }
             }
         }
@@ -137,4 +149,53 @@ fn write_frame(stream: &mut UnixStream, body: &[u8]) -> Result<()> {
     stream.write_all(body)?;
     stream.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn b64(input: &str) -> String {
+        B64.encode(input.as_bytes())
+    }
+
+    #[test]
+    fn merge_conflict_includes_semantic_class_and_reason() {
+        let response = dispatch(Request::MergeThreeWay {
+            language: crate::proto::MergeLanguage::Go,
+            base_b64: b64("package main\n\nfunc value() int {\n\treturn 1\n}\n"),
+            ours_b64: b64("package main\n\nfunc value() int {\n\treturn 2\n}\n"),
+            theirs_b64: b64("package main\n\nfunc value() int {\n\treturn 3\n}\n"),
+        });
+
+        match response {
+            Response::Err { ok, error } => {
+                assert!(!ok);
+                assert_eq!(error.code, "merge_conflict");
+                assert_eq!(error.class.as_deref(), Some("semantic_conflict"));
+                assert_eq!(error.reason_code.as_deref(), Some("ast_overlap_conflict"));
+            }
+            Response::Ok { .. } => panic!("expected conflict response"),
+        }
+    }
+
+    #[test]
+    fn invalid_payload_includes_policy_class_and_reason() {
+        let response = dispatch(Request::MergeThreeWay {
+            language: crate::proto::MergeLanguage::Go,
+            base_b64: "%%%not-base64%%%".to_string(),
+            ours_b64: b64("package main\nfunc main() {}\n"),
+            theirs_b64: b64("package main\nfunc main() {}\n"),
+        });
+
+        match response {
+            Response::Err { ok, error } => {
+                assert!(!ok);
+                assert_eq!(error.code, "invalid_input");
+                assert_eq!(error.class.as_deref(), Some("policy_conflict"));
+                assert_eq!(error.reason_code.as_deref(), Some("invalid_payload_encoding"));
+            }
+            Response::Ok { .. } => panic!("expected invalid_input response"),
+        }
+    }
 }

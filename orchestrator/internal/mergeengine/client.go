@@ -23,8 +23,10 @@ const (
 
 // SidecarError is a structured error returned by cwso-merge-engine.
 type SidecarError struct {
-	Code    string
-	Message string
+	Code       string
+	Class      string
+	ReasonCode string
+	Message    string
 }
 
 func (e *SidecarError) Error() string {
@@ -53,8 +55,10 @@ type response struct {
 	OK     bool            `json:"ok"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Error  *struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
+		Code       string `json:"code"`
+		Class      string `json:"class,omitempty"`
+		ReasonCode string `json:"reason_code,omitempty"`
+		Message    string `json:"message"`
 	} `json:"error,omitempty"`
 }
 
@@ -98,7 +102,12 @@ func (c *Client) Call(op string, params any, out any) error {
 	}
 	if !resp.OK {
 		if resp.Error != nil {
-			return &SidecarError{Code: resp.Error.Code, Message: resp.Error.Message}
+			return &SidecarError{
+				Code:       resp.Error.Code,
+				Class:      resp.Error.Class,
+				ReasonCode: resp.Error.ReasonCode,
+				Message:    resp.Error.Message,
+			}
 		}
 		return errors.New("sidecar reported failure with no error body")
 	}

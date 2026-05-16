@@ -71,9 +71,16 @@ func TestCallSuccess(t *testing.T) {
 func TestCallSidecarError(t *testing.T) {
 	socket := startTestSidecar(t, func(req envelope) response {
 		return response{ID: req.ID, OK: false, Error: &struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		}{Code: "unimplemented_conflict", Message: "AST semantic overlap conflict"}}
+			Code       string `json:"code"`
+			Class      string `json:"class,omitempty"`
+			ReasonCode string `json:"reason_code,omitempty"`
+			Message    string `json:"message"`
+		}{
+			Code:       "merge_conflict",
+			Class:      "semantic_conflict",
+			ReasonCode: "ast_overlap_conflict",
+			Message:    "AST semantic overlap conflict",
+		}}
 	})
 
 	client := NewClient(socket)
@@ -85,8 +92,14 @@ func TestCallSidecarError(t *testing.T) {
 	if !errors.As(err, &sidecarErr) {
 		t.Fatalf("expected SidecarError, got %T (%v)", err, err)
 	}
-	if sidecarErr.Code != "unimplemented_conflict" {
+	if sidecarErr.Code != "merge_conflict" {
 		t.Fatalf("unexpected sidecar code: %q", sidecarErr.Code)
+	}
+	if sidecarErr.Class != "semantic_conflict" {
+		t.Fatalf("unexpected sidecar class: %q", sidecarErr.Class)
+	}
+	if sidecarErr.ReasonCode != "ast_overlap_conflict" {
+		t.Fatalf("unexpected reason code: %q", sidecarErr.ReasonCode)
 	}
 }
 
