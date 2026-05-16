@@ -2,7 +2,7 @@
 
 - Phase: **4 (Quality Follow-up)** · Owner: **backend-developer** · Priority: **P1**
 - Depends on: T050 · Blocks: none
-- Status: pending
+- Status: done
 
 ## Objective
 Add required CI test coverage for `cwso-merge-engine` unit tests so merge-engine classification and protocol regressions are caught in the test stage.

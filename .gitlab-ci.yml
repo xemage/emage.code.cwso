@@ -97,6 +97,7 @@ rust:test:
   script:
     - cd services
     - cargo test --release -p cwso-git-shadow
+    - cargo test --release -p cwso-merge-engine
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH
