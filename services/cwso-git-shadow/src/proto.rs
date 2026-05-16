@@ -55,7 +55,7 @@ pub enum Request {
     QueryAst {
         workspace_uuid: String,
         path: String,
-        query_type: String,    // find_definition | find_references | extract_signature | list_exports | detect_entrypoints
+        query_type: String, // find_definition | find_references | extract_signature | list_exports | detect_entrypoints
         target_symbol: String,
     },
 }
@@ -75,7 +75,10 @@ pub struct ErrorObj {
 
 impl Response {
     pub fn ok(value: serde_json::Value) -> Self {
-        Response::Ok { ok: true, result: value }
+        Response::Ok {
+            ok: true,
+            result: value,
+        }
     }
     pub fn error(code: &str, message: &str) -> Self {
         Response::Err {

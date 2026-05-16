@@ -89,7 +89,9 @@ impl ShadowStore {
         check_path(path)?;
         let oid = self.repo.lock().blob(content)?;
         let mut wss = self.workspaces.lock();
-        let ws = wss.get_mut(&id).ok_or_else(|| anyhow!("no such workspace"))?;
+        let ws = wss
+            .get_mut(&id)
+            .ok_or_else(|| anyhow!("no such workspace"))?;
         ws.files.insert(path.to_string(), oid);
         Ok(oid)
     }
@@ -163,8 +165,8 @@ impl ShadowStore {
         target: &str,
     ) -> Result<serde_json::Value> {
         let bytes = self.read_file(id, path)?;
-        let lang = ast::detect_language(path)
-            .ok_or_else(|| anyhow!("unsupported language for {path}"))?;
+        let lang =
+            ast::detect_language(path).ok_or_else(|| anyhow!("unsupported language for {path}"))?;
         ast::query(lang, &bytes, query_type, target)
     }
 
@@ -206,13 +208,20 @@ pub fn dispatch(store: &Arc<ShadowStore>, req: Request) -> Response {
             let id = Uuid::parse_str(&workspace_uuid)?;
             Ok(json!({ "dropped": store.drop_workspace(id) }))
         }
-        Request::WriteFile { workspace_uuid, path, content_b64 } => {
+        Request::WriteFile {
+            workspace_uuid,
+            path,
+            content_b64,
+        } => {
             let id = Uuid::parse_str(&workspace_uuid)?;
             let bytes = B64.decode(content_b64.as_bytes())?;
             let oid = store.write_file(id, &path, &bytes)?;
             Ok(json!({ "blob_oid": oid.to_string(), "size": bytes.len() }))
         }
-        Request::ReadFile { workspace_uuid, path } => {
+        Request::ReadFile {
+            workspace_uuid,
+            path,
+        } => {
             let id = Uuid::parse_str(&workspace_uuid)?;
             let bytes = store.read_file(id, &path)?;
             Ok(json!({ "content_b64": B64.encode(&bytes), "size": bytes.len() }))
@@ -221,7 +230,10 @@ pub fn dispatch(store: &Arc<ShadowStore>, req: Request) -> Response {
             let id = Uuid::parse_str(&workspace_uuid)?;
             Ok(json!({ "files": store.list_files(id)? }))
         }
-        Request::Commit { workspace_uuid, message } => {
+        Request::Commit {
+            workspace_uuid,
+            message,
+        } => {
             let id = Uuid::parse_str(&workspace_uuid)?;
             let (tree_oid, commit_oid) = store.commit(id, &message)?;
             Ok(json!({
@@ -229,7 +241,12 @@ pub fn dispatch(store: &Arc<ShadowStore>, req: Request) -> Response {
                 "commit_oid": commit_oid.to_string(),
             }))
         }
-        Request::QueryAst { workspace_uuid, path, query_type, target_symbol } => {
+        Request::QueryAst {
+            workspace_uuid,
+            path,
+            query_type,
+            target_symbol,
+        } => {
             let id = Uuid::parse_str(&workspace_uuid)?;
             store.query_ast(id, &path, &query_type, &target_symbol)
         }

@@ -24,7 +24,11 @@ pub fn detect_language(path: &str) -> Option<Lang> {
         Some(Lang::Python)
     } else if path.ends_with(".rs") {
         Some(Lang::Rust)
-    } else if path.ends_with(".ts") || path.ends_with(".tsx") || path.ends_with(".js") || path.ends_with(".jsx") {
+    } else if path.ends_with(".ts")
+        || path.ends_with(".tsx")
+        || path.ends_with(".js")
+        || path.ends_with(".jsx")
+    {
         Some(Lang::TypeScript)
     } else {
         None
@@ -82,12 +86,7 @@ fn name_field(lang: Lang) -> &'static str {
     }
 }
 
-pub fn query(
-    lang: Lang,
-    src: &[u8],
-    query_type: &str,
-    target: &str,
-) -> Result<serde_json::Value> {
+pub fn query(lang: Lang, src: &[u8], query_type: &str, target: &str) -> Result<serde_json::Value> {
     let mut parser = Parser::new();
     parser
         .set_language(&ts_language(lang))

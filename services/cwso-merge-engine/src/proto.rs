@@ -44,14 +44,8 @@ pub enum Request {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Response {
-    Ok {
-        ok: bool,
-        result: serde_json::Value,
-    },
-    Err {
-        ok: bool,
-        error: ErrorObj,
-    },
+    Ok { ok: bool, result: serde_json::Value },
+    Err { ok: bool, error: ErrorObj },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

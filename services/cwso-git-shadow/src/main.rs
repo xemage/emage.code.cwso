@@ -20,9 +20,9 @@ use std::thread;
 
 use anyhow::{Context, Result};
 
+mod ast;
 mod proto;
 mod repo;
-mod ast;
 
 use proto::{Envelope, Request, Response};
 use repo::ShadowStore;
@@ -55,8 +55,8 @@ fn main() -> Result<()> {
 
     // Best-effort cleanup of stale socket.
     let _ = std::fs::remove_file(&socket_path);
-    let listener = UnixListener::bind(&socket_path)
-        .with_context(|| format!("bind {socket_path:?}"))?;
+    let listener =
+        UnixListener::bind(&socket_path).with_context(|| format!("bind {socket_path:?}"))?;
     // POC-DEBT P2-5: socket perms are 0o666 because the orchestrator and the
     // sidecar run under different UIDs in their respective containers and the
     // socket is exposed only on a private compose-managed bind volume. T029

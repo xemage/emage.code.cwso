@@ -101,10 +101,9 @@ fn dispatch(request: Request) -> Response {
 
             match merge_three_way(language, &base, &ours, &theirs) {
                 Ok(merged) => Response::ok(json!({ "merged_b64": B64.encode(merged) })),
-                Err(MergeError::SemanticConflict) => Response::error(
-                    "unimplemented_conflict",
-                    "AST semantic overlap conflict",
-                ),
+                Err(MergeError::SemanticConflict) => {
+                    Response::error("unimplemented_conflict", "AST semantic overlap conflict")
+                }
             }
         }
     }

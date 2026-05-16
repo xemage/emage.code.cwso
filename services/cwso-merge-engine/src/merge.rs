@@ -235,7 +235,9 @@ fn resolve_base_decisions(
         let decision = match (ours, theirs) {
             (NodeState::Unchanged, NodeState::Unchanged) => MergeDecision::Keep(base.text.clone()),
             (NodeState::Modified(text), NodeState::Unchanged)
-            | (NodeState::Unchanged, NodeState::Modified(text)) => MergeDecision::Keep(text.clone()),
+            | (NodeState::Unchanged, NodeState::Modified(text)) => {
+                MergeDecision::Keep(text.clone())
+            }
             (NodeState::Deleted, NodeState::Unchanged)
             | (NodeState::Unchanged, NodeState::Deleted)
             | (NodeState::Deleted, NodeState::Deleted) => MergeDecision::Delete,
@@ -282,7 +284,10 @@ fn merge_insertions(
 
     let mut anchored: HashMap<Option<String>, Vec<InsertUnit>> = HashMap::new();
     for insert in combined.into_values() {
-        anchored.entry(insert.anchor.clone()).or_default().push(insert);
+        anchored
+            .entry(insert.anchor.clone())
+            .or_default()
+            .push(insert);
     }
 
     for values in anchored.values_mut() {
