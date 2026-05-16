@@ -337,6 +337,75 @@ func TestRateLimitMiddleware_SkipsGET(t *testing.T) {
 	}
 }
 
+func TestSecurityHeadersMiddleware_AppliesBaselineHeaders(t *testing.T) {
+	handler := securityHeadersMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if got := rr.Header().Get("Content-Security-Policy"); got != "default-src 'self'" {
+		t.Fatalf("expected Content-Security-Policy header, got %q", got)
+	}
+	if got := rr.Header().Get("Strict-Transport-Security"); got != "max-age=31536000; includeSubDomains" {
+		t.Fatalf("expected Strict-Transport-Security header, got %q", got)
+	}
+	if got := rr.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("expected X-Content-Type-Options header, got %q", got)
+	}
+	if got := rr.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Fatalf("expected X-Frame-Options header, got %q", got)
+	}
+	if got := rr.Header().Get("X-XSS-Protection"); got != "0" {
+		t.Fatalf("expected X-XSS-Protection header, got %q", got)
+	}
+	if got := rr.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("expected Cache-Control no-store for POST, got %q", got)
+	}
+}
+
+func TestHandlePOST_RejectsUnsupportedMediaType(t *testing.T) {
+	secret := "test-secret-32-bytes-minimum-padding-x"
+	cfg := &config.Config{
+		JWTSecret:      secret,
+		JWTAlg:         "HS256",
+		JWTIssuer:      "cwso",
+		JWTAudience:    "cwso-mcp",
+		AllowedOrigins: []string{"http://localhost"},
+	}
+	log := logging.New("debug")
+	businessHandler := func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
+		return []byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`), nil
+	}
+	handler := newHTTPHandler(context.Background(), cfg, log, eventbus.New(), nil, nil, businessHandler)
+
+	claims := &jwtClaims{
+		Role: "worker",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "alice",
+			Issuer:    "cwso",
+			Audience:  jwt.ClaimStrings{"cwso-mcp"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+		},
+	}
+	tok := makeJWT(secret, claims)
+
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Origin", "http://localhost")
+	req.Header.Set("Content-Type", "text/plain")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("expected 415 for unsupported media type, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func readSSEFrame(t *testing.T, r *bufio.Reader, timeout time.Duration) (event string, data string, heartbeat bool) {
 	t.Helper()
 	type result struct {

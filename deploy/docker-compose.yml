@@ -18,7 +18,7 @@ services:
       CWSO_TRANSPORT: "http"
       CWSO_HTTP_ADDR: ":8080"
       CWSO_LOG_LEVEL: "info"
-      CWSO_JWT_ALG: "HS256"  # Set to RS256 in production
+      CWSO_JWT_ALG: "HS256"  # RS256 is not supported in this build
       CWSO_JWT_ISSUER: "cwso"
       CWSO_JWT_AUDIENCE: "cwso-mcp"
       CWSO_ALLOWED_ORIGINS: "http://localhost,http://127.0.0.1,http://localhost:8080,http://docker:8080"
@@ -50,6 +50,9 @@ services:
       dockerfile: deploy/Dockerfile.git-shadow
     profiles: ["phase2"]
     container_name: cwso-git-shadow
+    environment:
+      CWSO_IPC_ALLOWED_UIDS: "0"
+      CWSO_IPC_ALLOWED_GIDS: "0"
     volumes:
       - cwso-runtime:/run/cwso
     tmpfs:
@@ -69,6 +72,8 @@ services:
     environment:
       CWSO_MERGE_ENGINE_SOCKET: "/run/cwso/merge-engine.sock"
       CWSO_GIT_SHADOW_SOCKET: "/run/cwso/git-shadow.sock"
+      CWSO_IPC_ALLOWED_UIDS: "0"
+      CWSO_IPC_ALLOWED_GIDS: "0"
     volumes:
       - cwso-runtime:/run/cwso
     read_only: true

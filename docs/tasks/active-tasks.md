@@ -27,10 +27,18 @@
 | T047 | merge_concurrent_results tool | backend-developer | done | P0 | T046 | 2026-05-16 |
 | T048 | Conflict matrix escalation | backend-developer | done | P1 | T047 | 2026-05-16 |
 | T049 | Phase 4 swarm e2e suite | qa-engineer | done | P0 | T048 | 2026-05-16 |
-| T050 | Phase 4 Tech Lead gate | tech-lead | pending | P0 | T049 | 2026-05-16 |
-| T051 | OWASP Top-10 security audit | security-engineer | pending | P0 | T050 | 2026-05-11 |
-| T052 | Release manager: changelog + v0.1.0 artifacts | release-manager | pending | P0 | T051 | 2026-05-11 |
-| T053 | Final checkpoint + budget variance | orchestrator | pending | P0 | T052 | 2026-05-11 |
+| T050 | Phase 4 Tech Lead gate | tech-lead | done (CONDITIONAL_PASS; conditions tracked in T054-T057) | P0 | T049 | 2026-05-16 |
+| T051 | OWASP Top-10 security audit | security-engineer | done (PASS after T058-T061 remediation) | P0 | T050, T058, T059, T060, T061 | 2026-05-16 |
+| T052 | Release manager: changelog + v0.1.0 artifacts | release-manager | done | P0 | T051 | 2026-05-16 |
+| T053 | Final checkpoint + budget variance | orchestrator | done | P0 | T052 | 2026-05-16 |
+| T054 | CI gate: merge-engine unit tests required | backend-developer | pending | P1 | T050 | 2026-05-16 |
+| T055 | Align merge_inputs schema/runtime contract | backend-developer | pending | P1 | T050 | 2026-05-16 |
+| T056 | ADR-006 node-level conflict detail reconciliation | solution-architect | pending | P1 | T050 | 2026-05-16 |
+| T057 | E2E policy path for sidecar reason mapping | qa-engineer | pending | P1 | T050 | 2026-05-16 |
+| T058 | Harden sidecar socket permissions and peer auth | backend-developer | done | P0 | T051 | 2026-05-16 |
+| T059 | Add baseline HTTP security headers | backend-developer | done | P0 | T051 | 2026-05-16 |
+| T060 | Enforce POST /mcp Content-Type | backend-developer | done | P0 | T051 | 2026-05-16 |
+| T061 | Clarify/implement RS256 support path | backend-developer | done | P1 | T051 | 2026-05-16 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled` · `partial` · `deferred`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)

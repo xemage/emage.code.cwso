@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"strings"
@@ -135,6 +136,13 @@ func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger, pub
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
 ) {
 	const maxBody = 8 << 20
+	contentType := r.Header.Get("Content-Type")
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil || mediaType != "application/json" {
+		http.Error(w, "unsupported media type", http.StatusUnsupportedMediaType)
+		return
+	}
+
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
 	if err != nil {
 		log.Warn().Err(err).Str("handler", "POST /mcp").Msg("failed to read request body")
@@ -356,8 +364,11 @@ func chain(mws ...middleware) middleware {
 func securityHeadersMiddleware() middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Security-Policy", "default-src 'self'")
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("X-Frame-Options", "DENY")
+			w.Header().Set("X-XSS-Protection", "0")
 			if r.Method == http.MethodPost {
 				w.Header().Set("Cache-Control", "no-store")
 			}
@@ -556,7 +567,7 @@ func rateLimitMiddleware(store *rateLimiterStore, log *logging.Logger) middlewar
 
 // --- JWT verification using github.com/golang-jwt/jwt/v5 (T029 remediation) ---
 //
-// Supports both HS256 (dev) and RS256 (prod) selected by CWSO_JWT_ALG.
+// Supports HS256 selected by CWSO_JWT_ALG.
 // Validates iss, aud, nbf, exp with 60s leeway.
 
 type jwtClaims struct {
@@ -607,15 +618,6 @@ func verifyJWT(tokenString string, cfg *config.Config, log *logging.Logger) (*jw
 				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
 			return []byte(cfg.JWTSecret), nil
-		}
-	case "RS256":
-		keyFunc = func(token *jwt.Token) (interface{}, error) {
-			if token.Method.Alg() != "RS256" {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
-			// For RS256, would load public key from JWKSPath or JWKS endpoint
-			// POC-DEBT: RS256 key loading deferred to T029 Phase 2
-			return nil, errors.New("RS256 not yet implemented")
 		}
 	default:
 		return nil, fmt.Errorf("unsupported algorithm: %s", cfg.JWTAlg)

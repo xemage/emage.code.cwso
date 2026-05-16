@@ -14,8 +14,8 @@ type Config struct {
 	Transport                 string   // "stdio" | "http"
 	HTTPAddr                  string   // ":8080"
 	LogLevel                  string   // "debug" | "info" | "warn" | "error"
-	JWTSecret                 string   // HS256 dev key; RS256 key loaded from JWKS path (prod)
-	JWTAlg                    string   // "HS256" (dev) | "RS256" (prod)
+	JWTSecret                 string   // HS256 signing key
+	JWTAlg                    string   // "HS256" (only supported algorithm in current build)
 	JWTIssuer                 string   // "iss" claim validation
 	JWTAudience               string   // "aud" claim validation
 	JWKSPath                  string   // path to RS256 public key file (prod)
@@ -64,7 +64,7 @@ func Load(_ string) (*Config, error) {
 		HTTPAddr:                  envOr("CWSO_HTTP_ADDR", ":8080"),
 		LogLevel:                  envOr("CWSO_LOG_LEVEL", "info"),
 		JWTSecret:                 jwtSecret,
-		JWTAlg:                    envOr("CWSO_JWT_ALG", "HS256"), // HS256 for dev, RS256 for prod
+		JWTAlg:                    envOr("CWSO_JWT_ALG", "HS256"),
 		JWTIssuer:                 envOr("CWSO_JWT_ISSUER", "cwso"),
 		JWTAudience:               envOr("CWSO_JWT_AUDIENCE", "cwso-mcp"),
 		JWKSPath:                  os.Getenv("CWSO_JWKS_PATH"),
@@ -102,8 +102,8 @@ func Load(_ string) (*Config, error) {
 	if c.Transport != "stdio" && c.Transport != "http" {
 		return nil, fmt.Errorf("invalid transport %q", c.Transport)
 	}
-	if c.JWTAlg != "HS256" && c.JWTAlg != "RS256" {
-		return nil, fmt.Errorf("invalid JWT algorithm %q (must be HS256 or RS256)", c.JWTAlg)
+	if c.JWTAlg != "HS256" {
+		return nil, fmt.Errorf("invalid JWT algorithm %q (must be HS256 in current build)", c.JWTAlg)
 	}
 	if c.JobWorkers <= 0 {
 		return nil, fmt.Errorf("CWSO_JOB_WORKERS must be > 0")

@@ -112,3 +112,12 @@ func TestLoadMergeEngineSocketFromEnv(t *testing.T) {
 		t.Fatalf("expected merge engine socket, got %q", c.MergeEngineSocket)
 	}
 }
+
+func TestLoadRejectsRS256InCurrentBuild(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_JWT_ALG", "RS256")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected RS256 to be rejected in current build")
+	}
+}

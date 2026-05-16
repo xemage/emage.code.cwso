@@ -15,6 +15,7 @@ thiserror = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 base64 = "0.22"
 parking_lot = "0.12"
+libc = "0.2"
 # Tree-sitter runtime + Phase-2 grammars (Go, Python).
 # POC-DEBT P2-3: Rust + TypeScript grammars added in T029.
 tree-sitter = "0.22"
