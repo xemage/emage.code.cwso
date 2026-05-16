@@ -51,8 +51,8 @@ services:
     profiles: ["phase2"]
     container_name: cwso-git-shadow
     environment:
-      CWSO_IPC_ALLOWED_UIDS: "0"
-      CWSO_IPC_ALLOWED_GIDS: "0"
+      CWSO_IPC_ALLOWED_UIDS: "0,100"
+      CWSO_IPC_ALLOWED_GIDS: "0,100"
     volumes:
       - cwso-runtime:/run/cwso
     tmpfs:
@@ -72,8 +72,8 @@ services:
     environment:
       CWSO_MERGE_ENGINE_SOCKET: "/run/cwso/merge-engine.sock"
       CWSO_GIT_SHADOW_SOCKET: "/run/cwso/git-shadow.sock"
-      CWSO_IPC_ALLOWED_UIDS: "0"
-      CWSO_IPC_ALLOWED_GIDS: "0"
+      CWSO_IPC_ALLOWED_UIDS: "0,100"
+      CWSO_IPC_ALLOWED_GIDS: "0,100"
     volumes:
       - cwso-runtime:/run/cwso
     read_only: true

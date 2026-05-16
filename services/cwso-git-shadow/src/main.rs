@@ -85,7 +85,11 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn handle_client(mut stream: UnixStream, store: Arc<ShadowStore>, authz_policy: &IpcAuthzPolicy) -> Result<()> {
+fn handle_client(
+    mut stream: UnixStream,
+    store: Arc<ShadowStore>,
+    authz_policy: &IpcAuthzPolicy,
+) -> Result<()> {
     if !authorize_stream(&stream, authz_policy)? {
         tracing::warn!("rejected unauthorized git-shadow IPC peer");
         return Ok(());
@@ -258,6 +262,9 @@ mod tests {
         let policy = IpcAuthzPolicy::from_allowed(&[u32::MAX], &[u32::MAX]);
         let authorized = authorize_stream(&server, &policy).expect("authorize stream");
 
-        assert!(!authorized, "peer must be rejected when UID/GID is not allowlisted");
+        assert!(
+            !authorized,
+            "peer must be rejected when UID/GID is not allowlisted"
+        );
     }
 }

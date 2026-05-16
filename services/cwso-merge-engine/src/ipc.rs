@@ -177,8 +177,10 @@ impl IpcAuthzPolicy {
         let default_uid = unsafe { libc::geteuid() };
         let default_gid = unsafe { libc::getegid() };
 
-        let uid_csv = std::env::var("CWSO_IPC_ALLOWED_UIDS").unwrap_or_else(|_| default_uid.to_string());
-        let gid_csv = std::env::var("CWSO_IPC_ALLOWED_GIDS").unwrap_or_else(|_| default_gid.to_string());
+        let uid_csv =
+            std::env::var("CWSO_IPC_ALLOWED_UIDS").unwrap_or_else(|_| default_uid.to_string());
+        let gid_csv =
+            std::env::var("CWSO_IPC_ALLOWED_GIDS").unwrap_or_else(|_| default_gid.to_string());
 
         Ok(Self {
             allowed_uids: parse_id_csv("CWSO_IPC_ALLOWED_UIDS", &uid_csv)?,
@@ -322,6 +324,9 @@ mod tests {
         let policy = IpcAuthzPolicy::from_allowed(&[u32::MAX], &[u32::MAX]);
         let authorized = authorize_stream(&server, &policy).expect("authorize stream");
 
-        assert!(!authorized, "peer must be rejected when UID/GID is not allowlisted");
+        assert!(
+            !authorized,
+            "peer must be rejected when UID/GID is not allowlisted"
+        );
     }
 }
