@@ -108,14 +108,12 @@ fn dispatch(request: Request) -> Response {
 
             match merge_three_way(language, &base, &ours, &theirs) {
                 Ok(merged) => Response::ok(json!({ "merged_b64": B64.encode(merged) })),
-                Err(MergeError::SemanticConflict) => {
-                    Response::error_with_meta(
-                        "merge_conflict",
-                        Some("semantic_conflict"),
-                        Some("ast_overlap_conflict"),
-                        "AST semantic overlap conflict",
-                    )
-                }
+                Err(MergeError::SemanticConflict) => Response::error_with_meta(
+                    "merge_conflict",
+                    Some("semantic_conflict"),
+                    Some("ast_overlap_conflict"),
+                    "AST semantic overlap conflict",
+                ),
             }
         }
     }
@@ -193,7 +191,10 @@ mod tests {
                 assert!(!ok);
                 assert_eq!(error.code, "invalid_input");
                 assert_eq!(error.class.as_deref(), Some("policy_conflict"));
-                assert_eq!(error.reason_code.as_deref(), Some("invalid_payload_encoding"));
+                assert_eq!(
+                    error.reason_code.as_deref(),
+                    Some("invalid_payload_encoding")
+                );
             }
             Response::Ok { .. } => panic!("expected invalid_input response"),
         }
