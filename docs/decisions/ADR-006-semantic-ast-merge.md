@@ -21,3 +21,21 @@ Heuristics: `ast_semantic_only` (default), `prefer_theirs`, `prefer_ours`, `fail
 - (+) Conflict matrix gives the orchestrator LLM precise, actionable context.
 - (−) Per-language semantic rules require maintenance — gated by per-language test corpus before enabling auto-merge for that language.
 - (−) Some edits (e.g., trailing whitespace) bypass AST and are reconciled by a textual post-pass.
+
+## Addendum (2026-05-17) — Node-level conflict payload staging
+
+### Context
+The current `merge_concurrent_results` tool contract surfaces normalized conflict metadata (`status`, `reason_code`, `escalation_class`, `escalation_action`) and does not yet expose AST node identifiers or node-level conflict coordinates in the outward payload.
+
+### Decision
+Node-level conflict payload detail is **explicitly deferred** for the current release line. For v0.1.x readiness, the conflict matrix contract is satisfied by stable class/reason semantics; node-level identifiers remain an internal merge-engine concern until a versioned payload extension is introduced.
+
+### Scope boundary
+- In scope now: deterministic conflict classification and escalation mapping at tool boundary.
+- Deferred: node IDs, per-node ranges, and structured AST collision bundles in the tool response payload.
+
+### Follow-up implementation target
+Introduce a versioned payload extension in a follow-up architecture/implementation task that adds optional node-level fields while preserving backward compatibility for current clients.
+
+### Rationale
+This keeps the release contract stable, avoids late-breaking API surface expansion, and preserves a clean migration path to richer conflict diagnostics without regressing existing orchestrator behavior.

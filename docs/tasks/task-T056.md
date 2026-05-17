@@ -2,7 +2,7 @@
 
 - Phase: **4 (Architecture Follow-up)** · Owner: **solution-architect** · Priority: **P1**
 - Depends on: T050 · Blocks: none
-- Status: pending
+- Status: done
 
 ## Objective
 Reconcile current conflict-matrix implementation with ADR-006 expectation for node-level conflict detail payloads, by either defining an approved staged deferral or specifying implementation changes.
