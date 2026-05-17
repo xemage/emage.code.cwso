@@ -3,7 +3,7 @@
 | ID | Title | Owner | Status | Priority | Depends on | Last update |
 |----|-------|-------|--------|----------|-----------|-------------|
 | T021 | OverlayFS bind-mount layer | backend-developer | deferred → Phase 4 (POC-DEBT P2-1) | P0 | T020 | 2026-05-11 |
-| T023 | Tree-sitter integration | backend-developer | partial — Go+Python only (POC-DEBT P2-3 → T029) | P0 | T020 | 2026-05-11 |
+| T023 | Tree-sitter integration | backend-developer | done (Rust+TypeScript completed via T029; 4-language support active) | P0 | T020 | 2026-05-17 |
 | T024 | query_ast tool + Unified Symbol Protocol | backend-developer | partial — query_ast wired; USP deferred to T029 | P0 | T023 | 2026-05-11 |
 | T025 | Merkle-hash incremental indexer | backend-developer | deferred → T029 (POC-DEBT P2-2) | P1 | T024 | 2026-05-11 |
 | T028a | Go unit tests for shadow client + shadow_tools | backend-developer | done | P0 | T028 | 2026-05-12 |

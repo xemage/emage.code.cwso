@@ -305,4 +305,20 @@ mod tests {
         let hits = res["hits"].as_array().unwrap();
         assert_eq!(hits.len(), 1);
     }
+
+    #[test]
+    fn rust_find_definition() {
+        let src = b"fn helper() {}\nfn main() {}\n";
+        let res = query(Lang::Rust, src, "find_definition", "main").unwrap();
+        let hits = res["hits"].as_array().unwrap();
+        assert_eq!(hits.len(), 1);
+    }
+
+    #[test]
+    fn typescript_find_definition() {
+        let src = b"export function greet(name: string): string { return `hi ${name}`; }\n";
+        let res = query(Lang::TypeScript, src, "find_definition", "greet").unwrap();
+        let hits = res["hits"].as_array().unwrap();
+        assert_eq!(hits.len(), 1);
+    }
 }

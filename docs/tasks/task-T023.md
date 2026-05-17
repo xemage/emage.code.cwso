@@ -2,7 +2,7 @@
 
 - Phase: **2 (PoC)** · Owner: **backend-developer (Go)** · Priority: **P0**
 - Depends on: T020 · Blocks: T024, T025
-- Status: pending
+- Status: done (Rust+TypeScript completed via T029; 4-language support active)
 
 ## Objective
 Embed the Tree-sitter runtime in the Go orchestrator to parse source files into ASTs across the four Phase-2 target languages: **Go, Rust, Python, TypeScript**. Provide a small, internal `ast` package that owns grammar selection, file→tree caching, and a normalized node iterator suitable for the `query_ast` tool to be built in T024.

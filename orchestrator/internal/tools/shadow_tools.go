@@ -332,7 +332,7 @@ func (t *QueryAST) Name() string { return "query_ast" }
 
 // Description returns the human-readable description.
 func (t *QueryAST) Description() string {
-	return "Run a tree-sitter AST query against a file in a shadow workspace. Phase-2 PoC supports Go and Python."
+	return "Run a tree-sitter AST query against a file in a shadow workspace. Supports Go, Python, Rust, and TypeScript."
 }
 
 // InputSchema returns the JSON schema for arguments.
