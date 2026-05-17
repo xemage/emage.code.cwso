@@ -2,7 +2,7 @@
 
 - Phase: **4 (Quality Follow-up)** · Owner: **qa-engineer** · Priority: **P1**
 - Depends on: T050 · Blocks: none
-- Status: pending
+- Status: done
 
 ## Objective
 Add one deterministic e2e scenario that exercises sidecar-origin policy conflict metadata path and validates orchestrator reason-code mapping from merge-engine responses.

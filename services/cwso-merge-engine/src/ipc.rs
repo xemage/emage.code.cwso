@@ -117,6 +117,15 @@ fn dispatch(request: Request) -> Response {
                 }
             };
 
+            if base.is_empty() || ours.is_empty() || theirs.is_empty() {
+                return Response::error_with_meta(
+                    "invalid_input",
+                    Some("policy_conflict"),
+                    Some("empty_merge_input"),
+                    "merge inputs must be non-empty",
+                );
+            }
+
             match merge_three_way(language, &base, &ours, &theirs) {
                 Ok(merged) => Response::ok(json!({ "merged_b64": B64.encode(merged) })),
                 Err(MergeError::SemanticConflict) => Response::error_with_meta(
@@ -310,6 +319,26 @@ mod tests {
                     error.reason_code.as_deref(),
                     Some("invalid_payload_encoding")
                 );
+            }
+            Response::Ok { .. } => panic!("expected invalid_input response"),
+        }
+    }
+
+    #[test]
+    fn empty_payload_includes_policy_class_and_reason() {
+        let response = dispatch(Request::MergeThreeWay {
+            language: crate::proto::MergeLanguage::Go,
+            base_b64: b64(""),
+            ours_b64: b64("package main\nfunc main() {}\n"),
+            theirs_b64: b64("package main\nfunc main() {}\n"),
+        });
+
+        match response {
+            Response::Err { ok, error } => {
+                assert!(!ok);
+                assert_eq!(error.code, "invalid_input");
+                assert_eq!(error.class.as_deref(), Some("policy_conflict"));
+                assert_eq!(error.reason_code.as_deref(), Some("empty_merge_input"));
             }
             Response::Ok { .. } => panic!("expected invalid_input response"),
         }

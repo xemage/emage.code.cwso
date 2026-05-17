@@ -249,9 +249,9 @@ def run_phase4_conflict_matrix() -> None:
     policy = call_tool("orchestrator", "merge_concurrent_results", {
         **merge_args,
         "merge_inputs": [{
-            "path": "",
+            "path": "policy.py",
             "language": "python",
-            "base_content": "def f():\n    return 1\n",
+            "base_content": "",
             "ours_content": "def f():\n    return 2\n",
             "theirs_content": "def f():\n    return 3\n",
         }],
@@ -263,7 +263,7 @@ def run_phase4_conflict_matrix() -> None:
         label="policy conflict",
         expected_outcome="error",
         expected_status="error",
-        expected_reason="invalid_input",
+        expected_reason="empty_merge_input",
         expected_class="policy_conflict",
         expected_action="fix_input_and_retry",
     )

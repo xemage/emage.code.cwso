@@ -34,7 +34,7 @@
 | T054 | CI gate: merge-engine unit tests required | backend-developer | done | P1 | T050 | 2026-05-16 |
 | T055 | Align merge_inputs schema/runtime contract | backend-developer | done | P1 | T050 | 2026-05-17 |
 | T056 | ADR-006 node-level conflict detail reconciliation | solution-architect | done | P1 | T050 | 2026-05-17 |
-| T057 | E2E policy path for sidecar reason mapping | qa-engineer | pending | P1 | T050 | 2026-05-16 |
+| T057 | E2E policy path for sidecar reason mapping | qa-engineer | done | P1 | T050 | 2026-05-17 |
 | T058 | Harden sidecar socket permissions and peer auth | backend-developer | done | P0 | T051 | 2026-05-16 |
 | T059 | Add baseline HTTP security headers | backend-developer | done | P0 | T051 | 2026-05-16 |
 | T060 | Enforce POST /mcp Content-Type | backend-developer | done | P0 | T051 | 2026-05-16 |
