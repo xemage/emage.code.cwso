@@ -301,6 +301,35 @@ func TestMergeConcurrentResultsRequiresMergeInputs(t *testing.T) {
 	}
 }
 
+func TestMergeConcurrentResultsSchemaRequiresMergeInputs(t *testing.T) {
+	tool := NewMergeConcurrentResults(mergeengine.NewClient(t.TempDir() + "/unused.sock"))
+	schema := tool.InputSchema()
+	requiredRaw, ok := schema["required"]
+	if !ok {
+		t.Fatalf("schema missing required field list: %+v", schema)
+	}
+
+	required, ok := requiredRaw.([]string)
+	if !ok {
+		t.Fatalf("schema required field list has unexpected type: %T", requiredRaw)
+	}
+
+	hasWorkspace := false
+	hasMergeInputs := false
+	for _, field := range required {
+		if field == "source_workspace_uuids" {
+			hasWorkspace = true
+		}
+		if field == "merge_inputs" {
+			hasMergeInputs = true
+		}
+	}
+
+	if !hasWorkspace || !hasMergeInputs {
+		t.Fatalf("schema required fields mismatch: %+v", required)
+	}
+}
+
 func decodeMergeResult(t *testing.T, res *mcp.ToolCallResult) mergeConcurrentOutput {
 	t.Helper()
 	if len(res.Content) != 1 {

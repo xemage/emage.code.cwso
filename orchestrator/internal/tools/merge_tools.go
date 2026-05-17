@@ -67,7 +67,7 @@ func (t *MergeConcurrentResults) InputSchema() map[string]any {
 				},
 			},
 		},
-		"required":             []string{"source_workspace_uuids"},
+		"required":             []string{"source_workspace_uuids", "merge_inputs"},
 		"additionalProperties": false,
 	}
 }

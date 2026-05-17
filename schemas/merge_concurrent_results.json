@@ -35,6 +35,6 @@
       }
     }
   },
-  "required": ["source_workspace_uuids"],
+  "required": ["source_workspace_uuids", "merge_inputs"],
   "additionalProperties": false
 }

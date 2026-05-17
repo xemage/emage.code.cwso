@@ -2,7 +2,7 @@
 
 - Phase: **4 (Quality Follow-up)** · Owner: **backend-developer** · Priority: **P1**
 - Depends on: T050 · Blocks: none
-- Status: pending
+- Status: done
 
 ## Objective
 Resolve mismatch between tool JSON schema and runtime validation for `merge_concurrent_results` input requirements, ensuring schema-valid requests do not fail unexpectedly at runtime.
