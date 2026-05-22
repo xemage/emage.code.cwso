@@ -44,6 +44,26 @@ type Config struct {
 	SandboxRequireVh          bool     // require vhost-net device for firecracker execution
 	SandboxDegradedMode       bool     // true when Firecracker is unavailable (KVM absent); routes FC workloads to gVisor
 	SandboxAllowDockerTrusted bool     // permit docker-trusted tier in router mode (internal orchestrator use only)
+	HHDCapabilityRegistry     bool     // enable hardware-dispatch capability registry and snapshot telemetry
+	HHDDecisionTelemetry      bool     // enable dispatch decision telemetry emission
+	HHDEventMonitorEnabled    bool     // enable event-driven anomaly monitor from dispatch decisions
+	HHDEventMonitorEBPF       bool     // prefer eBPF signal path when capabilities permit (falls back automatically)
+	HHDEventMonitorLatencyMS  int      // anomaly threshold for actual latency in milliseconds
+	HHDSnapshotTTLSeconds     int      // stale capability threshold for policy-facing snapshots
+	HHDPolicyEngineV2         bool     // enable policy engine v2 backend selection and fallback
+	HHDPolicyMinConfidence    float64  // minimum confidence before forcing baseline path
+	HHDPolicyMaxQueueDepth    int      // queue depth normalization denominator for policy scoring
+	HHDWeightHealth           float64  // policy weight for health signal
+	HHDWeightReliability      float64  // policy weight for reliability signal
+	HHDWeightCost             float64  // policy weight for cost signal
+	HHDWeightLatency          float64  // policy weight for latency signal
+	HHDWeightQueueDepth       float64  // policy weight for queue-depth signal
+	HHDWeightWorkload         float64  // policy weight for workload compatibility signal
+	HHDWasmScoringEnabled     bool     // enable wasm scoring adjustment plugin in policy engine v2
+	HHDWasmScoringModulePath  string   // filesystem path to wasm scoring module
+	HHDWasmScoringTimeoutMS   int      // per-call timeout budget for wasm score adjustments
+	HHDWasmScoringMemoryPages uint32   // max wasm memory pages for scoring module runtime
+	HHDWasmScoringHostCalls   []string // deny-by-default host-call allowlist for wasm runtime
 }
 
 // Load reads configuration, applying env-var overrides over defaults.
@@ -93,6 +113,26 @@ func Load(_ string) (*Config, error) {
 		SandboxRequireVh:          envBool("CWSO_FIRECRACKER_REQUIRE_VHOST_NET", true),
 		SandboxDegradedMode:       envBool("CWSO_SANDBOX_DEGRADED_MODE", false),
 		SandboxAllowDockerTrusted: envBool("CWSO_SANDBOX_ALLOW_DOCKER_TRUSTED", false),
+		HHDCapabilityRegistry:     envBool("CWSO_HHD_CAPABILITY_REGISTRY_ENABLED", false),
+		HHDDecisionTelemetry:      envBool("CWSO_HHD_DECISION_TELEMETRY_ENABLED", false),
+		HHDEventMonitorEnabled:    envBool("CWSO_HHD_EVENT_MONITOR_ENABLED", false),
+		HHDEventMonitorEBPF:       envBool("CWSO_HHD_EVENT_MONITOR_EBPF_ENABLED", false),
+		HHDEventMonitorLatencyMS:  envInt("CWSO_HHD_EVENT_MONITOR_LATENCY_THRESHOLD_MS", 1200),
+		HHDSnapshotTTLSeconds:     envInt("CWSO_HHD_CAPABILITY_SNAPSHOT_TTL_SECONDS", 30),
+		HHDPolicyEngineV2:         envBool("CWSO_HHD_POLICY_ENGINE_V2_ENABLED", false),
+		HHDPolicyMinConfidence:    envFloat64("CWSO_HHD_POLICY_MIN_CONFIDENCE", 0.5),
+		HHDPolicyMaxQueueDepth:    envInt("CWSO_HHD_POLICY_MAX_QUEUE_DEPTH", 32),
+		HHDWeightHealth:           envFloat64("CWSO_HHD_POLICY_WEIGHT_HEALTH", 0.35),
+		HHDWeightReliability:      envFloat64("CWSO_HHD_POLICY_WEIGHT_RELIABILITY", 0.25),
+		HHDWeightCost:             envFloat64("CWSO_HHD_POLICY_WEIGHT_COST", 0.10),
+		HHDWeightLatency:          envFloat64("CWSO_HHD_POLICY_WEIGHT_LATENCY", 0.10),
+		HHDWeightQueueDepth:       envFloat64("CWSO_HHD_POLICY_WEIGHT_QUEUE_DEPTH", 0.10),
+		HHDWeightWorkload:         envFloat64("CWSO_HHD_POLICY_WEIGHT_WORKLOAD", 0.10),
+		HHDWasmScoringEnabled:     envBool("CWSO_HHD_WASM_SCORING_ENABLED", false),
+		HHDWasmScoringModulePath:  os.Getenv("CWSO_HHD_WASM_SCORING_MODULE_PATH"),
+		HHDWasmScoringTimeoutMS:   envInt("CWSO_HHD_WASM_SCORING_TIMEOUT_MS", 20),
+		HHDWasmScoringMemoryPages: uint32(envInt("CWSO_HHD_WASM_SCORING_MEMORY_LIMIT_PAGES", 64)),
+		HHDWasmScoringHostCalls:   splitCSV(os.Getenv("CWSO_HHD_WASM_SCORING_HOST_CALL_ALLOWLIST")),
 	}
 
 	if c.Transport == "http" && c.JWTSecret == "" {
@@ -110,6 +150,45 @@ func Load(_ string) (*Config, error) {
 	}
 	if c.JobQueueSize <= 0 {
 		return nil, fmt.Errorf("CWSO_JOB_QUEUE_SIZE must be > 0")
+	}
+	if c.HHDSnapshotTTLSeconds <= 0 {
+		return nil, fmt.Errorf("CWSO_HHD_CAPABILITY_SNAPSHOT_TTL_SECONDS must be > 0")
+	}
+	if c.HHDEventMonitorLatencyMS <= 0 {
+		return nil, fmt.Errorf("CWSO_HHD_EVENT_MONITOR_LATENCY_THRESHOLD_MS must be > 0")
+	}
+	if c.HHDPolicyMinConfidence < 0 || c.HHDPolicyMinConfidence > 1 {
+		return nil, fmt.Errorf("CWSO_HHD_POLICY_MIN_CONFIDENCE must be between 0 and 1")
+	}
+	if c.HHDPolicyMaxQueueDepth <= 0 {
+		return nil, fmt.Errorf("CWSO_HHD_POLICY_MAX_QUEUE_DEPTH must be > 0")
+	}
+	weights := []float64{
+		c.HHDWeightHealth,
+		c.HHDWeightReliability,
+		c.HHDWeightCost,
+		c.HHDWeightLatency,
+		c.HHDWeightQueueDepth,
+		c.HHDWeightWorkload,
+	}
+	total := 0.0
+	for _, weight := range weights {
+		if weight < 0 {
+			return nil, fmt.Errorf("CWSO_HHD_POLICY_WEIGHT_* values must be >= 0")
+		}
+		total += weight
+	}
+	if total <= 0 {
+		return nil, fmt.Errorf("CWSO_HHD_POLICY_WEIGHT_* values must sum to > 0")
+	}
+	if c.HHDWasmScoringTimeoutMS <= 0 {
+		return nil, fmt.Errorf("CWSO_HHD_WASM_SCORING_TIMEOUT_MS must be > 0")
+	}
+	if c.HHDWasmScoringMemoryPages == 0 {
+		return nil, fmt.Errorf("CWSO_HHD_WASM_SCORING_MEMORY_LIMIT_PAGES must be > 0")
+	}
+	if c.HHDWasmScoringEnabled && strings.TrimSpace(c.HHDWasmScoringModulePath) == "" {
+		return nil, fmt.Errorf("CWSO_HHD_WASM_SCORING_MODULE_PATH must be set when CWSO_HHD_WASM_SCORING_ENABLED=true")
 	}
 	if c.SandboxRunner != "none" && c.SandboxRunner != "docker" && c.SandboxRunner != "gvisor" && c.SandboxRunner != "firecracker" && c.SandboxRunner != "router" {
 		return nil, fmt.Errorf("CWSO_SANDBOX_RUNNER must be one of: none, docker, gvisor, firecracker, router")
@@ -173,6 +252,15 @@ func envInt(key string, def int) int {
 func envInt64(key string, def int64) int64 {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
+func envFloat64(key string, def float64) float64 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseFloat(v, 64); err == nil {
 			return n
 		}
 	}

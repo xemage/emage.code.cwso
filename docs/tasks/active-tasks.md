@@ -39,6 +39,17 @@
 | T059 | Add baseline HTTP security headers | backend-developer | done | P0 | T051 | 2026-05-16 |
 | T060 | Enforce POST /mcp Content-Type | backend-developer | done | P0 | T051 | 2026-05-16 |
 | T061 | Clarify/implement RS256 support path | backend-developer | done | P1 | T051 | 2026-05-16 |
+| T062 | Phase 5 hardware-aware requirements and benchmarks | product-owner | done | P0 | — | 2026-05-22 |
+| T063 | Hardware dispatch architecture and provider contracts | solution-architect | done | P0 | T062 | 2026-05-22 |
+| T064 | Capability discovery and telemetry fabric | backend-developer | done | P0 | T063 | 2026-05-22 |
+| T065 | Dispatch policy engine v2 | backend-developer | done | P0 | T063, T064 | 2026-05-22 |
+| T066 | Wasm micro-agent runtime integration | backend-developer | done | P1 | T065 | 2026-05-22 |
+| T067 | Sparse and quantized assist spike | backend-developer | pending | P1 | T065 | 2026-05-22 |
+| T068 | SSM sequence-assist spike | backend-developer | pending | P1 | T065 | 2026-05-22 |
+| T069 | Event-driven monitoring spike (eBPF + fallback) | backend-developer | done | P1 | T064 | 2026-05-22 |
+| T070 | Phase 5 integration and reliability QA | qa-engineer | pending | P0 | T066, T067, T068, T069 | 2026-05-22 |
+| T071 | Phase 5 security gate and hardening | security-engineer | pending | P0 | T070 | 2026-05-22 |
+| T072 | Phase 5 documentation and release readiness | technical-writer | pending | P1 | T071 | 2026-05-22 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled` · `partial` · `deferred`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)

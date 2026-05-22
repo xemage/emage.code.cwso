@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/emage/cwso/orchestrator/internal/config"
+	"github.com/emage/cwso/orchestrator/internal/dispatch"
 	"github.com/emage/cwso/orchestrator/internal/eventbus"
 	"github.com/emage/cwso/orchestrator/internal/jobs"
 	"github.com/emage/cwso/orchestrator/internal/logging"
@@ -35,6 +36,8 @@ type Server struct {
 	publisher *memorybroker.TeePublisher
 	jobs      *jobs.Manager
 	runner    sandbox.RunnerInterface
+	caps      *dispatch.CapabilityRegistry
+	emitter   *dispatch.DecisionEmitter
 }
 
 // New constructs and initializes a Server with all Phase 1 tools registered.
@@ -204,7 +207,41 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 			Msg("sandbox tier-router enabled")
 	}
 
-	s := &Server{cfg: cfg, log: log, registry: tools.NewRegistry(), bus: bus, memory: broker, publisher: publisher, jobs: jobMgr, runner: baselineRunner}
+	var capRegistry *dispatch.CapabilityRegistry
+	var telemetryEmitter *dispatch.DecisionEmitter
+	if cfg.HHDCapabilityRegistry {
+		capRegistry = dispatch.NewCapabilityRegistry(time.Duration(cfg.HHDSnapshotTTLSeconds) * time.Second)
+		if err := capRegistry.Upsert(dispatch.ProviderCapability{
+			ProviderID:            "cpu-baseline",
+			ContractVersion:       "dispatch.provider/v1.0",
+			HealthState:           dispatch.HealthHealthy,
+			LatencyClass:          "baseline",
+			CostClass:             "low",
+			QueueDepth:            0,
+			SupportedWorkloadTags: []string{"default"},
+			ReliabilityClass:      "standard",
+			FeatureFlags:          []string{},
+		}); err != nil {
+			jobMgr.Close()
+			broker.Close()
+			return nil, fmt.Errorf("seed capability registry: %w", err)
+		}
+	}
+	if cfg.HHDDecisionTelemetry {
+		var anomalyMonitor *dispatch.DecisionAnomalyMonitor
+		if cfg.HHDEventMonitorEnabled {
+			anomalyMonitor = dispatch.NewDecisionAnomalyMonitor(publisher, dispatch.DecisionAnomalyMonitorConfig{
+				PreferEBPF:         cfg.HHDEventMonitorEBPF,
+				LatencyThresholdMS: cfg.HHDEventMonitorLatencyMS,
+			})
+		}
+		telemetryEmitter = dispatch.NewDecisionEmitterWithAnomalyMonitor(publisher, anomalyMonitor)
+	}
+
+	s := &Server{
+		cfg: cfg, log: log, registry: tools.NewRegistry(), bus: bus, memory: broker,
+		publisher: publisher, jobs: jobMgr, runner: baselineRunner, caps: capRegistry, emitter: telemetryEmitter,
+	}
 	if err := s.registerBaselineTools(); err != nil {
 		jobMgr.Close()
 		broker.Close()
@@ -255,9 +292,59 @@ func (s *Server) registerShadowTools(socket string) error {
 }
 
 func (s *Server) registerBaselineTools() error {
-	dispatchTool := tools.NewDispatchConcurrentJobs(s.jobs, s.cfg.JobTimeoutSeconds, s.cfg.JobQueueSize)
+	var scoreAdjuster dispatch.ScoreAdjuster
+	if s.cfg.HHDWasmScoringEnabled {
+		adjuster, err := dispatch.NewWasmScoreAdjuster(context.Background(), dispatch.WasmScoringConfig{
+			Enabled:          s.cfg.HHDWasmScoringEnabled,
+			ModulePath:       s.cfg.HHDWasmScoringModulePath,
+			CallTimeout:      time.Duration(s.cfg.HHDWasmScoringTimeoutMS) * time.Millisecond,
+			MemoryLimitPages: s.cfg.HHDWasmScoringMemoryPages,
+			AllowedHostCalls: s.cfg.HHDWasmScoringHostCalls,
+		})
+		if err != nil {
+			s.log.Warn().Err(err).Msg("wasm scoring plugin disabled; falling back to baseline policy scoring")
+		} else {
+			scoreAdjuster = adjuster
+		}
+	}
+
+	policyCfg := dispatch.PolicyV2Config{
+		Enabled:            s.cfg.HHDPolicyEngineV2,
+		PolicyVersion:      dispatch.DefaultPolicyVersionV2,
+		BaselineProviderID: dispatch.DefaultBaselineProviderID,
+		MinConfidence:      s.cfg.HHDPolicyMinConfidence,
+		MaxQueueDepth:      s.cfg.HHDPolicyMaxQueueDepth,
+		ScoreAdjuster:      scoreAdjuster,
+		Weights: dispatch.PolicyWeights{
+			Health:      s.cfg.HHDWeightHealth,
+			Reliability: s.cfg.HHDWeightReliability,
+			Cost:        s.cfg.HHDWeightCost,
+			Latency:     s.cfg.HHDWeightLatency,
+			QueueDepth:  s.cfg.HHDWeightQueueDepth,
+			Workload:    s.cfg.HHDWeightWorkload,
+		},
+	}
+	dispatchTool := tools.NewDispatchConcurrentJobsWithDispatchPolicy(
+		s.jobs,
+		s.cfg.JobTimeoutSeconds,
+		s.cfg.JobQueueSize,
+		nil,
+		"",
+		s.emitter,
+		s.caps,
+		policyCfg,
+	)
 	if s.runner != nil {
-		dispatchTool = tools.NewDispatchConcurrentJobsWithRunner(s.jobs, s.cfg.JobTimeoutSeconds, s.cfg.JobQueueSize, s.runner, s.cfg.Workspace)
+		dispatchTool = tools.NewDispatchConcurrentJobsWithDispatchPolicy(
+			s.jobs,
+			s.cfg.JobTimeoutSeconds,
+			s.cfg.JobQueueSize,
+			s.runner,
+			s.cfg.Workspace,
+			s.emitter,
+			s.caps,
+			policyCfg,
+		)
 	}
 	for _, t := range []tools.Tool{
 		&tools.ReadFileSync{Workspace: s.cfg.Workspace},
@@ -268,6 +355,9 @@ func (s *Server) registerBaselineTools() error {
 		if err := s.registry.Register(t); err != nil {
 			return err
 		}
+	}
+	if s.emitter != nil && s.caps != nil {
+		_ = s.emitter.EmitCapabilitySnapshot(s.caps.Snapshot())
 	}
 	return nil
 }

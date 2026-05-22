@@ -16,6 +16,39 @@ func TestLoadDefaults(t *testing.T) {
 	if c.SandboxRunner != "none" {
 		t.Fatalf("expected sandbox runner none by default, got %s", c.SandboxRunner)
 	}
+	if c.HHDCapabilityRegistry {
+		t.Fatal("expected capability registry disabled by default")
+	}
+	if c.HHDDecisionTelemetry {
+		t.Fatal("expected decision telemetry disabled by default")
+	}
+	if c.HHDEventMonitorEnabled {
+		t.Fatal("expected event monitor disabled by default")
+	}
+	if c.HHDEventMonitorEBPF {
+		t.Fatal("expected eBPF monitor path disabled by default")
+	}
+	if c.HHDEventMonitorLatencyMS != 1200 {
+		t.Fatalf("expected default monitor latency threshold 1200ms, got %d", c.HHDEventMonitorLatencyMS)
+	}
+	if c.HHDSnapshotTTLSeconds != 30 {
+		t.Fatalf("expected default snapshot ttl 30 seconds, got %d", c.HHDSnapshotTTLSeconds)
+	}
+	if c.HHDPolicyEngineV2 {
+		t.Fatal("expected policy engine v2 disabled by default")
+	}
+	if c.HHDPolicyMinConfidence != 0.5 {
+		t.Fatalf("expected default policy min confidence 0.5, got %v", c.HHDPolicyMinConfidence)
+	}
+	if c.HHDWasmScoringEnabled {
+		t.Fatal("expected wasm scoring plugin disabled by default")
+	}
+	if c.HHDWasmScoringTimeoutMS != 20 {
+		t.Fatalf("expected default wasm scoring timeout 20ms, got %d", c.HHDWasmScoringTimeoutMS)
+	}
+	if c.HHDWasmScoringMemoryPages != 64 {
+		t.Fatalf("expected default wasm scoring memory pages 64, got %d", c.HHDWasmScoringMemoryPages)
+	}
 }
 
 func TestLoadHTTPRequiresJWTSecret(t *testing.T) {
@@ -119,5 +152,60 @@ func TestLoadRejectsRS256InCurrentBuild(t *testing.T) {
 
 	if _, err := Load(""); err == nil {
 		t.Fatal("expected RS256 to be rejected in current build")
+	}
+}
+
+func TestLoadRejectsInvalidHHDSnapshotTTL(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_CAPABILITY_SNAPSHOT_TTL_SECONDS", "0")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid HHD snapshot ttl rejection")
+	}
+}
+
+func TestLoadRejectsInvalidPolicyMinConfidence(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_POLICY_MIN_CONFIDENCE", "1.2")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid HHD policy min confidence rejection")
+	}
+}
+
+func TestLoadRejectsInvalidHHDEventMonitorLatencyThreshold(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_EVENT_MONITOR_LATENCY_THRESHOLD_MS", "0")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid event monitor latency threshold rejection")
+	}
+}
+
+func TestLoadRejectsWasmScoringEnabledWithoutModulePath(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_WASM_SCORING_ENABLED", "true")
+	t.Setenv("CWSO_HHD_WASM_SCORING_MODULE_PATH", "")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected module path validation error when wasm scoring is enabled")
+	}
+}
+
+func TestLoadRejectsInvalidWasmScoringTimeout(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_WASM_SCORING_TIMEOUT_MS", "0")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected wasm scoring timeout validation error")
+	}
+}
+
+func TestLoadRejectsInvalidWasmScoringMemoryPages(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_WASM_SCORING_MEMORY_LIMIT_PAGES", "0")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected wasm scoring memory pages validation error")
 	}
 }

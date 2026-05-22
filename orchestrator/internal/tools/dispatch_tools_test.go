@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emage/cwso/orchestrator/internal/dispatch"
 	"github.com/emage/cwso/orchestrator/internal/jobs"
 	"github.com/emage/cwso/orchestrator/internal/mcp"
 )
@@ -19,7 +20,7 @@ func TestDispatchConcurrentJobsImmediateReturn(t *testing.T) {
 
 	release := make(chan struct{})
 	tool := NewDispatchConcurrentJobs(mgr, 300, 4)
-	tool.runFuncBuilder = func(dispatchJobSpec) func(context.Context) error {
+	tool.runFuncBuilder = func(dispatchJobSpec, string) func(context.Context) error {
 		return func(ctx context.Context) error {
 			select {
 			case <-ctx.Done():
@@ -88,7 +89,7 @@ func TestDispatchConcurrentJobsMixedQueuePressure(t *testing.T) {
 	}
 
 	tool := NewDispatchConcurrentJobs(mgr, 300, 4)
-	tool.runFuncBuilder = func(dispatchJobSpec) func(context.Context) error { return blockingRun }
+	tool.runFuncBuilder = func(dispatchJobSpec, string) func(context.Context) error { return blockingRun }
 	args := json.RawMessage(`{"jobs":[{"agent_role":"worker","objective_prompt":"a","target_workspace_uuid":"11111111-1111-1111-1111-111111111111"},{"agent_role":"worker","objective_prompt":"b","target_workspace_uuid":"22222222-2222-2222-2222-222222222222"}]}`)
 
 	res, execErr := tool.Execute(context.Background(), args)
@@ -207,6 +208,97 @@ func TestDispatchJobSpecValidSandboxProfileIsAccepted(t *testing.T) {
 	}
 }
 
+func TestDispatchConcurrentJobsEmitsDecisionTelemetry(t *testing.T) {
+	mgr, err := jobs.NewManager(jobs.Config{Workers: 1, QueueSize: 4}, nil)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	defer mgr.Close()
+
+	emitter := &recordingDispatchEmitter{}
+	tool := NewDispatchConcurrentJobsWithTelemetry(
+		mgr,
+		300,
+		4,
+		nil,
+		"",
+		emitter,
+		stubCapabilitySnapshotReader{snapshot: dispatch.CapabilitySnapshot{Epoch: 42}},
+	)
+
+	args := json.RawMessage(`{"jobs":[{"agent_role":"worker","objective_prompt":"do it","target_workspace_uuid":"11111111-1111-1111-1111-111111111111"}]}`)
+	res, execErr := tool.Execute(context.Background(), args)
+	if execErr != nil {
+		t.Fatalf("execute: %v", execErr)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected tool error: %+v", res)
+	}
+	if emitter.called != 1 {
+		t.Fatalf("expected exactly one telemetry emission, got %d", emitter.called)
+	}
+	if emitter.last.CapabilityEpoch != 42 {
+		t.Fatalf("expected capability epoch 42, got %d", emitter.last.CapabilityEpoch)
+	}
+	if emitter.last.SelectedProvider == "" || emitter.last.PolicyVersion == "" {
+		t.Fatalf("expected telemetry decision metadata, got %+v", emitter.last)
+	}
+}
+
+func TestDispatchConcurrentJobsPolicyDisabledKeepsBaselineTelemetry(t *testing.T) {
+	mgr, err := jobs.NewManager(jobs.Config{Workers: 1, QueueSize: 4}, nil)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	defer mgr.Close()
+
+	emitter := &recordingDispatchEmitter{}
+	policyCfg := dispatch.DefaultPolicyV2Config()
+	policyCfg.Enabled = false
+	tool := NewDispatchConcurrentJobsWithDispatchPolicy(
+		mgr,
+		300,
+		4,
+		nil,
+		"",
+		emitter,
+		stubCapabilitySnapshotReader{snapshot: dispatch.CapabilitySnapshot{
+			Epoch: 101,
+			Providers: []dispatch.ProviderCapability{
+				{
+					ProviderID:            "gpu-a",
+					ContractVersion:       "dispatch.provider/v1.0",
+					HealthState:           dispatch.HealthHealthy,
+					LatencyClass:          "fast",
+					CostClass:             "medium",
+					QueueDepth:            1,
+					SupportedWorkloadTags: []string{"default"},
+					ReliabilityClass:      "gold",
+				},
+			},
+		}},
+		policyCfg,
+	)
+
+	args := json.RawMessage(`{"jobs":[{"agent_role":"worker","objective_prompt":"do it","target_workspace_uuid":"11111111-1111-1111-1111-111111111111"}]}`)
+	res, execErr := tool.Execute(context.Background(), args)
+	if execErr != nil {
+		t.Fatalf("execute: %v", execErr)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected tool error: %+v", res)
+	}
+	if emitter.called != 1 {
+		t.Fatalf("expected one telemetry emission, got %d", emitter.called)
+	}
+	if emitter.last.PolicyVersion != "cpu-baseline-default" {
+		t.Fatalf("expected baseline policy version, got %+v", emitter.last)
+	}
+	if emitter.last.SelectedProvider != "cpu-baseline" {
+		t.Fatalf("expected baseline selected provider, got %+v", emitter.last)
+	}
+}
+
 func decodeDispatchResult(t *testing.T, res *mcp.ToolCallResult) dispatchBatchResult {
 	t.Helper()
 	if len(res.Content) != 1 {
@@ -217,4 +309,23 @@ func decodeDispatchResult(t *testing.T, res *mcp.ToolCallResult) dispatchBatchRe
 		t.Fatalf("unmarshal dispatch result: %v; text=%s", err, res.Content[0].Text)
 	}
 	return out
+}
+
+type recordingDispatchEmitter struct {
+	called int
+	last   dispatch.DecisionEvent
+}
+
+func (r *recordingDispatchEmitter) EmitDecision(event dispatch.DecisionEvent) error {
+	r.called++
+	r.last = event
+	return nil
+}
+
+type stubCapabilitySnapshotReader struct {
+	snapshot dispatch.CapabilitySnapshot
+}
+
+func (s stubCapabilitySnapshotReader) Snapshot() dispatch.CapabilitySnapshot {
+	return s.snapshot
 }
