@@ -2,10 +2,10 @@
 
 | ID | Title | Owner | Status | Priority | Depends on | Last update |
 |----|-------|-------|--------|----------|-----------|-------------|
-| T021 | OverlayFS bind-mount layer | backend-developer | deferred → Phase 4 (POC-DEBT P2-1) | P0 | T020 | 2026-05-11 |
+| T021 | OverlayFS bind-mount layer | backend-developer | cancelled (superseded by sidecar-mediated shadow FS + sandbox tier routing) | P2 | T020 | 2026-05-22 |
 | T023 | Tree-sitter integration | backend-developer | done (Rust+TypeScript completed via T029; 4-language support active) | P0 | T020 | 2026-05-17 |
-| T024 | query_ast tool + Unified Symbol Protocol | backend-developer | partial — query_ast wired; USP deferred to T029 | P0 | T023 | 2026-05-11 |
-| T025 | Merkle-hash incremental indexer | backend-developer | deferred → T029 (POC-DEBT P2-2) | P1 | T024 | 2026-05-11 |
+| T024 | query_ast tool + Unified Symbol Protocol | backend-developer | done (query_ast productionized; cross-language behavior aligned through T029/T055/T057) | P0 | T023 | 2026-05-22 |
+| T025 | Merkle-hash incremental indexer | backend-developer | deferred (accepted non-blocking optimization; tracked as post-v0.1.x hardening) | P2 | T024 | 2026-05-22 |
 | T028a | Go unit tests for shadow client + shadow_tools | backend-developer | done | P0 | T028 | 2026-05-12 |
 | T029 | PoC-debt remediation pass | backend-developer | done | P0 | T028, T028a | 2026-05-12 |
 | T030 | Streamable HTTP full duplex SSE | backend-developer | done | P0 | T029 | 2026-05-14 |

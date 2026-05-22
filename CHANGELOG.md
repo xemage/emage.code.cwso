@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.1.1 - 2026-05-22
+
+### Release Blockers Closed
+- Closed all tracked post-v0.1.0 release blockers from the Phase 4 conditional pass:
+  - T054: merge-engine unit-test CI gate requirement
+  - T055: `merge_inputs` schema/runtime alignment
+  - T056: ADR-006 reconciliation for node-level conflict-detail scope
+  - T057: e2e policy-path validation for sidecar reason mapping
+- Reconciled task board state to reflect blocker completion and current non-blocking deferrals.
+
+### Documentation
+- Updated [README.md](README.md) with a clearer "What CWSO is" overview and a
+  practical "How to use CWSO" section covering startup, auth, MCP invocation,
+  and validation commands.
+- Added [release-v0.1.1 artifact](docs/artifacts/release-v0.1.1.md) with scope,
+  validation, and release readiness summary.
+
+### CI / Gates
+- Release-ready baseline confirmed on `develop` with green lint/build/test/e2e
+  pipeline status prior to release packaging.
+
 ## v0.1.0 - 2026-05-16
 
 ### Added

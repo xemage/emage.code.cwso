@@ -6,8 +6,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A deterministic Go-kernel MCP backend that orchestrates LLM sub-agent swarms in
-ephemeral, in-memory Git **Shadow Workspaces** running on tiered microVM
-sandboxes, with semantic AST-based merging.
+ephemeral, in-memory Git **Shadow Workspaces** running on tiered sandboxes,
+with semantic AST-based merging.
 
 > **Repository:** https://gitlab.com/em-age/emage.code.cwso
 > **Default branch:** `develop` · **Production branch:** `main` · **Branching:** [GitFlow](docs/branching.md)
@@ -21,12 +21,73 @@ sandboxes, with semantic AST-based merging.
 | 0 | Planning, requirements, architecture, ADRs | M0 | ✅ closed |
 | 1 | MCP core (PoC) — stdio + HTTP, JWT, baseline FS tools | M1 | ✅ closed |
 | 2 | Shadow Workspaces + AST (PoC) — Rust sidecar, libgit2, tree-sitter | M2 | ✅ closed (CONDITIONAL_PASS) |
-| 3 | Async + concurrency — SSE, runner pool, event broker | M3 | 🚧 active |
-| 4 | Sandbox tiers + semantic merge — Docker / gVisor / Firecracker | M4 | 🚧 active |
-| 5 | Release v0.1.0 — OWASP audit, changelog, artifacts | M5 | 🚧 active |
+| 3 | Async + concurrency — SSE, runner pool, event broker | M3 | ✅ closed |
+| 4 | Sandbox tiers + semantic merge — Docker / gVisor / Firecracker | M4 | ✅ closed |
+| 5 | Release v0.1.x hardening + security closure | M5 | ✅ closed |
 
 See [docs/plans/plan-cwso-mega.md](docs/plans/plan-cwso-mega.md) for the
-full task graph (T001–T053).
+full task graph and [docs/tasks/active-tasks.md](docs/tasks/active-tasks.md)
+for current status.
+
+## What CWSO is
+
+CWSO is an orchestration engine for AI coding swarms where each agent works in
+its own isolated workspace and outputs are merged with deterministic policies.
+At runtime, CWSO provides:
+
+- An MCP server surface for tool calls over stdio or Streamable HTTP.
+- In-memory shadow workspaces backed by libgit2 (via `cwso-git-shadow`).
+- AST-powered code interrogation and merge semantics across Go, Python, Rust,
+  and TypeScript.
+- A merge sidecar (`cwso-merge-engine`) that enforces deterministic conflict
+  classes and reason codes.
+- Tiered execution routing for sandboxed workloads.
+
+## How to use CWSO
+
+### 1) Start the stack
+
+```bash
+make build
+docker compose -f deploy/docker-compose.yml --profile phase2 --profile phase4 up -d
+```
+
+### 2) Verify service health
+
+```bash
+curl -sS http://127.0.0.1:8080/healthz
+```
+
+### 3) Acquire an auth token
+
+CWSO enforces JWT auth for HTTP transport. Use your configured development
+secret from compose (`jwt_secret`) and mint an HS256 token with:
+
+- `iss`: `cwso`
+- `aud`: `cwso-mcp`
+- `role`: `orchestrator` or `worker`
+
+### 4) Call MCP tools
+
+Send JSON-RPC requests to `POST /mcp` with `Content-Type: application/json`
+and `Authorization: Bearer <token>`.
+
+Example (`tools/list`):
+
+```bash
+curl -sS http://127.0.0.1:8080/mcp \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Origin: http://localhost" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+### 5) Run validation suites
+
+```bash
+make test
+python3 scripts/phase2-integration.py
+```
 
 ## Architecture in one paragraph
 
