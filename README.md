@@ -157,6 +157,22 @@ Run `make help` (or `make`) for the full target list.
 
 See [docs/branching.md](docs/branching.md), [.github/instructions/git-workflow.instructions.md](.github/instructions/git-workflow.instructions.md), and [.gitlab/issue_templates](.gitlab/issue_templates/).
 
+## Release assets
+
+Every release should include installable assets, not just source archives:
+
+- Linux binaries: `cwso-orchestrator`, `cwso-git-shadow`, `cwso-merge-engine`
+- Container image archives: orchestrator, git-shadow, merge-engine
+
+Common release step:
+
+```bash
+make release-assets TAG=v0.1.1
+```
+
+This command builds binaries and container archives into `dist/<tag>/` and
+uploads them to the matching GitLab release entry.
+
 ## Documentation
 - [Requirements](docs/artifacts/requirements-v1.md)
 - [Architecture](docs/artifacts/architecture-v1.md)

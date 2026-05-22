@@ -5,7 +5,7 @@ SHELL := /bin/bash
 COMPOSE := docker compose -f deploy/docker-compose.yml
 
 .PHONY: help build build-orchestrator build-git-shadow build-merge-engine \
-        test test-go test-rust run stop logs inspector demo clean lint fmt
+	test test-go test-rust run stop logs inspector demo clean lint fmt release-assets
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -59,3 +59,7 @@ fmt: ## Format code
 clean: ## Remove build artifacts
 	rm -rf bin/ target/ dist/
 	docker image prune -f --filter "label=cwso=dev" || true
+
+release-assets: ## Build and upload binaries/container archives to a release tag (use TAG=vX.Y.Z)
+	@test -n "$(TAG)" || (echo "Usage: make release-assets TAG=vX.Y.Z" && exit 1)
+	./scripts/release-assets.sh "$(TAG)"

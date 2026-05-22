@@ -31,6 +31,19 @@ remain open and to improve operator onboarding with clearer CWSO usage guidance.
   - test: go/rust success
   - e2e: phase2 and phase4-swarm success
 
+## Attached Install Assets
+- Linux binaries:
+  - `cwso-orchestrator-linux-amd64`
+  - `cwso-git-shadow-linux-amd64`
+  - `cwso-merge-engine-linux-amd64`
+- Container archives:
+  - `cwso-orchestrator-image-v0.1.1.tar.gz`
+  - `cwso-git-shadow-image-v0.1.1.tar.gz`
+  - `cwso-merge-engine-image-v0.1.1.tar.gz`
+
+Consumers can install without source builds by downloading binaries directly or
+loading archives with `docker load`.
+
 ## Security and Gate Posture
 - T051 security gate remains PASS after T058-T061 remediations.
 - T050 conditional-pass follow-up conditions are closed via T054-T057.
