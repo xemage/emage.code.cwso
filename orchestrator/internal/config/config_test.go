@@ -40,6 +40,15 @@ func TestLoadDefaults(t *testing.T) {
 	if c.HHDPolicyMinConfidence != 0.5 {
 		t.Fatalf("expected default policy min confidence 0.5, got %v", c.HHDPolicyMinConfidence)
 	}
+	if c.HHDSparseQuantizedEnabled {
+		t.Fatal("expected sparse/quantized assist disabled by default")
+	}
+	if c.HHDSparseQuantizedTradeoff != 0 {
+		t.Fatalf("expected default sparse/quantized cost-latency tradeoff 0, got %v", c.HHDSparseQuantizedTradeoff)
+	}
+	if c.HHDQualityGuardrailMinScore != 0.98 {
+		t.Fatalf("expected default quality guardrail min score 0.98, got %v", c.HHDQualityGuardrailMinScore)
+	}
 	if c.HHDWasmScoringEnabled {
 		t.Fatal("expected wasm scoring plugin disabled by default")
 	}
@@ -170,6 +179,24 @@ func TestLoadRejectsInvalidPolicyMinConfidence(t *testing.T) {
 
 	if _, err := Load(""); err == nil {
 		t.Fatal("expected invalid HHD policy min confidence rejection")
+	}
+}
+
+func TestLoadRejectsInvalidSparseQuantizedTradeoff(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_SPARSE_QUANTIZED_COST_LATENCY_TRADEOFF", "1.2")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid sparse/quantized tradeoff rejection")
+	}
+}
+
+func TestLoadRejectsInvalidSparseQuantizedQualityGuardrail(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_SPARSE_QUANTIZED_QUALITY_GUARDRAIL_MIN_SCORE", "-0.1")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid sparse/quantized quality guardrail rejection")
 	}
 }
 

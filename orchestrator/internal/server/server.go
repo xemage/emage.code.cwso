@@ -315,6 +315,12 @@ func (s *Server) registerBaselineTools() error {
 		MinConfidence:      s.cfg.HHDPolicyMinConfidence,
 		MaxQueueDepth:      s.cfg.HHDPolicyMaxQueueDepth,
 		ScoreAdjuster:      scoreAdjuster,
+		SparseQuantized: dispatch.SparseQuantizedAssistConfig{
+			Enabled:                  s.cfg.HHDSparseQuantizedEnabled,
+			ProviderFeatureFlag:      "hhd.sparse_quantized_assist",
+			CostLatencyTradeoff:      s.cfg.HHDSparseQuantizedTradeoff,
+			QualityGuardrailMinScore: s.cfg.HHDQualityGuardrailMinScore,
+		},
 		Weights: dispatch.PolicyWeights{
 			Health:      s.cfg.HHDWeightHealth,
 			Reliability: s.cfg.HHDWeightReliability,

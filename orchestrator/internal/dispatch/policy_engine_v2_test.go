@@ -225,6 +225,92 @@ func TestPolicyEngineV2PluginFailureFallsBackSafely(t *testing.T) {
 	}
 }
 
+func TestPolicyEngineV2SparseQuantizedDisabledPreservesBaselineSelection(t *testing.T) {
+	engine := NewPolicyEngineV2(PolicyV2Config{
+		Enabled:            true,
+		PolicyVersion:      "policy-v2",
+		BaselineProviderID: "cpu-baseline",
+		MinConfidence:      0.2,
+		MaxQueueDepth:      16,
+		Weights:            DefaultPolicyV2Config().Weights,
+		SparseQuantized: SparseQuantizedAssistConfig{
+			Enabled:             false,
+			CostLatencyTradeoff: 0.8,
+		},
+	})
+
+	decision := engine.Select(testSparseQuantizedSnapshot(), PolicyInput{WorkloadTags: []string{"merge-assist"}})
+	if decision.SelectedProvider != "gpu-a" {
+		t.Fatalf("expected baseline selection to remain gpu-a when sparse/quantized assist is disabled, got %+v", decision)
+	}
+}
+
+func TestPolicyEngineV2SparseQuantizedEnabledAdjustsDecisionPath(t *testing.T) {
+	engine := NewPolicyEngineV2(PolicyV2Config{
+		Enabled:            true,
+		PolicyVersion:      "policy-v2",
+		BaselineProviderID: "cpu-baseline",
+		MinConfidence:      0.2,
+		MaxQueueDepth:      16,
+		Weights:            DefaultPolicyV2Config().Weights,
+		SparseQuantized: SparseQuantizedAssistConfig{
+			Enabled:                  true,
+			ProviderFeatureFlag:      "hhd.sparse_quantized_assist",
+			CostLatencyTradeoff:      0.8,
+			QualityGuardrailMinScore: 0.98,
+		},
+	})
+
+	decision := engine.Select(testSparseQuantizedSnapshot(), PolicyInput{WorkloadTags: []string{"merge-assist"}})
+	if decision.SelectedProvider != "gpu-sq" {
+		t.Fatalf("expected sparse/quantized assist to bias selection to gpu-sq, got %+v", decision)
+	}
+	if decision.ReasonCode != "sparse_quantized_assist_selected" {
+		t.Fatalf("expected sparse_quantized_assist_selected reason, got %+v", decision)
+	}
+}
+
+func TestPolicyEngineV2SparseQuantizedQualityBreachAutoDisablesPath(t *testing.T) {
+	engine := NewPolicyEngineV2(PolicyV2Config{
+		Enabled:            true,
+		PolicyVersion:      "policy-v2",
+		BaselineProviderID: "cpu-baseline",
+		MinConfidence:      0.2,
+		MaxQueueDepth:      16,
+		Weights:            DefaultPolicyV2Config().Weights,
+		SparseQuantized: SparseQuantizedAssistConfig{
+			Enabled:                  true,
+			ProviderFeatureFlag:      "hhd.sparse_quantized_assist",
+			CostLatencyTradeoff:      0.8,
+			QualityGuardrailMinScore: 0.98,
+		},
+	})
+
+	lowQuality := 0.95
+	breach := engine.Select(testSparseQuantizedSnapshot(), PolicyInput{
+		WorkloadTags: []string{"merge-assist"},
+		QualityScore: &lowQuality,
+	})
+	if breach.SelectedProvider != "cpu-baseline" {
+		t.Fatalf("expected quality breach to fallback to baseline, got %+v", breach)
+	}
+	if breach.ReasonCode != "quality_guardrail_autodisable" {
+		t.Fatalf("expected quality_guardrail_autodisable reason, got %+v", breach)
+	}
+
+	highQuality := 0.99
+	afterDisable := engine.Select(testSparseQuantizedSnapshot(), PolicyInput{
+		WorkloadTags: []string{"merge-assist"},
+		QualityScore: &highQuality,
+	})
+	if afterDisable.SelectedProvider != "gpu-a" {
+		t.Fatalf("expected auto-disabled assist to keep baseline policy selection gpu-a, got %+v", afterDisable)
+	}
+	if afterDisable.ReasonCode != "sparse_quantized_auto_disabled" {
+		t.Fatalf("expected sparse_quantized_auto_disabled reason, got %+v", afterDisable)
+	}
+}
+
 func testPluginSnapshot() CapabilitySnapshot {
 	return CapabilitySnapshot{
 		Epoch: 99,
@@ -247,6 +333,45 @@ func testPluginSnapshot() CapabilitySnapshot {
 				CostClass:             "low",
 				QueueDepth:            0,
 				SupportedWorkloadTags: []string{"default"},
+				ReliabilityClass:      "standard",
+			},
+		},
+	}
+}
+
+func testSparseQuantizedSnapshot() CapabilitySnapshot {
+	return CapabilitySnapshot{
+		Epoch: 101,
+		Providers: []ProviderCapability{
+			{
+				ProviderID:            "gpu-a",
+				ContractVersion:       "dispatch.provider/v1.0",
+				HealthState:           HealthHealthy,
+				LatencyClass:          "fast",
+				CostClass:             "high",
+				QueueDepth:            0,
+				SupportedWorkloadTags: []string{"default", "merge-assist"},
+				ReliabilityClass:      "gold",
+			},
+			{
+				ProviderID:            "gpu-sq",
+				ContractVersion:       "dispatch.provider/v1.0",
+				HealthState:           HealthHealthy,
+				LatencyClass:          "slow",
+				CostClass:             "low",
+				QueueDepth:            0,
+				SupportedWorkloadTags: []string{"default", "merge-assist"},
+				ReliabilityClass:      "standard",
+				FeatureFlags:          []string{"hhd.sparse_quantized_assist"},
+			},
+			{
+				ProviderID:            "cpu-baseline",
+				ContractVersion:       "dispatch.provider/v1.0",
+				HealthState:           HealthHealthy,
+				LatencyClass:          "baseline",
+				CostClass:             "low",
+				QueueDepth:            0,
+				SupportedWorkloadTags: []string{"default", "merge-assist"},
 				ReliabilityClass:      "standard",
 			},
 		},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"sync/atomic"
 )
 
 const (
@@ -13,7 +14,9 @@ const (
 
 // PolicyInput carries policy-scoring context for one dispatch decision.
 type PolicyInput struct {
-	WorkloadTags []string
+	WorkloadTags  []string
+	QualityScore  *float64
+	RequestLabels []string
 }
 
 // PolicyWeights controls how capability dimensions influence ranking.
@@ -35,6 +38,16 @@ type PolicyV2Config struct {
 	MaxQueueDepth      int
 	Weights            PolicyWeights
 	ScoreAdjuster      ScoreAdjuster
+	SparseQuantized    SparseQuantizedAssistConfig
+}
+
+// SparseQuantizedAssistConfig controls experimental sparse/quantized scoring.
+// This path is default-off and can be auto-disabled by quality guardrails.
+type SparseQuantizedAssistConfig struct {
+	Enabled                  bool
+	ProviderFeatureFlag      string
+	CostLatencyTradeoff      float64
+	QualityGuardrailMinScore float64
 }
 
 // PolicyDecision is the deterministic routing decision envelope.
@@ -51,6 +64,7 @@ type PolicyDecision struct {
 type PolicyEngineV2 struct {
 	cfg           PolicyV2Config
 	scoreAdjuster ScoreAdjuster
+	autoDisabled  atomic.Bool
 }
 
 func DefaultPolicyV2Config() PolicyV2Config {
@@ -67,6 +81,12 @@ func DefaultPolicyV2Config() PolicyV2Config {
 			Latency:     0.10,
 			QueueDepth:  0.10,
 			Workload:    0.10,
+		},
+		SparseQuantized: SparseQuantizedAssistConfig{
+			Enabled:                  false,
+			ProviderFeatureFlag:      "hhd.sparse_quantized_assist",
+			CostLatencyTradeoff:      0,
+			QualityGuardrailMinScore: 0.98,
 		},
 	}
 }
@@ -98,6 +118,36 @@ func (e *PolicyEngineV2) Select(snapshot CapabilitySnapshot, input PolicyInput) 
 			RankedFallbackChain: []string{baseline},
 			Confidence:          1,
 			ReasonCode:          "no_eligible_provider",
+		}
+	}
+
+	if e.shouldAutoDisableSparseQuantized(input) {
+		e.autoDisabled.Store(true)
+		return PolicyDecision{
+			PolicyVersion:       e.cfg.PolicyVersion,
+			CapabilityEpoch:     snapshot.Epoch,
+			SelectedProvider:    baseline,
+			RankedFallbackChain: []string{baseline},
+			Confidence:          1,
+			ReasonCode:          "quality_guardrail_autodisable",
+		}
+	}
+
+	assistActive := e.isSparseQuantizedActive()
+	if assistActive {
+		tags := dedupeAndSort(input.WorkloadTags)
+		for i := range candidates {
+			if !providerHasFeatureFlag(candidates[i].featureFlags, e.cfg.SparseQuantized.ProviderFeatureFlag) {
+				continue
+			}
+			delta := sparseQuantizedTradeoffDelta(
+				e.cfg.SparseQuantized.CostLatencyTradeoff,
+				candidates[i].costScore,
+				candidates[i].latencyScore,
+				tags,
+			)
+			candidates[i].score += delta
+			candidates[i].confidence = clamp01(candidates[i].confidence + delta)
 		}
 	}
 
@@ -133,6 +183,10 @@ func (e *PolicyEngineV2) Select(snapshot CapabilitySnapshot, input PolicyInput) 
 		reasonCode = "low_confidence_baseline"
 	} else if pluginFailed {
 		reasonCode = "plugin_failed_fallback"
+	} else if e.cfg.SparseQuantized.Enabled && e.autoDisabled.Load() {
+		reasonCode = "sparse_quantized_auto_disabled"
+	} else if assistActive {
+		reasonCode = "sparse_quantized_assist_selected"
 	}
 
 	chain := make([]string, 0, len(candidates)+1)
@@ -227,6 +281,9 @@ type scoredCandidate struct {
 	confidence      float64
 	healthRank      int
 	reliabilityRank int
+	costScore       float64
+	latencyScore    float64
+	featureFlags    []string
 }
 
 func scoreCandidates(providers []ProviderCapability, input PolicyInput, cfg PolicyV2Config) []scoredCandidate {
@@ -264,6 +321,9 @@ func scoreCandidates(providers []ProviderCapability, input PolicyInput, cfg Poli
 			confidence:      confidence,
 			healthRank:      healthRank(provider.HealthState),
 			reliabilityRank: reliabilityRank(provider.ReliabilityClass),
+			costScore:       cost,
+			latencyScore:    latency,
+			featureFlags:    provider.FeatureFlags,
 		})
 	}
 	return out
@@ -283,8 +343,68 @@ func normalizePolicyV2Config(cfg PolicyV2Config) PolicyV2Config {
 	if cfg.MaxQueueDepth <= 0 {
 		cfg.MaxQueueDepth = def.MaxQueueDepth
 	}
+	if cfg.SparseQuantized.ProviderFeatureFlag == "" {
+		cfg.SparseQuantized.ProviderFeatureFlag = def.SparseQuantized.ProviderFeatureFlag
+	}
+	if cfg.SparseQuantized.QualityGuardrailMinScore < 0 || cfg.SparseQuantized.QualityGuardrailMinScore > 1 {
+		cfg.SparseQuantized.QualityGuardrailMinScore = def.SparseQuantized.QualityGuardrailMinScore
+	}
+	if cfg.SparseQuantized.CostLatencyTradeoff < -1 || cfg.SparseQuantized.CostLatencyTradeoff > 1 {
+		cfg.SparseQuantized.CostLatencyTradeoff = def.SparseQuantized.CostLatencyTradeoff
+	}
 	cfg.Weights = normalizeWeights(cfg.Weights, def.Weights)
 	return cfg
+}
+
+func (e *PolicyEngineV2) shouldAutoDisableSparseQuantized(input PolicyInput) bool {
+	if e == nil || !e.isSparseQuantizedActive() {
+		return false
+	}
+	if input.QualityScore == nil {
+		return false
+	}
+	return *input.QualityScore < e.cfg.SparseQuantized.QualityGuardrailMinScore
+}
+
+func (e *PolicyEngineV2) isSparseQuantizedActive() bool {
+	if e == nil {
+		return false
+	}
+	if !e.cfg.SparseQuantized.Enabled {
+		return false
+	}
+	return !e.autoDisabled.Load()
+}
+
+func providerHasFeatureFlag(flags []string, target string) bool {
+	target = strings.TrimSpace(strings.ToLower(target))
+	if target == "" {
+		return false
+	}
+	for _, flag := range flags {
+		if strings.ToLower(strings.TrimSpace(flag)) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func sparseQuantizedTradeoffDelta(tradeoff, cost, latency float64, workloadTags []string) float64 {
+	if tradeoff == 0 {
+		return 0
+	}
+	hasTargetedWorkload := false
+	for _, tag := range workloadTags {
+		lower := strings.ToLower(strings.TrimSpace(tag))
+		if lower == "merge-assist" || lower == "inference-heavy" {
+			hasTargetedWorkload = true
+			break
+		}
+	}
+	if !hasTargetedWorkload {
+		return 0
+	}
+	return tradeoff * (cost - latency)
 }
 
 func normalizeWeights(raw, fallback PolicyWeights) PolicyWeights {

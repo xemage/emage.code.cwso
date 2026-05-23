@@ -11,59 +11,62 @@ import (
 // Config holds runtime configuration. Secrets MUST come from env vars or
 // mounted files; never from source-controlled defaults.
 type Config struct {
-	Transport                 string   // "stdio" | "http"
-	HTTPAddr                  string   // ":8080"
-	LogLevel                  string   // "debug" | "info" | "warn" | "error"
-	JWTSecret                 string   // HS256 signing key
-	JWTAlg                    string   // "HS256" (only supported algorithm in current build)
-	JWTIssuer                 string   // "iss" claim validation
-	JWTAudience               string   // "aud" claim validation
-	JWKSPath                  string   // path to RS256 public key file (prod)
-	AllowedOrigins            []string // exact origins permitted on HTTP
-	JobTimeoutSeconds         int      // default async job timeout (Phase 3)
-	JobWorkers                int      // async job worker pool size
-	JobQueueSize              int      // async job queue capacity
-	Workspace                 string   // host path that the orchestrator may serve via baseline FS tools
-	ShadowSocket              string   // UDS path for the cwso-git-shadow sidecar ("" disables shadow tools)
-	MergeEngineSocket         string   // UDS path for the cwso-merge-engine sidecar ("" disables merge tool)
-	SandboxRunner             string   // "none" | "docker" | "gvisor"
-	SandboxDockerHost         string   // docker host URL (unix:///var/run/docker.sock by default)
-	SandboxImage              string   // default image used by baseline docker runner
-	SandboxRuntime            string   // docker runtime selector ("" for default, "runsc" for gVisor)
-	SandboxNetwork            string   // default container network mode, must not be host
-	SandboxCPUQuota           int64    // CPU quota in microseconds per 100ms period
-	SandboxMemory             int64    // memory limit in bytes
-	SandboxPIDs               int64    // pids limit
-	SandboxStopSecs           int      // timeout for graceful stop before force-kill
-	SandboxFCBin              string   // firecracker binary name/path
-	SandboxFCHelper           string   // firecracker execution helper binary path
-	SandboxKVMDevice          string   // kvm device path
-	SandboxVhostNet           string   // vhost-net device path
-	SandboxSnapshot           string   // firecracker template snapshot directory
-	SandboxVMState            string   // firecracker clone/vm state directory
-	SandboxRequireVh          bool     // require vhost-net device for firecracker execution
-	SandboxDegradedMode       bool     // true when Firecracker is unavailable (KVM absent); routes FC workloads to gVisor
-	SandboxAllowDockerTrusted bool     // permit docker-trusted tier in router mode (internal orchestrator use only)
-	HHDCapabilityRegistry     bool     // enable hardware-dispatch capability registry and snapshot telemetry
-	HHDDecisionTelemetry      bool     // enable dispatch decision telemetry emission
-	HHDEventMonitorEnabled    bool     // enable event-driven anomaly monitor from dispatch decisions
-	HHDEventMonitorEBPF       bool     // prefer eBPF signal path when capabilities permit (falls back automatically)
-	HHDEventMonitorLatencyMS  int      // anomaly threshold for actual latency in milliseconds
-	HHDSnapshotTTLSeconds     int      // stale capability threshold for policy-facing snapshots
-	HHDPolicyEngineV2         bool     // enable policy engine v2 backend selection and fallback
-	HHDPolicyMinConfidence    float64  // minimum confidence before forcing baseline path
-	HHDPolicyMaxQueueDepth    int      // queue depth normalization denominator for policy scoring
-	HHDWeightHealth           float64  // policy weight for health signal
-	HHDWeightReliability      float64  // policy weight for reliability signal
-	HHDWeightCost             float64  // policy weight for cost signal
-	HHDWeightLatency          float64  // policy weight for latency signal
-	HHDWeightQueueDepth       float64  // policy weight for queue-depth signal
-	HHDWeightWorkload         float64  // policy weight for workload compatibility signal
-	HHDWasmScoringEnabled     bool     // enable wasm scoring adjustment plugin in policy engine v2
-	HHDWasmScoringModulePath  string   // filesystem path to wasm scoring module
-	HHDWasmScoringTimeoutMS   int      // per-call timeout budget for wasm score adjustments
-	HHDWasmScoringMemoryPages uint32   // max wasm memory pages for scoring module runtime
-	HHDWasmScoringHostCalls   []string // deny-by-default host-call allowlist for wasm runtime
+	Transport                   string   // "stdio" | "http"
+	HTTPAddr                    string   // ":8080"
+	LogLevel                    string   // "debug" | "info" | "warn" | "error"
+	JWTSecret                   string   // HS256 signing key
+	JWTAlg                      string   // "HS256" (only supported algorithm in current build)
+	JWTIssuer                   string   // "iss" claim validation
+	JWTAudience                 string   // "aud" claim validation
+	JWKSPath                    string   // path to RS256 public key file (prod)
+	AllowedOrigins              []string // exact origins permitted on HTTP
+	JobTimeoutSeconds           int      // default async job timeout (Phase 3)
+	JobWorkers                  int      // async job worker pool size
+	JobQueueSize                int      // async job queue capacity
+	Workspace                   string   // host path that the orchestrator may serve via baseline FS tools
+	ShadowSocket                string   // UDS path for the cwso-git-shadow sidecar ("" disables shadow tools)
+	MergeEngineSocket           string   // UDS path for the cwso-merge-engine sidecar ("" disables merge tool)
+	SandboxRunner               string   // "none" | "docker" | "gvisor"
+	SandboxDockerHost           string   // docker host URL (unix:///var/run/docker.sock by default)
+	SandboxImage                string   // default image used by baseline docker runner
+	SandboxRuntime              string   // docker runtime selector ("" for default, "runsc" for gVisor)
+	SandboxNetwork              string   // default container network mode, must not be host
+	SandboxCPUQuota             int64    // CPU quota in microseconds per 100ms period
+	SandboxMemory               int64    // memory limit in bytes
+	SandboxPIDs                 int64    // pids limit
+	SandboxStopSecs             int      // timeout for graceful stop before force-kill
+	SandboxFCBin                string   // firecracker binary name/path
+	SandboxFCHelper             string   // firecracker execution helper binary path
+	SandboxKVMDevice            string   // kvm device path
+	SandboxVhostNet             string   // vhost-net device path
+	SandboxSnapshot             string   // firecracker template snapshot directory
+	SandboxVMState              string   // firecracker clone/vm state directory
+	SandboxRequireVh            bool     // require vhost-net device for firecracker execution
+	SandboxDegradedMode         bool     // true when Firecracker is unavailable (KVM absent); routes FC workloads to gVisor
+	SandboxAllowDockerTrusted   bool     // permit docker-trusted tier in router mode (internal orchestrator use only)
+	HHDCapabilityRegistry       bool     // enable hardware-dispatch capability registry and snapshot telemetry
+	HHDDecisionTelemetry        bool     // enable dispatch decision telemetry emission
+	HHDEventMonitorEnabled      bool     // enable event-driven anomaly monitor from dispatch decisions
+	HHDEventMonitorEBPF         bool     // prefer eBPF signal path when capabilities permit (falls back automatically)
+	HHDEventMonitorLatencyMS    int      // anomaly threshold for actual latency in milliseconds
+	HHDSnapshotTTLSeconds       int      // stale capability threshold for policy-facing snapshots
+	HHDPolicyEngineV2           bool     // enable policy engine v2 backend selection and fallback
+	HHDPolicyMinConfidence      float64  // minimum confidence before forcing baseline path
+	HHDPolicyMaxQueueDepth      int      // queue depth normalization denominator for policy scoring
+	HHDWeightHealth             float64  // policy weight for health signal
+	HHDWeightReliability        float64  // policy weight for reliability signal
+	HHDWeightCost               float64  // policy weight for cost signal
+	HHDWeightLatency            float64  // policy weight for latency signal
+	HHDWeightQueueDepth         float64  // policy weight for queue-depth signal
+	HHDWeightWorkload           float64  // policy weight for workload compatibility signal
+	HHDSparseQuantizedEnabled   bool     // enable sparse/quantized assist scoring experiment
+	HHDSparseQuantizedTradeoff  float64  // cost-latency tradeoff modifier in [-1, 1]
+	HHDQualityGuardrailMinScore float64  // minimum quality score before auto-disable of sparse/quantized path
+	HHDWasmScoringEnabled       bool     // enable wasm scoring adjustment plugin in policy engine v2
+	HHDWasmScoringModulePath    string   // filesystem path to wasm scoring module
+	HHDWasmScoringTimeoutMS     int      // per-call timeout budget for wasm score adjustments
+	HHDWasmScoringMemoryPages   uint32   // max wasm memory pages for scoring module runtime
+	HHDWasmScoringHostCalls     []string // deny-by-default host-call allowlist for wasm runtime
 }
 
 // Load reads configuration, applying env-var overrides over defaults.
@@ -80,59 +83,62 @@ func Load(_ string) (*Config, error) {
 	}
 
 	c := &Config{
-		Transport:                 envOr("CWSO_TRANSPORT", "stdio"),
-		HTTPAddr:                  envOr("CWSO_HTTP_ADDR", ":8080"),
-		LogLevel:                  envOr("CWSO_LOG_LEVEL", "info"),
-		JWTSecret:                 jwtSecret,
-		JWTAlg:                    envOr("CWSO_JWT_ALG", "HS256"),
-		JWTIssuer:                 envOr("CWSO_JWT_ISSUER", "cwso"),
-		JWTAudience:               envOr("CWSO_JWT_AUDIENCE", "cwso-mcp"),
-		JWKSPath:                  os.Getenv("CWSO_JWKS_PATH"),
-		AllowedOrigins:            splitCSV(envOr("CWSO_ALLOWED_ORIGINS", "http://localhost,http://127.0.0.1")),
-		JobTimeoutSeconds:         envInt("CWSO_JOB_TIMEOUT_SECONDS", 300),
-		JobWorkers:                envInt("CWSO_JOB_WORKERS", 4),
-		JobQueueSize:              envInt("CWSO_JOB_QUEUE_SIZE", 64),
-		Workspace:                 envOr("CWSO_WORKSPACE", "/workspace"),
-		ShadowSocket:              os.Getenv("CWSO_GIT_SHADOW_SOCKET"),
-		MergeEngineSocket:         os.Getenv("CWSO_MERGE_ENGINE_SOCKET"),
-		SandboxRunner:             envOr("CWSO_SANDBOX_RUNNER", "none"),
-		SandboxDockerHost:         envOr("CWSO_DOCKER_HOST", "unix:///var/run/docker.sock"),
-		SandboxImage:              envOr("CWSO_DOCKER_IMAGE", "alpine:3.20"),
-		SandboxRuntime:            os.Getenv("CWSO_DOCKER_RUNTIME"),
-		SandboxNetwork:            envOr("CWSO_DOCKER_NETWORK", "none"),
-		SandboxCPUQuota:           envInt64("CWSO_DOCKER_CPU_QUOTA_MICROS", 100000),
-		SandboxMemory:             envInt64("CWSO_DOCKER_MEMORY_BYTES", 268435456),
-		SandboxPIDs:               envInt64("CWSO_DOCKER_PIDS_LIMIT", 128),
-		SandboxStopSecs:           envInt("CWSO_DOCKER_STOP_TIMEOUT_SECONDS", 5),
-		SandboxFCBin:              envOr("CWSO_FIRECRACKER_BIN", "firecracker"),
-		SandboxFCHelper:           os.Getenv("CWSO_FIRECRACKER_EXEC_HELPER"),
-		SandboxKVMDevice:          envOr("CWSO_FIRECRACKER_KVM_DEVICE", "/dev/kvm"),
-		SandboxVhostNet:           envOr("CWSO_FIRECRACKER_VHOST_DEVICE", "/dev/vhost-net"),
-		SandboxSnapshot:           envOr("CWSO_FIRECRACKER_SNAPSHOT_DIR", "/tmp/cwso-firecracker/templates"),
-		SandboxVMState:            envOr("CWSO_FIRECRACKER_VMSTATE_DIR", "/tmp/cwso-firecracker/vms"),
-		SandboxRequireVh:          envBool("CWSO_FIRECRACKER_REQUIRE_VHOST_NET", true),
-		SandboxDegradedMode:       envBool("CWSO_SANDBOX_DEGRADED_MODE", false),
-		SandboxAllowDockerTrusted: envBool("CWSO_SANDBOX_ALLOW_DOCKER_TRUSTED", false),
-		HHDCapabilityRegistry:     envBool("CWSO_HHD_CAPABILITY_REGISTRY_ENABLED", false),
-		HHDDecisionTelemetry:      envBool("CWSO_HHD_DECISION_TELEMETRY_ENABLED", false),
-		HHDEventMonitorEnabled:    envBool("CWSO_HHD_EVENT_MONITOR_ENABLED", false),
-		HHDEventMonitorEBPF:       envBool("CWSO_HHD_EVENT_MONITOR_EBPF_ENABLED", false),
-		HHDEventMonitorLatencyMS:  envInt("CWSO_HHD_EVENT_MONITOR_LATENCY_THRESHOLD_MS", 1200),
-		HHDSnapshotTTLSeconds:     envInt("CWSO_HHD_CAPABILITY_SNAPSHOT_TTL_SECONDS", 30),
-		HHDPolicyEngineV2:         envBool("CWSO_HHD_POLICY_ENGINE_V2_ENABLED", false),
-		HHDPolicyMinConfidence:    envFloat64("CWSO_HHD_POLICY_MIN_CONFIDENCE", 0.5),
-		HHDPolicyMaxQueueDepth:    envInt("CWSO_HHD_POLICY_MAX_QUEUE_DEPTH", 32),
-		HHDWeightHealth:           envFloat64("CWSO_HHD_POLICY_WEIGHT_HEALTH", 0.35),
-		HHDWeightReliability:      envFloat64("CWSO_HHD_POLICY_WEIGHT_RELIABILITY", 0.25),
-		HHDWeightCost:             envFloat64("CWSO_HHD_POLICY_WEIGHT_COST", 0.10),
-		HHDWeightLatency:          envFloat64("CWSO_HHD_POLICY_WEIGHT_LATENCY", 0.10),
-		HHDWeightQueueDepth:       envFloat64("CWSO_HHD_POLICY_WEIGHT_QUEUE_DEPTH", 0.10),
-		HHDWeightWorkload:         envFloat64("CWSO_HHD_POLICY_WEIGHT_WORKLOAD", 0.10),
-		HHDWasmScoringEnabled:     envBool("CWSO_HHD_WASM_SCORING_ENABLED", false),
-		HHDWasmScoringModulePath:  os.Getenv("CWSO_HHD_WASM_SCORING_MODULE_PATH"),
-		HHDWasmScoringTimeoutMS:   envInt("CWSO_HHD_WASM_SCORING_TIMEOUT_MS", 20),
-		HHDWasmScoringMemoryPages: uint32(envInt("CWSO_HHD_WASM_SCORING_MEMORY_LIMIT_PAGES", 64)),
-		HHDWasmScoringHostCalls:   splitCSV(os.Getenv("CWSO_HHD_WASM_SCORING_HOST_CALL_ALLOWLIST")),
+		Transport:                   envOr("CWSO_TRANSPORT", "stdio"),
+		HTTPAddr:                    envOr("CWSO_HTTP_ADDR", ":8080"),
+		LogLevel:                    envOr("CWSO_LOG_LEVEL", "info"),
+		JWTSecret:                   jwtSecret,
+		JWTAlg:                      envOr("CWSO_JWT_ALG", "HS256"),
+		JWTIssuer:                   envOr("CWSO_JWT_ISSUER", "cwso"),
+		JWTAudience:                 envOr("CWSO_JWT_AUDIENCE", "cwso-mcp"),
+		JWKSPath:                    os.Getenv("CWSO_JWKS_PATH"),
+		AllowedOrigins:              splitCSV(envOr("CWSO_ALLOWED_ORIGINS", "http://localhost,http://127.0.0.1")),
+		JobTimeoutSeconds:           envInt("CWSO_JOB_TIMEOUT_SECONDS", 300),
+		JobWorkers:                  envInt("CWSO_JOB_WORKERS", 4),
+		JobQueueSize:                envInt("CWSO_JOB_QUEUE_SIZE", 64),
+		Workspace:                   envOr("CWSO_WORKSPACE", "/workspace"),
+		ShadowSocket:                os.Getenv("CWSO_GIT_SHADOW_SOCKET"),
+		MergeEngineSocket:           os.Getenv("CWSO_MERGE_ENGINE_SOCKET"),
+		SandboxRunner:               envOr("CWSO_SANDBOX_RUNNER", "none"),
+		SandboxDockerHost:           envOr("CWSO_DOCKER_HOST", "unix:///var/run/docker.sock"),
+		SandboxImage:                envOr("CWSO_DOCKER_IMAGE", "alpine:3.20"),
+		SandboxRuntime:              os.Getenv("CWSO_DOCKER_RUNTIME"),
+		SandboxNetwork:              envOr("CWSO_DOCKER_NETWORK", "none"),
+		SandboxCPUQuota:             envInt64("CWSO_DOCKER_CPU_QUOTA_MICROS", 100000),
+		SandboxMemory:               envInt64("CWSO_DOCKER_MEMORY_BYTES", 268435456),
+		SandboxPIDs:                 envInt64("CWSO_DOCKER_PIDS_LIMIT", 128),
+		SandboxStopSecs:             envInt("CWSO_DOCKER_STOP_TIMEOUT_SECONDS", 5),
+		SandboxFCBin:                envOr("CWSO_FIRECRACKER_BIN", "firecracker"),
+		SandboxFCHelper:             os.Getenv("CWSO_FIRECRACKER_EXEC_HELPER"),
+		SandboxKVMDevice:            envOr("CWSO_FIRECRACKER_KVM_DEVICE", "/dev/kvm"),
+		SandboxVhostNet:             envOr("CWSO_FIRECRACKER_VHOST_DEVICE", "/dev/vhost-net"),
+		SandboxSnapshot:             envOr("CWSO_FIRECRACKER_SNAPSHOT_DIR", "/tmp/cwso-firecracker/templates"),
+		SandboxVMState:              envOr("CWSO_FIRECRACKER_VMSTATE_DIR", "/tmp/cwso-firecracker/vms"),
+		SandboxRequireVh:            envBool("CWSO_FIRECRACKER_REQUIRE_VHOST_NET", true),
+		SandboxDegradedMode:         envBool("CWSO_SANDBOX_DEGRADED_MODE", false),
+		SandboxAllowDockerTrusted:   envBool("CWSO_SANDBOX_ALLOW_DOCKER_TRUSTED", false),
+		HHDCapabilityRegistry:       envBool("CWSO_HHD_CAPABILITY_REGISTRY_ENABLED", false),
+		HHDDecisionTelemetry:        envBool("CWSO_HHD_DECISION_TELEMETRY_ENABLED", false),
+		HHDEventMonitorEnabled:      envBool("CWSO_HHD_EVENT_MONITOR_ENABLED", false),
+		HHDEventMonitorEBPF:         envBool("CWSO_HHD_EVENT_MONITOR_EBPF_ENABLED", false),
+		HHDEventMonitorLatencyMS:    envInt("CWSO_HHD_EVENT_MONITOR_LATENCY_THRESHOLD_MS", 1200),
+		HHDSnapshotTTLSeconds:       envInt("CWSO_HHD_CAPABILITY_SNAPSHOT_TTL_SECONDS", 30),
+		HHDPolicyEngineV2:           envBool("CWSO_HHD_POLICY_ENGINE_V2_ENABLED", false),
+		HHDPolicyMinConfidence:      envFloat64("CWSO_HHD_POLICY_MIN_CONFIDENCE", 0.5),
+		HHDPolicyMaxQueueDepth:      envInt("CWSO_HHD_POLICY_MAX_QUEUE_DEPTH", 32),
+		HHDWeightHealth:             envFloat64("CWSO_HHD_POLICY_WEIGHT_HEALTH", 0.35),
+		HHDWeightReliability:        envFloat64("CWSO_HHD_POLICY_WEIGHT_RELIABILITY", 0.25),
+		HHDWeightCost:               envFloat64("CWSO_HHD_POLICY_WEIGHT_COST", 0.10),
+		HHDWeightLatency:            envFloat64("CWSO_HHD_POLICY_WEIGHT_LATENCY", 0.10),
+		HHDWeightQueueDepth:         envFloat64("CWSO_HHD_POLICY_WEIGHT_QUEUE_DEPTH", 0.10),
+		HHDWeightWorkload:           envFloat64("CWSO_HHD_POLICY_WEIGHT_WORKLOAD", 0.10),
+		HHDSparseQuantizedEnabled:   envBool("CWSO_HHD_SPARSE_QUANTIZED_ASSIST_ENABLED", false),
+		HHDSparseQuantizedTradeoff:  envFloat64("CWSO_HHD_SPARSE_QUANTIZED_COST_LATENCY_TRADEOFF", 0),
+		HHDQualityGuardrailMinScore: envFloat64("CWSO_HHD_SPARSE_QUANTIZED_QUALITY_GUARDRAIL_MIN_SCORE", 0.98),
+		HHDWasmScoringEnabled:       envBool("CWSO_HHD_WASM_SCORING_ENABLED", false),
+		HHDWasmScoringModulePath:    os.Getenv("CWSO_HHD_WASM_SCORING_MODULE_PATH"),
+		HHDWasmScoringTimeoutMS:     envInt("CWSO_HHD_WASM_SCORING_TIMEOUT_MS", 20),
+		HHDWasmScoringMemoryPages:   uint32(envInt("CWSO_HHD_WASM_SCORING_MEMORY_LIMIT_PAGES", 64)),
+		HHDWasmScoringHostCalls:     splitCSV(os.Getenv("CWSO_HHD_WASM_SCORING_HOST_CALL_ALLOWLIST")),
 	}
 
 	if c.Transport == "http" && c.JWTSecret == "" {
@@ -162,6 +168,12 @@ func Load(_ string) (*Config, error) {
 	}
 	if c.HHDPolicyMaxQueueDepth <= 0 {
 		return nil, fmt.Errorf("CWSO_HHD_POLICY_MAX_QUEUE_DEPTH must be > 0")
+	}
+	if c.HHDSparseQuantizedTradeoff < -1 || c.HHDSparseQuantizedTradeoff > 1 {
+		return nil, fmt.Errorf("CWSO_HHD_SPARSE_QUANTIZED_COST_LATENCY_TRADEOFF must be between -1 and 1")
+	}
+	if c.HHDQualityGuardrailMinScore < 0 || c.HHDQualityGuardrailMinScore > 1 {
+		return nil, fmt.Errorf("CWSO_HHD_SPARSE_QUANTIZED_QUALITY_GUARDRAIL_MIN_SCORE must be between 0 and 1")
 	}
 	weights := []float64{
 		c.HHDWeightHealth,
