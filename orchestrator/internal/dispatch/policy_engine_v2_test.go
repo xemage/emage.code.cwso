@@ -428,6 +428,136 @@ func TestPolicyEngineV2SSMAssistGuardrailFallbackOnOutOfThresholdSignal(t *testi
 	}
 }
 
+func TestPolicyEngineV2MixedBackendForcedFallbackWalksDeterministicChain(t *testing.T) {
+	engine := NewPolicyEngineV2(PolicyV2Config{
+		Enabled:            true,
+		PolicyVersion:      "policy-v2",
+		BaselineProviderID: "cpu-baseline",
+		MinConfidence:      0.2,
+		MaxQueueDepth:      16,
+		Weights:            DefaultPolicyV2Config().Weights,
+		SparseQuantized: SparseQuantizedAssistConfig{
+			Enabled:                  true,
+			ProviderFeatureFlag:      "hhd.sparse_quantized_assist",
+			CostLatencyTradeoff:      0.4,
+			QualityGuardrailMinScore: 0.98,
+		},
+		SSM: SSMAssistConfig{
+			Enabled:             true,
+			ProviderFeatureFlag: "hhd.ssm_sequence_assist",
+			ThroughputBias:      0.7,
+			MinSequenceLength:   2048,
+			MaxSequenceLength:   32768,
+			SequenceSensitivity: 1,
+		},
+	})
+
+	snapshot := CapabilitySnapshot{
+		Epoch: 140,
+		Providers: []ProviderCapability{
+			{
+				ProviderID:            "gpu-a",
+				ContractVersion:       "dispatch.provider/v1.0",
+				HealthState:           HealthHealthy,
+				LatencyClass:          "ultra",
+				CostClass:             "high",
+				QueueDepth:            1,
+				SupportedWorkloadTags: []string{"default", "merge-assist", "long-context"},
+				ReliabilityClass:      "gold",
+			},
+			{
+				ProviderID:            "gpu-sq",
+				ContractVersion:       "dispatch.provider/v1.0",
+				HealthState:           HealthHealthy,
+				LatencyClass:          "baseline",
+				CostClass:             "low",
+				QueueDepth:            2,
+				SupportedWorkloadTags: []string{"default", "merge-assist", "long-context"},
+				ReliabilityClass:      "standard",
+				FeatureFlags:          []string{"hhd.sparse_quantized_assist"},
+			},
+			{
+				ProviderID:            "gpu-ssm",
+				ContractVersion:       "dispatch.provider/v1.0",
+				HealthState:           HealthHealthy,
+				LatencyClass:          "baseline",
+				CostClass:             "low",
+				QueueDepth:            8,
+				SupportedWorkloadTags: []string{"default", "merge-assist", "long-context"},
+				ReliabilityClass:      "gold",
+				FeatureFlags:          []string{"hhd.ssm_sequence_assist"},
+			},
+			{
+				ProviderID:            "cpu-baseline",
+				ContractVersion:       "dispatch.provider/v1.0",
+				HealthState:           HealthHealthy,
+				LatencyClass:          "baseline",
+				CostClass:             "low",
+				QueueDepth:            0,
+				SupportedWorkloadTags: []string{"default", "merge-assist", "long-context"},
+				ReliabilityClass:      "standard",
+			},
+		},
+	}
+
+	decision := engine.Select(snapshot, PolicyInput{
+		WorkloadTags:  []string{"long-context", "merge-assist"},
+		RequestLabels: []string{"sequence_length=16384"},
+	})
+	if decision.SelectedProvider == "" {
+		t.Fatalf("expected selected provider in mixed-backend scenario, got %+v", decision)
+	}
+	if len(decision.RankedFallbackChain) < 2 {
+		t.Fatalf("expected at least one fallback candidate, got %+v", decision)
+	}
+	if decision.RankedFallbackChain[len(decision.RankedFallbackChain)-1] != "cpu-baseline" {
+		t.Fatalf("expected baseline provider to terminate fallback chain, got %+v", decision.RankedFallbackChain)
+	}
+
+	walk := decision
+	for i := 0; i < len(decision.RankedFallbackChain)-1; i++ {
+		failed := walk.SelectedProvider
+		if failed == "" {
+			failed = decision.RankedFallbackChain[i]
+		}
+		walk = engine.FallbackOnFailure(walk, failed, "unavailable")
+		expectedNext := decision.RankedFallbackChain[i+1]
+		if walk.SelectedProvider != expectedNext {
+			t.Fatalf("expected deterministic fallback step %d -> %s, got %+v", i+1, expectedNext, walk)
+		}
+		if walk.ReasonCode != "fallback_unavailable" {
+			t.Fatalf("expected normalized failure class reason, got %+v", walk)
+		}
+	}
+}
+
+func TestPolicyEngineV2FaultInjectedScoreAdjusterRemainsDeterministicAcrossRepeats(t *testing.T) {
+	engine := NewPolicyEngineV2(PolicyV2Config{
+		Enabled:            true,
+		PolicyVersion:      "policy-v2",
+		BaselineProviderID: "cpu-baseline",
+		MinConfidence:      0.2,
+		MaxQueueDepth:      16,
+		Weights:            DefaultPolicyV2Config().Weights,
+		ScoreAdjuster: stubScoreAdjuster{adjust: func(context.Context, ScoreAdjustmentInput) (float64, error) {
+			return 0, errors.New("injected scorer failure")
+		}},
+	})
+
+	input := PolicyInput{WorkloadTags: []string{"default"}}
+	first := engine.Select(testPluginSnapshot(), input)
+	if first.ReasonCode != "plugin_failed_fallback" {
+		t.Fatalf("expected plugin_failed_fallback under injected failure, got %+v", first)
+	}
+
+	for i := 0; i < 100; i++ {
+		next := engine.Select(testPluginSnapshot(), input)
+		if !reflect.DeepEqual(first, next) {
+			t.Fatalf("expected deterministic decision under fault injection at iteration %d, first=%+v next=%+v", i, first, next)
+		}
+	}
+}
+
 func testPluginSnapshot() CapabilitySnapshot {
 	return CapabilitySnapshot{
 		Epoch: 99,

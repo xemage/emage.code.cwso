@@ -2,7 +2,7 @@
 
 - Phase: **5 (QA)** · Owner: **qa-engineer** · Priority: **P0**
 - Depends on: T066, T067, T068, T069 · Blocks: T071
-- Status: pending
+- Status: done (2026-05-23)
 
 ## Objective
 Validate integrated behavior across HHD, Wasm micro-agents, and experimental paths while ensuring no regression in reliability.
@@ -28,3 +28,13 @@ Validate integrated behavior across HHD, Wasm micro-agents, and experimental pat
 
 ## Blocker protocol
 If flaky infrastructure prevents stable verdicts, report blocker type `dependency` and provide reproducible failure matrix.
+
+## Completion notes (2026-05-23)
+- Produced QA artifact `docs/artifacts/qa-phase5-report-v1.md` covering integrated scope, prerequisites, matrix coverage, reliability KPI evidence, fallback trace references, and final verdict.
+- Extended policy-engine automated QA coverage in `orchestrator/internal/dispatch/policy_engine_v2_test.go`:
+	- `TestPolicyEngineV2MixedBackendForcedFallbackWalksDeterministicChain`
+	- `TestPolicyEngineV2FaultInjectedScoreAdjusterRemainsDeterministicAcrossRepeats`
+- Reused existing fallback evidence tests for sparse/quantized, SSM, Wasm score-adjuster failure, and event-monitor eBPF/userspace fallback.
+
+### Validation run
+- `cd orchestrator && go test ./internal/dispatch ./internal/tools ./internal/server ./internal/config` -> PASS
