@@ -173,10 +173,69 @@ make release-assets TAG=v0.1.1
 This command builds binaries and container archives into `dist/<tag>/` and
 uploads them to the matching GitLab release entry.
 
+## Phase 5 Hardware-Aware Features (Experimental)
+
+Phase 5 introduces optional hardware-aware dispatch capabilities. These are
+off by default and should be enabled gradually in controlled environments.
+
+### Feature-flag configuration
+
+Core dispatch and telemetry controls:
+
+- `CWSO_HHD_CAPABILITY_REGISTRY_ENABLED`
+- `CWSO_HHD_DECISION_TELEMETRY_ENABLED`
+- `CWSO_HHD_POLICY_ENGINE_V2_ENABLED`
+- `CWSO_HHD_EVENT_MONITOR_ENABLED`
+- `CWSO_HHD_EVENT_MONITOR_EBPF_ENABLED`
+
+Assist-path controls (experimental):
+
+- `CWSO_HHD_SPARSE_QUANTIZED_ASSIST_ENABLED`
+- `CWSO_HHD_SSM_ASSIST_ENABLED`
+
+Wasm scoring controls (experimental):
+
+- `CWSO_HHD_WASM_SCORING_ENABLED`
+- `CWSO_HHD_WASM_SCORING_MODULE_PATH`
+- `CWSO_HHD_WASM_SCORING_TIMEOUT_MS`
+- `CWSO_HHD_WASM_SCORING_MEMORY_LIMIT_PAGES`
+- `CWSO_HHD_WASM_SCORING_HOST_CALL_ALLOWLIST`
+
+### Compatibility and rollout notes
+
+- Baseline mode remains available and is the default when feature flags are
+  disabled.
+- Invalid or out-of-threshold sequence-assist signals fall back to
+  `cpu-baseline`.
+- Sparse/quantized quality guardrail failures auto-disable that assist path and
+  route via baseline.
+- Wasm scoring plugin initialization or execution failures fail open to built-in
+  policy scoring.
+- eBPF monitoring path is optional and can fall back to userspace telemetry.
+
+### Rollback
+
+To quickly revert to stable behavior, disable hardware-aware features and
+restart the orchestrator:
+
+```bash
+export CWSO_HHD_CAPABILITY_REGISTRY_ENABLED=false
+export CWSO_HHD_DECISION_TELEMETRY_ENABLED=false
+export CWSO_HHD_POLICY_ENGINE_V2_ENABLED=false
+export CWSO_HHD_SPARSE_QUANTIZED_ASSIST_ENABLED=false
+export CWSO_HHD_SSM_ASSIST_ENABLED=false
+export CWSO_HHD_WASM_SCORING_ENABLED=false
+export CWSO_HHD_EVENT_MONITOR_ENABLED=false
+```
+
+For Wasm-specific operations guidance, see
+[docs/artifacts/wasm-scoring-runtime-ops-v1.md](docs/artifacts/wasm-scoring-runtime-ops-v1.md).
+
 ## Documentation
 - [Requirements](docs/artifacts/requirements-v1.md)
 - [Architecture](docs/artifacts/architecture-v1.md)
 - [Security Baseline](docs/artifacts/security-baseline-v1.md)
+- [Release v0.2.0 Hardware-Aware Readiness](docs/artifacts/release-v0.2.0-hardware-aware-v1.md)
 - [ADR Index](docs/decisions/)
 - [Active Tasks](docs/tasks/active-tasks.md) · [Completed Tasks](docs/tasks/completed-tasks.md)
 - [Phase 1 Checkpoint](docs/checkpoints/checkpoint-001-phase1.md) · [Phase 2 Checkpoint](docs/checkpoints/checkpoint-002-phase2.md) · [T027 Tech Lead Gate](docs/checkpoints/gate-T027-phase2-techlead.md)

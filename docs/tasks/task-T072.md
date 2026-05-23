@@ -2,7 +2,7 @@
 
 - Phase: **5 (Release Readiness)** · Owner: **technical-writer** · Priority: **P1**
 - Depends on: T071 · Blocks: —
-- Status: pending
+- Status: done (2026-05-23)
 
 ## Objective
 Prepare operator-facing documentation and release-readiness artifacts for the hardware-aware feature set.
@@ -26,3 +26,16 @@ Prepare operator-facing documentation and release-readiness artifacts for the ha
 
 ## Blocker protocol
 If gate artifacts are missing or inconclusive, report blocker type `dependency` and list required upstream updates.
+
+## Completion notes (2026-05-23)
+- Produced release-readiness artifact:
+	- `docs/artifacts/release-v0.2.0-hardware-aware-v1.md`
+- Updated README/operator guidance for Phase 5 hardware-aware features:
+	- feature-flag configuration map
+	- compatibility and risk notes
+	- rollback/fallback procedures
+- Explicitly referenced QA and security outcomes:
+	- QA PASS: `docs/artifacts/qa-phase5-report-v1.md`
+	- Security CONDITIONAL_PASS: `docs/artifacts/security-phase5-audit-v1.md`
+- Documented known limitations/non-goals and preserved default-off posture for
+	experimental assists.

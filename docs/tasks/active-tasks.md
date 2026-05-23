@@ -49,7 +49,7 @@
 | T069 | Event-driven monitoring spike (eBPF + fallback) | backend-developer | done | P1 | T064 | 2026-05-22 |
 | T070 | Phase 5 integration and reliability QA | qa-engineer | done | P0 | T066, T067, T068, T069 | 2026-05-23 |
 | T071 | Phase 5 security gate and hardening | security-engineer | done (CONDITIONAL_PASS; follow-up hardening tracked as T073-T075) | P0 | T070 | 2026-05-23 |
-| T072 | Phase 5 documentation and release readiness | technical-writer | pending | P1 | T071 | 2026-05-22 |
+| T072 | Phase 5 documentation and release readiness | technical-writer | done (release-v0.2.0-hardware-aware-v1 published) | P1 | T071 | 2026-05-23 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled` · `partial` · `deferred`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
