@@ -311,6 +311,123 @@ func TestPolicyEngineV2SparseQuantizedQualityBreachAutoDisablesPath(t *testing.T
 	}
 }
 
+func TestPolicyEngineV2SSMAssistDisabledPreservesBaselineSelection(t *testing.T) {
+	engine := NewPolicyEngineV2(PolicyV2Config{
+		Enabled:            true,
+		PolicyVersion:      "policy-v2",
+		BaselineProviderID: "cpu-baseline",
+		MinConfidence:      0.2,
+		MaxQueueDepth:      16,
+		Weights:            DefaultPolicyV2Config().Weights,
+		SSM: SSMAssistConfig{
+			Enabled:             false,
+			ProviderFeatureFlag: "hhd.ssm_sequence_assist",
+			ThroughputBias:      0.8,
+			MinSequenceLength:   2048,
+			MaxSequenceLength:   32768,
+			SequenceSensitivity: 1,
+		},
+	})
+
+	decision := engine.Select(testSSMSequenceAssistSnapshot(), PolicyInput{
+		WorkloadTags:  []string{"long-context"},
+		RequestLabels: []string{"sequence_length=16384"},
+	})
+	if decision.SelectedProvider != "gpu-a" {
+		t.Fatalf("expected baseline policy scoring to remain gpu-a when SSM assist is disabled, got %+v", decision)
+	}
+}
+
+func TestPolicyEngineV2SSMAssistEnabledAdjustsLongContextSelection(t *testing.T) {
+	engine := NewPolicyEngineV2(PolicyV2Config{
+		Enabled:            true,
+		PolicyVersion:      "policy-v2",
+		BaselineProviderID: "cpu-baseline",
+		MinConfidence:      0.2,
+		MaxQueueDepth:      16,
+		Weights:            DefaultPolicyV2Config().Weights,
+		SSM: SSMAssistConfig{
+			Enabled:             true,
+			ProviderFeatureFlag: "hhd.ssm_sequence_assist",
+			ThroughputBias:      0.8,
+			MinSequenceLength:   2048,
+			MaxSequenceLength:   32768,
+			SequenceSensitivity: 1,
+		},
+	})
+
+	decision := engine.Select(testSSMSequenceAssistSnapshot(), PolicyInput{
+		WorkloadTags:  []string{"long-context"},
+		RequestLabels: []string{"sequence_length=16384"},
+	})
+	if decision.SelectedProvider != "gpu-ssm" {
+		t.Fatalf("expected SSM assist to bias long-context selection to gpu-ssm, got %+v", decision)
+	}
+	if decision.ReasonCode != "ssm_assist_selected" {
+		t.Fatalf("expected ssm_assist_selected reason, got %+v", decision)
+	}
+}
+
+func TestPolicyEngineV2SSMAssistGuardrailFallbackOnInvalidSignal(t *testing.T) {
+	engine := NewPolicyEngineV2(PolicyV2Config{
+		Enabled:            true,
+		PolicyVersion:      "policy-v2",
+		BaselineProviderID: "cpu-baseline",
+		MinConfidence:      0.2,
+		MaxQueueDepth:      16,
+		Weights:            DefaultPolicyV2Config().Weights,
+		SSM: SSMAssistConfig{
+			Enabled:             true,
+			ProviderFeatureFlag: "hhd.ssm_sequence_assist",
+			ThroughputBias:      0.8,
+			MinSequenceLength:   2048,
+			MaxSequenceLength:   32768,
+			SequenceSensitivity: 1,
+		},
+	})
+
+	decision := engine.Select(testSSMSequenceAssistSnapshot(), PolicyInput{
+		WorkloadTags:  []string{"long-context"},
+		RequestLabels: []string{"sequence_length=invalid"},
+	})
+	if decision.SelectedProvider != "cpu-baseline" {
+		t.Fatalf("expected invalid sequence signal to fallback to baseline provider, got %+v", decision)
+	}
+	if decision.ReasonCode != "ssm_signal_invalid_fallback" {
+		t.Fatalf("expected ssm_signal_invalid_fallback reason, got %+v", decision)
+	}
+}
+
+func TestPolicyEngineV2SSMAssistGuardrailFallbackOnOutOfThresholdSignal(t *testing.T) {
+	engine := NewPolicyEngineV2(PolicyV2Config{
+		Enabled:            true,
+		PolicyVersion:      "policy-v2",
+		BaselineProviderID: "cpu-baseline",
+		MinConfidence:      0.2,
+		MaxQueueDepth:      16,
+		Weights:            DefaultPolicyV2Config().Weights,
+		SSM: SSMAssistConfig{
+			Enabled:             true,
+			ProviderFeatureFlag: "hhd.ssm_sequence_assist",
+			ThroughputBias:      0.8,
+			MinSequenceLength:   2048,
+			MaxSequenceLength:   32768,
+			SequenceSensitivity: 1,
+		},
+	})
+
+	decision := engine.Select(testSSMSequenceAssistSnapshot(), PolicyInput{
+		WorkloadTags:  []string{"long-context"},
+		RequestLabels: []string{"sequence_length=64000"},
+	})
+	if decision.SelectedProvider != "cpu-baseline" {
+		t.Fatalf("expected out-of-threshold sequence signal to fallback to baseline provider, got %+v", decision)
+	}
+	if decision.ReasonCode != "ssm_signal_out_of_threshold_fallback" {
+		t.Fatalf("expected ssm_signal_out_of_threshold_fallback reason, got %+v", decision)
+	}
+}
+
 func testPluginSnapshot() CapabilitySnapshot {
 	return CapabilitySnapshot{
 		Epoch: 99,
@@ -372,6 +489,45 @@ func testSparseQuantizedSnapshot() CapabilitySnapshot {
 				CostClass:             "low",
 				QueueDepth:            0,
 				SupportedWorkloadTags: []string{"default", "merge-assist"},
+				ReliabilityClass:      "standard",
+			},
+		},
+	}
+}
+
+func testSSMSequenceAssistSnapshot() CapabilitySnapshot {
+	return CapabilitySnapshot{
+		Epoch: 102,
+		Providers: []ProviderCapability{
+			{
+				ProviderID:            "gpu-a",
+				ContractVersion:       "dispatch.provider/v1.0",
+				HealthState:           HealthHealthy,
+				LatencyClass:          "ultra",
+				CostClass:             "high",
+				QueueDepth:            0,
+				SupportedWorkloadTags: []string{"default", "long-context"},
+				ReliabilityClass:      "gold",
+			},
+			{
+				ProviderID:            "gpu-ssm",
+				ContractVersion:       "dispatch.provider/v1.0",
+				HealthState:           HealthHealthy,
+				LatencyClass:          "baseline",
+				CostClass:             "low",
+				QueueDepth:            12,
+				SupportedWorkloadTags: []string{"default", "long-context"},
+				ReliabilityClass:      "gold",
+				FeatureFlags:          []string{"hhd.ssm_sequence_assist"},
+			},
+			{
+				ProviderID:            "cpu-baseline",
+				ContractVersion:       "dispatch.provider/v1.0",
+				HealthState:           HealthHealthy,
+				LatencyClass:          "baseline",
+				CostClass:             "low",
+				QueueDepth:            0,
+				SupportedWorkloadTags: []string{"default", "long-context"},
 				ReliabilityClass:      "standard",
 			},
 		},

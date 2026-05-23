@@ -321,6 +321,14 @@ func (s *Server) registerBaselineTools() error {
 			CostLatencyTradeoff:      s.cfg.HHDSparseQuantizedTradeoff,
 			QualityGuardrailMinScore: s.cfg.HHDQualityGuardrailMinScore,
 		},
+		SSM: dispatch.SSMAssistConfig{
+			Enabled:             s.cfg.HHDSSMAssistEnabled,
+			ProviderFeatureFlag: "hhd.ssm_sequence_assist",
+			ThroughputBias:      s.cfg.HHDSSMThroughputBias,
+			MinSequenceLength:   s.cfg.HHDSSMMinSequenceLength,
+			MaxSequenceLength:   s.cfg.HHDSSMMaxSequenceLength,
+			SequenceSensitivity: s.cfg.HHDSSMSequenceSensitivity,
+		},
 		Weights: dispatch.PolicyWeights{
 			Health:      s.cfg.HHDWeightHealth,
 			Reliability: s.cfg.HHDWeightReliability,

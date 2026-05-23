@@ -45,7 +45,7 @@
 | T065 | Dispatch policy engine v2 | backend-developer | done | P0 | T063, T064 | 2026-05-22 |
 | T066 | Wasm micro-agent runtime integration | backend-developer | done | P1 | T065 | 2026-05-22 |
 | T067 | Sparse and quantized assist spike | backend-developer | done | P1 | T065 | 2026-05-23 |
-| T068 | SSM sequence-assist spike | backend-developer | pending | P1 | T065 | 2026-05-22 |
+| T068 | SSM sequence-assist spike | backend-developer | done | P1 | T065 | 2026-05-23 |
 | T069 | Event-driven monitoring spike (eBPF + fallback) | backend-developer | done | P1 | T064 | 2026-05-22 |
 | T070 | Phase 5 integration and reliability QA | qa-engineer | pending | P0 | T066, T067, T068, T069 | 2026-05-22 |
 | T071 | Phase 5 security gate and hardening | security-engineer | pending | P0 | T070 | 2026-05-22 |

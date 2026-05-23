@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 )
@@ -39,6 +40,7 @@ type PolicyV2Config struct {
 	Weights            PolicyWeights
 	ScoreAdjuster      ScoreAdjuster
 	SparseQuantized    SparseQuantizedAssistConfig
+	SSM                SSMAssistConfig
 }
 
 // SparseQuantizedAssistConfig controls experimental sparse/quantized scoring.
@@ -48,6 +50,17 @@ type SparseQuantizedAssistConfig struct {
 	ProviderFeatureFlag      string
 	CostLatencyTradeoff      float64
 	QualityGuardrailMinScore float64
+}
+
+// SSMAssistConfig controls experimental sequence-assist scoring for long-context workloads.
+// This path is default-off and applies only when a valid sequence-length signal is provided.
+type SSMAssistConfig struct {
+	Enabled             bool
+	ProviderFeatureFlag string
+	ThroughputBias      float64
+	MinSequenceLength   int
+	MaxSequenceLength   int
+	SequenceSensitivity float64
 }
 
 // PolicyDecision is the deterministic routing decision envelope.
@@ -88,6 +101,14 @@ func DefaultPolicyV2Config() PolicyV2Config {
 			CostLatencyTradeoff:      0,
 			QualityGuardrailMinScore: 0.98,
 		},
+		SSM: SSMAssistConfig{
+			Enabled:             false,
+			ProviderFeatureFlag: "hhd.ssm_sequence_assist",
+			ThroughputBias:      0,
+			MinSequenceLength:   2048,
+			MaxSequenceLength:   32768,
+			SequenceSensitivity: 1,
+		},
 	}
 }
 
@@ -97,40 +118,18 @@ func NewPolicyEngineV2(cfg PolicyV2Config) *PolicyEngineV2 {
 }
 
 func (e *PolicyEngineV2) Select(snapshot CapabilitySnapshot, input PolicyInput) PolicyDecision {
-	baseline := e.cfg.BaselineProviderID
 	if !e.cfg.Enabled {
-		return PolicyDecision{
-			PolicyVersion:       "cpu-baseline-default",
-			CapabilityEpoch:     snapshot.Epoch,
-			SelectedProvider:    baseline,
-			RankedFallbackChain: []string{baseline},
-			Confidence:          1,
-			ReasonCode:          "feature_disabled",
-		}
+		return e.baselineDecision(snapshot.Epoch, "cpu-baseline-default", "feature_disabled")
 	}
 
 	candidates := scoreCandidates(snapshot.Providers, input, e.cfg)
 	if len(candidates) == 0 {
-		return PolicyDecision{
-			PolicyVersion:       e.cfg.PolicyVersion,
-			CapabilityEpoch:     snapshot.Epoch,
-			SelectedProvider:    baseline,
-			RankedFallbackChain: []string{baseline},
-			Confidence:          1,
-			ReasonCode:          "no_eligible_provider",
-		}
+		return e.baselineDecision(snapshot.Epoch, e.cfg.PolicyVersion, "no_eligible_provider")
 	}
 
 	if e.shouldAutoDisableSparseQuantized(input) {
 		e.autoDisabled.Store(true)
-		return PolicyDecision{
-			PolicyVersion:       e.cfg.PolicyVersion,
-			CapabilityEpoch:     snapshot.Epoch,
-			SelectedProvider:    baseline,
-			RankedFallbackChain: []string{baseline},
-			Confidence:          1,
-			ReasonCode:          "quality_guardrail_autodisable",
-		}
+		return e.baselineDecision(snapshot.Epoch, e.cfg.PolicyVersion, "quality_guardrail_autodisable")
 	}
 
 	assistActive := e.isSparseQuantizedActive()
@@ -148,6 +147,42 @@ func (e *PolicyEngineV2) Select(snapshot CapabilitySnapshot, input PolicyInput) 
 			)
 			candidates[i].score += delta
 			candidates[i].confidence = clamp01(candidates[i].confidence + delta)
+		}
+	}
+
+	ssmAssistApplied := false
+	if e.isSSMAssistActive() && hasLongContextWorkload(input.WorkloadTags) {
+		sequenceLength, hasSignal, invalidSignal := extractSequenceLengthSignal(input.RequestLabels)
+		if invalidSignal {
+			return e.baselineDecision(snapshot.Epoch, e.cfg.PolicyVersion, "ssm_signal_invalid_fallback")
+		}
+		if hasSignal {
+			if sequenceLength < e.cfg.SSM.MinSequenceLength || sequenceLength > e.cfg.SSM.MaxSequenceLength {
+				return e.baselineDecision(snapshot.Epoch, e.cfg.PolicyVersion, "ssm_signal_out_of_threshold_fallback")
+			}
+			normalizedSequenceLength := normalizeSequenceLength(
+				sequenceLength,
+				e.cfg.SSM.MinSequenceLength,
+				e.cfg.SSM.MaxSequenceLength,
+			)
+			for i := range candidates {
+				if !providerHasFeatureFlag(candidates[i].featureFlags, e.cfg.SSM.ProviderFeatureFlag) {
+					continue
+				}
+				delta := ssmThroughputDelta(
+					e.cfg.SSM.ThroughputBias,
+					e.cfg.SSM.SequenceSensitivity,
+					normalizedSequenceLength,
+					candidates[i].latencyScore,
+					candidates[i].queueScore,
+				)
+				if delta == 0 {
+					continue
+				}
+				ssmAssistApplied = true
+				candidates[i].score += delta
+				candidates[i].confidence = clamp01(candidates[i].confidence + delta)
+			}
 		}
 	}
 
@@ -175,6 +210,7 @@ func (e *PolicyEngineV2) Select(snapshot CapabilitySnapshot, input PolicyInput) 
 	})
 
 	selectedProvider := candidates[0].providerID
+	baseline := e.cfg.BaselineProviderID
 	confidence := candidates[0].confidence
 	reasonCode := "selected"
 	if confidence < e.cfg.MinConfidence {
@@ -187,6 +223,8 @@ func (e *PolicyEngineV2) Select(snapshot CapabilitySnapshot, input PolicyInput) 
 		reasonCode = "sparse_quantized_auto_disabled"
 	} else if assistActive {
 		reasonCode = "sparse_quantized_assist_selected"
+	} else if ssmAssistApplied {
+		reasonCode = "ssm_assist_selected"
 	}
 
 	chain := make([]string, 0, len(candidates)+1)
@@ -246,6 +284,21 @@ func (e *PolicyEngineV2) applyScoreAdjustments(input PolicyInput, candidates []s
 	return adjusted, nil
 }
 
+func (e *PolicyEngineV2) baselineDecision(epoch uint64, policyVersion, reasonCode string) PolicyDecision {
+	baseline := e.cfg.BaselineProviderID
+	if strings.TrimSpace(policyVersion) == "" {
+		policyVersion = e.cfg.PolicyVersion
+	}
+	return PolicyDecision{
+		PolicyVersion:       policyVersion,
+		CapabilityEpoch:     epoch,
+		SelectedProvider:    baseline,
+		RankedFallbackChain: []string{baseline},
+		Confidence:          1,
+		ReasonCode:          reasonCode,
+	}
+}
+
 func (e *PolicyEngineV2) FallbackOnFailure(decision PolicyDecision, failedProviderID, failureClass string) PolicyDecision {
 	if len(decision.RankedFallbackChain) == 0 {
 		decision.RankedFallbackChain = []string{e.cfg.BaselineProviderID}
@@ -283,6 +336,7 @@ type scoredCandidate struct {
 	reliabilityRank int
 	costScore       float64
 	latencyScore    float64
+	queueScore      float64
 	featureFlags    []string
 }
 
@@ -323,6 +377,7 @@ func scoreCandidates(providers []ProviderCapability, input PolicyInput, cfg Poli
 			reliabilityRank: reliabilityRank(provider.ReliabilityClass),
 			costScore:       cost,
 			latencyScore:    latency,
+			queueScore:      queue,
 			featureFlags:    provider.FeatureFlags,
 		})
 	}
@@ -352,6 +407,21 @@ func normalizePolicyV2Config(cfg PolicyV2Config) PolicyV2Config {
 	if cfg.SparseQuantized.CostLatencyTradeoff < -1 || cfg.SparseQuantized.CostLatencyTradeoff > 1 {
 		cfg.SparseQuantized.CostLatencyTradeoff = def.SparseQuantized.CostLatencyTradeoff
 	}
+	if cfg.SSM.ProviderFeatureFlag == "" {
+		cfg.SSM.ProviderFeatureFlag = def.SSM.ProviderFeatureFlag
+	}
+	if cfg.SSM.ThroughputBias < -1 || cfg.SSM.ThroughputBias > 1 {
+		cfg.SSM.ThroughputBias = def.SSM.ThroughputBias
+	}
+	if cfg.SSM.MinSequenceLength <= 0 {
+		cfg.SSM.MinSequenceLength = def.SSM.MinSequenceLength
+	}
+	if cfg.SSM.MaxSequenceLength <= cfg.SSM.MinSequenceLength {
+		cfg.SSM.MaxSequenceLength = def.SSM.MaxSequenceLength
+	}
+	if cfg.SSM.SequenceSensitivity < 0 || cfg.SSM.SequenceSensitivity > 2 {
+		cfg.SSM.SequenceSensitivity = def.SSM.SequenceSensitivity
+	}
 	cfg.Weights = normalizeWeights(cfg.Weights, def.Weights)
 	return cfg
 }
@@ -374,6 +444,13 @@ func (e *PolicyEngineV2) isSparseQuantizedActive() bool {
 		return false
 	}
 	return !e.autoDisabled.Load()
+}
+
+func (e *PolicyEngineV2) isSSMAssistActive() bool {
+	if e == nil {
+		return false
+	}
+	return e.cfg.SSM.Enabled
 }
 
 func providerHasFeatureFlag(flags []string, target string) bool {
@@ -405,6 +482,72 @@ func sparseQuantizedTradeoffDelta(tradeoff, cost, latency float64, workloadTags 
 		return 0
 	}
 	return tradeoff * (cost - latency)
+}
+
+func hasLongContextWorkload(workloadTags []string) bool {
+	for _, tag := range workloadTags {
+		switch strings.ToLower(strings.TrimSpace(tag)) {
+		case "long-context", "sequence-heavy", "ssm-assist":
+			return true
+		}
+	}
+	return false
+}
+
+func extractSequenceLengthSignal(labels []string) (sequenceLength int, hasSignal, invalidSignal bool) {
+	for _, label := range labels {
+		key, value, ok := parseLabelKeyValue(label)
+		if !ok {
+			continue
+		}
+		switch key {
+		case "sequence_length", "sequence.length", "context_tokens", "context.tokens":
+			hasSignal = true
+			parsed, err := strconv.Atoi(value)
+			if err != nil || parsed <= 0 {
+				return 0, true, true
+			}
+			return parsed, true, false
+		}
+	}
+	return 0, false, false
+}
+
+func parseLabelKeyValue(raw string) (key, value string, ok bool) {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	if raw == "" {
+		return "", "", false
+	}
+	sep := "="
+	if !strings.Contains(raw, sep) {
+		sep = ":"
+	}
+	parts := strings.SplitN(raw, sep, 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	key = strings.TrimSpace(parts[0])
+	value = strings.TrimSpace(parts[1])
+	if key == "" || value == "" {
+		return "", "", false
+	}
+	return key, value, true
+}
+
+func normalizeSequenceLength(sequenceLength, min, max int) float64 {
+	if max <= min {
+		return 1
+	}
+	return clamp01(float64(sequenceLength-min) / float64(max-min))
+}
+
+func ssmThroughputDelta(throughputBias, sequenceSensitivity, normalizedSequenceLength, latency, queue float64) float64 {
+	if throughputBias == 0 {
+		return 0
+	}
+	throughputSignal := clamp01((latency + queue) / 2)
+	sequenceModifier := 1 + clamp01(normalizedSequenceLength)*sequenceSensitivity
+	return throughputBias * throughputSignal * sequenceModifier
 }
 
 func normalizeWeights(raw, fallback PolicyWeights) PolicyWeights {

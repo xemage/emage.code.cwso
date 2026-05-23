@@ -49,6 +49,21 @@ func TestLoadDefaults(t *testing.T) {
 	if c.HHDQualityGuardrailMinScore != 0.98 {
 		t.Fatalf("expected default quality guardrail min score 0.98, got %v", c.HHDQualityGuardrailMinScore)
 	}
+	if c.HHDSSMAssistEnabled {
+		t.Fatal("expected SSM assist disabled by default")
+	}
+	if c.HHDSSMThroughputBias != 0 {
+		t.Fatalf("expected default SSM throughput bias 0, got %v", c.HHDSSMThroughputBias)
+	}
+	if c.HHDSSMMinSequenceLength != 2048 {
+		t.Fatalf("expected default SSM min sequence length 2048, got %d", c.HHDSSMMinSequenceLength)
+	}
+	if c.HHDSSMMaxSequenceLength != 32768 {
+		t.Fatalf("expected default SSM max sequence length 32768, got %d", c.HHDSSMMaxSequenceLength)
+	}
+	if c.HHDSSMSequenceSensitivity != 1 {
+		t.Fatalf("expected default SSM sequence sensitivity 1, got %v", c.HHDSSMSequenceSensitivity)
+	}
 	if c.HHDWasmScoringEnabled {
 		t.Fatal("expected wasm scoring plugin disabled by default")
 	}
@@ -197,6 +212,34 @@ func TestLoadRejectsInvalidSparseQuantizedQualityGuardrail(t *testing.T) {
 
 	if _, err := Load(""); err == nil {
 		t.Fatal("expected invalid sparse/quantized quality guardrail rejection")
+	}
+}
+
+func TestLoadRejectsInvalidSSMThroughputBias(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_SSM_THROUGHPUT_BIAS", "1.2")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid SSM throughput bias rejection")
+	}
+}
+
+func TestLoadRejectsInvalidSSMSequenceRange(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_SSM_MIN_SEQUENCE_LENGTH", "4096")
+	t.Setenv("CWSO_HHD_SSM_MAX_SEQUENCE_LENGTH", "4096")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid SSM sequence range rejection")
+	}
+}
+
+func TestLoadRejectsInvalidSSMSequenceSensitivity(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_SSM_SEQUENCE_SENSITIVITY", "2.2")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid SSM sequence sensitivity rejection")
 	}
 }
 

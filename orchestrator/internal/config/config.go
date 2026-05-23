@@ -62,6 +62,11 @@ type Config struct {
 	HHDSparseQuantizedEnabled   bool     // enable sparse/quantized assist scoring experiment
 	HHDSparseQuantizedTradeoff  float64  // cost-latency tradeoff modifier in [-1, 1]
 	HHDQualityGuardrailMinScore float64  // minimum quality score before auto-disable of sparse/quantized path
+	HHDSSMAssistEnabled         bool     // enable SSM sequence-assist scoring experiment
+	HHDSSMThroughputBias        float64  // throughput scoring bias in [-1, 1]
+	HHDSSMMinSequenceLength     int      // minimum accepted sequence-length signal for SSM assist
+	HHDSSMMaxSequenceLength     int      // maximum accepted sequence-length signal for SSM assist
+	HHDSSMSequenceSensitivity   float64  // scaling factor in [0, 2] for sequence-length sensitivity
 	HHDWasmScoringEnabled       bool     // enable wasm scoring adjustment plugin in policy engine v2
 	HHDWasmScoringModulePath    string   // filesystem path to wasm scoring module
 	HHDWasmScoringTimeoutMS     int      // per-call timeout budget for wasm score adjustments
@@ -134,6 +139,11 @@ func Load(_ string) (*Config, error) {
 		HHDSparseQuantizedEnabled:   envBool("CWSO_HHD_SPARSE_QUANTIZED_ASSIST_ENABLED", false),
 		HHDSparseQuantizedTradeoff:  envFloat64("CWSO_HHD_SPARSE_QUANTIZED_COST_LATENCY_TRADEOFF", 0),
 		HHDQualityGuardrailMinScore: envFloat64("CWSO_HHD_SPARSE_QUANTIZED_QUALITY_GUARDRAIL_MIN_SCORE", 0.98),
+		HHDSSMAssistEnabled:         envBool("CWSO_HHD_SSM_ASSIST_ENABLED", false),
+		HHDSSMThroughputBias:        envFloat64("CWSO_HHD_SSM_THROUGHPUT_BIAS", 0),
+		HHDSSMMinSequenceLength:     envInt("CWSO_HHD_SSM_MIN_SEQUENCE_LENGTH", 2048),
+		HHDSSMMaxSequenceLength:     envInt("CWSO_HHD_SSM_MAX_SEQUENCE_LENGTH", 32768),
+		HHDSSMSequenceSensitivity:   envFloat64("CWSO_HHD_SSM_SEQUENCE_SENSITIVITY", 1),
 		HHDWasmScoringEnabled:       envBool("CWSO_HHD_WASM_SCORING_ENABLED", false),
 		HHDWasmScoringModulePath:    os.Getenv("CWSO_HHD_WASM_SCORING_MODULE_PATH"),
 		HHDWasmScoringTimeoutMS:     envInt("CWSO_HHD_WASM_SCORING_TIMEOUT_MS", 20),
@@ -174,6 +184,18 @@ func Load(_ string) (*Config, error) {
 	}
 	if c.HHDQualityGuardrailMinScore < 0 || c.HHDQualityGuardrailMinScore > 1 {
 		return nil, fmt.Errorf("CWSO_HHD_SPARSE_QUANTIZED_QUALITY_GUARDRAIL_MIN_SCORE must be between 0 and 1")
+	}
+	if c.HHDSSMThroughputBias < -1 || c.HHDSSMThroughputBias > 1 {
+		return nil, fmt.Errorf("CWSO_HHD_SSM_THROUGHPUT_BIAS must be between -1 and 1")
+	}
+	if c.HHDSSMMinSequenceLength <= 0 {
+		return nil, fmt.Errorf("CWSO_HHD_SSM_MIN_SEQUENCE_LENGTH must be > 0")
+	}
+	if c.HHDSSMMaxSequenceLength <= c.HHDSSMMinSequenceLength {
+		return nil, fmt.Errorf("CWSO_HHD_SSM_MAX_SEQUENCE_LENGTH must be greater than CWSO_HHD_SSM_MIN_SEQUENCE_LENGTH")
+	}
+	if c.HHDSSMSequenceSensitivity < 0 || c.HHDSSMSequenceSensitivity > 2 {
+		return nil, fmt.Errorf("CWSO_HHD_SSM_SEQUENCE_SENSITIVITY must be between 0 and 2")
 	}
 	weights := []float64{
 		c.HHDWeightHealth,
