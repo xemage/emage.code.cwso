@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -66,6 +67,12 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if c.HHDWasmScoringEnabled {
 		t.Fatal("expected wasm scoring plugin disabled by default")
+	}
+	if c.HHDWasmScoringModuleSHA256 != "" {
+		t.Fatalf("expected empty wasm scoring module sha256 by default, got %q", c.HHDWasmScoringModuleSHA256)
+	}
+	if c.HHDWasmScoringTrustedDir != "" {
+		t.Fatalf("expected empty wasm scoring trusted dir by default, got %q", c.HHDWasmScoringTrustedDir)
 	}
 	if c.HHDWasmScoringTimeoutMS != 20 {
 		t.Fatalf("expected default wasm scoring timeout 20ms, got %d", c.HHDWasmScoringTimeoutMS)
@@ -256,9 +263,47 @@ func TestLoadRejectsWasmScoringEnabledWithoutModulePath(t *testing.T) {
 	t.Setenv("CWSO_TRANSPORT", "stdio")
 	t.Setenv("CWSO_HHD_WASM_SCORING_ENABLED", "true")
 	t.Setenv("CWSO_HHD_WASM_SCORING_MODULE_PATH", "")
+	t.Setenv("CWSO_HHD_WASM_SCORING_MODULE_SHA256", strings.Repeat("a", 64))
+	t.Setenv("CWSO_HHD_WASM_SCORING_TRUSTED_DIR", "/tmp")
 
 	if _, err := Load(""); err == nil {
 		t.Fatal("expected module path validation error when wasm scoring is enabled")
+	}
+}
+
+func TestLoadRejectsWasmScoringEnabledWithoutModuleSHA256(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_WASM_SCORING_ENABLED", "true")
+	t.Setenv("CWSO_HHD_WASM_SCORING_MODULE_PATH", "/tmp/plugin.wasm")
+	t.Setenv("CWSO_HHD_WASM_SCORING_MODULE_SHA256", "")
+	t.Setenv("CWSO_HHD_WASM_SCORING_TRUSTED_DIR", "/tmp")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected module sha256 validation error when wasm scoring is enabled")
+	}
+}
+
+func TestLoadRejectsInvalidWasmScoringModuleSHA256(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_WASM_SCORING_ENABLED", "true")
+	t.Setenv("CWSO_HHD_WASM_SCORING_MODULE_PATH", "/tmp/plugin.wasm")
+	t.Setenv("CWSO_HHD_WASM_SCORING_MODULE_SHA256", "xyz")
+	t.Setenv("CWSO_HHD_WASM_SCORING_TRUSTED_DIR", "/tmp")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid module sha256 rejection")
+	}
+}
+
+func TestLoadRejectsWasmScoringEnabledWithoutTrustedDir(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_WASM_SCORING_ENABLED", "true")
+	t.Setenv("CWSO_HHD_WASM_SCORING_MODULE_PATH", "/tmp/plugin.wasm")
+	t.Setenv("CWSO_HHD_WASM_SCORING_MODULE_SHA256", strings.Repeat("a", 64))
+	t.Setenv("CWSO_HHD_WASM_SCORING_TRUSTED_DIR", "")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected trusted dir validation error when wasm scoring is enabled")
 	}
 }
 

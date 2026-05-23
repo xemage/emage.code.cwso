@@ -2,11 +2,14 @@ package dispatch
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash/fnv"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -32,6 +35,8 @@ type ScoreAdjuster interface {
 type WasmScoringConfig struct {
 	Enabled          bool
 	ModulePath       string
+	ExpectedSHA256   string
+	TrustedModuleDir string
 	AdjustFunction   string
 	CallTimeout      time.Duration
 	MemoryLimitPages uint32
@@ -70,6 +75,9 @@ func NewWasmScoreAdjuster(ctx context.Context, rawCfg WasmScoringConfig) (ScoreA
 	if strings.TrimSpace(cfg.ModulePath) == "" {
 		return nil, errors.New("wasm scoring module path is required when enabled")
 	}
+	if err := ensureTrustedModulePath(cfg.ModulePath, cfg.TrustedModuleDir); err != nil {
+		return nil, err
+	}
 
 	runtimeConfig := wazero.NewRuntimeConfig().
 		WithCloseOnContextDone(true).
@@ -85,6 +93,10 @@ func NewWasmScoreAdjuster(ctx context.Context, rawCfg WasmScoringConfig) (ScoreA
 	if err != nil {
 		_ = runtime.Close(ctx)
 		return nil, fmt.Errorf("read wasm scoring module: %w", err)
+	}
+	if err := verifyModuleSHA256(source, cfg.ExpectedSHA256); err != nil {
+		_ = runtime.Close(ctx)
+		return nil, err
 	}
 
 	compiled, err := runtime.CompileModule(ctx, source)
@@ -142,6 +154,9 @@ func (a *wasmScoreAdjuster) AdjustScore(ctx context.Context, input ScoreAdjustme
 
 func normalizeWasmScoringConfig(cfg WasmScoringConfig) WasmScoringConfig {
 	def := DefaultWasmScoringConfig()
+	cfg.ModulePath = strings.TrimSpace(cfg.ModulePath)
+	cfg.ExpectedSHA256 = normalizeSHA256Hex(cfg.ExpectedSHA256)
+	cfg.TrustedModuleDir = strings.TrimSpace(cfg.TrustedModuleDir)
 	if strings.TrimSpace(cfg.AdjustFunction) == "" {
 		cfg.AdjustFunction = def.AdjustFunction
 	}
@@ -183,6 +198,54 @@ func instantiateHostAllowlist(ctx context.Context, runtime wazero.Runtime, allow
 	_, err := builder.Instantiate(ctx)
 	if err != nil {
 		return fmt.Errorf("instantiate host allowlist module: %w", err)
+	}
+	return nil
+}
+
+func verifyModuleSHA256(source []byte, expectedHex string) error {
+	if expectedHex == "" {
+		return nil
+	}
+	actual := sha256.Sum256(source)
+	actualHex := hex.EncodeToString(actual[:])
+	if actualHex != expectedHex {
+		return fmt.Errorf("wasm scoring module integrity check failed: expected sha256 %s, got %s", expectedHex, actualHex)
+	}
+	return nil
+}
+
+func normalizeSHA256Hex(v string) string {
+	trimmed := strings.TrimSpace(v)
+	trimmed = strings.TrimPrefix(strings.ToLower(trimmed), "sha256:")
+	return trimmed
+}
+
+func ensureTrustedModulePath(modulePath, trustedModuleDir string) error {
+	if trustedModuleDir == "" {
+		return nil
+	}
+	trustedAbs, err := filepath.Abs(trustedModuleDir)
+	if err != nil {
+		return fmt.Errorf("resolve trusted wasm module directory: %w", err)
+	}
+	trustedResolved, err := filepath.EvalSymlinks(trustedAbs)
+	if err != nil {
+		return fmt.Errorf("resolve trusted wasm module directory symlink path: %w", err)
+	}
+	moduleAbs, err := filepath.Abs(modulePath)
+	if err != nil {
+		return fmt.Errorf("resolve wasm scoring module path: %w", err)
+	}
+	moduleResolved, err := filepath.EvalSymlinks(moduleAbs)
+	if err != nil {
+		return fmt.Errorf("resolve wasm scoring module symlink path: %w", err)
+	}
+	rel, err := filepath.Rel(trustedResolved, moduleResolved)
+	if err != nil {
+		return fmt.Errorf("compare wasm module path against trusted directory: %w", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("wasm scoring module path %q is outside trusted directory %q", modulePath, trustedModuleDir)
 	}
 	return nil
 }

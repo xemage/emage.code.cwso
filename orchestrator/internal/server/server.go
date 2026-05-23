@@ -297,6 +297,8 @@ func (s *Server) registerBaselineTools() error {
 		adjuster, err := dispatch.NewWasmScoreAdjuster(context.Background(), dispatch.WasmScoringConfig{
 			Enabled:          s.cfg.HHDWasmScoringEnabled,
 			ModulePath:       s.cfg.HHDWasmScoringModulePath,
+			ExpectedSHA256:   s.cfg.HHDWasmScoringModuleSHA256,
+			TrustedModuleDir: s.cfg.HHDWasmScoringTrustedDir,
 			CallTimeout:      time.Duration(s.cfg.HHDWasmScoringTimeoutMS) * time.Millisecond,
 			MemoryLimitPages: s.cfg.HHDWasmScoringMemoryPages,
 			AllowedHostCalls: s.cfg.HHDWasmScoringHostCalls,

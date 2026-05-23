@@ -69,6 +69,8 @@ type Config struct {
 	HHDSSMSequenceSensitivity   float64  // scaling factor in [0, 2] for sequence-length sensitivity
 	HHDWasmScoringEnabled       bool     // enable wasm scoring adjustment plugin in policy engine v2
 	HHDWasmScoringModulePath    string   // filesystem path to wasm scoring module
+	HHDWasmScoringModuleSHA256  string   // required sha256 hex digest for wasm module integrity verification
+	HHDWasmScoringTrustedDir    string   // required trusted directory containing wasm module path
 	HHDWasmScoringTimeoutMS     int      // per-call timeout budget for wasm score adjustments
 	HHDWasmScoringMemoryPages   uint32   // max wasm memory pages for scoring module runtime
 	HHDWasmScoringHostCalls     []string // deny-by-default host-call allowlist for wasm runtime
@@ -146,6 +148,8 @@ func Load(_ string) (*Config, error) {
 		HHDSSMSequenceSensitivity:   envFloat64("CWSO_HHD_SSM_SEQUENCE_SENSITIVITY", 1),
 		HHDWasmScoringEnabled:       envBool("CWSO_HHD_WASM_SCORING_ENABLED", false),
 		HHDWasmScoringModulePath:    os.Getenv("CWSO_HHD_WASM_SCORING_MODULE_PATH"),
+		HHDWasmScoringModuleSHA256:  strings.ToLower(strings.TrimSpace(os.Getenv("CWSO_HHD_WASM_SCORING_MODULE_SHA256"))),
+		HHDWasmScoringTrustedDir:    strings.TrimSpace(os.Getenv("CWSO_HHD_WASM_SCORING_TRUSTED_DIR")),
 		HHDWasmScoringTimeoutMS:     envInt("CWSO_HHD_WASM_SCORING_TIMEOUT_MS", 20),
 		HHDWasmScoringMemoryPages:   uint32(envInt("CWSO_HHD_WASM_SCORING_MEMORY_LIMIT_PAGES", 64)),
 		HHDWasmScoringHostCalls:     splitCSV(os.Getenv("CWSO_HHD_WASM_SCORING_HOST_CALL_ALLOWLIST")),
@@ -223,6 +227,22 @@ func Load(_ string) (*Config, error) {
 	}
 	if c.HHDWasmScoringEnabled && strings.TrimSpace(c.HHDWasmScoringModulePath) == "" {
 		return nil, fmt.Errorf("CWSO_HHD_WASM_SCORING_MODULE_PATH must be set when CWSO_HHD_WASM_SCORING_ENABLED=true")
+	}
+	if c.HHDWasmScoringEnabled && c.HHDWasmScoringModuleSHA256 == "" {
+		return nil, fmt.Errorf("CWSO_HHD_WASM_SCORING_MODULE_SHA256 must be set when CWSO_HHD_WASM_SCORING_ENABLED=true")
+	}
+	if c.HHDWasmScoringEnabled && len(c.HHDWasmScoringModuleSHA256) != 64 {
+		return nil, fmt.Errorf("CWSO_HHD_WASM_SCORING_MODULE_SHA256 must be a 64-char sha256 hex digest")
+	}
+	if c.HHDWasmScoringEnabled {
+		for _, ch := range c.HHDWasmScoringModuleSHA256 {
+			if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+				return nil, fmt.Errorf("CWSO_HHD_WASM_SCORING_MODULE_SHA256 must be lowercase hex")
+			}
+		}
+	}
+	if c.HHDWasmScoringEnabled && c.HHDWasmScoringTrustedDir == "" {
+		return nil, fmt.Errorf("CWSO_HHD_WASM_SCORING_TRUSTED_DIR must be set when CWSO_HHD_WASM_SCORING_ENABLED=true")
 	}
 	if c.SandboxRunner != "none" && c.SandboxRunner != "docker" && c.SandboxRunner != "gvisor" && c.SandboxRunner != "firecracker" && c.SandboxRunner != "router" {
 		return nil, fmt.Errorf("CWSO_SANDBOX_RUNNER must be one of: none, docker, gvisor, firecracker, router")
