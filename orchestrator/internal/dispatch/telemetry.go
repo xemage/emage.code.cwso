@@ -1,7 +1,10 @@
 package dispatch
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -12,7 +15,29 @@ const (
 	TopicDispatchCapabilities = "dispatch/capabilities"
 	TopicDispatchDecision     = "dispatch/decision"
 	TopicDispatchAnomaly      = "dispatch/anomaly"
+
+	requestIDModeAllow = "allow"
+	requestIDModeHash  = "hash"
+	requestIDModeDrop  = "drop"
+
+	anomalyNotesModeAllow = "allow"
+	anomalyNotesModeDrop  = "drop"
 )
+
+// TelemetryRedactionConfig configures telemetry minimization for sensitive fields.
+type TelemetryRedactionConfig struct {
+	Enabled          bool
+	RequestIDMode    string
+	AnomalyNotesMode string
+	RequestIDSalt    string
+}
+
+type telemetryRedactor struct {
+	enabled          bool
+	requestIDMode    string
+	anomalyNotesMode string
+	requestIDSalt    string
+}
 
 // DecisionEvent is the auditable dispatch decision telemetry envelope.
 type DecisionEvent struct {
@@ -36,16 +61,30 @@ type DecisionEvent struct {
 type DecisionEmitter struct {
 	publisher memorybroker.Publisher
 	anomaly   *DecisionAnomalyMonitor
+	redactor  telemetryRedactor
 	now       func() time.Time
 	nextID    atomic.Uint64
 }
 
 func NewDecisionEmitter(publisher memorybroker.Publisher) *DecisionEmitter {
-	return NewDecisionEmitterWithAnomalyMonitor(publisher, nil)
+	return NewDecisionEmitterWithAnomalyMonitorAndRedaction(publisher, nil, TelemetryRedactionConfig{})
 }
 
 func NewDecisionEmitterWithAnomalyMonitor(publisher memorybroker.Publisher, anomaly *DecisionAnomalyMonitor) *DecisionEmitter {
-	return &DecisionEmitter{publisher: publisher, anomaly: anomaly, now: time.Now}
+	return NewDecisionEmitterWithAnomalyMonitorAndRedaction(publisher, anomaly, TelemetryRedactionConfig{})
+}
+
+func NewDecisionEmitterWithAnomalyMonitorAndRedaction(
+	publisher memorybroker.Publisher,
+	anomaly *DecisionAnomalyMonitor,
+	redaction TelemetryRedactionConfig,
+) *DecisionEmitter {
+	return &DecisionEmitter{
+		publisher: publisher,
+		anomaly:   anomaly,
+		redactor:  newTelemetryRedactor(redaction),
+		now:       time.Now,
+	}
 }
 
 func (e *DecisionEmitter) EmitCapabilitySnapshot(snapshot CapabilitySnapshot) error {
@@ -94,6 +133,7 @@ func (e *DecisionEmitter) EmitDecision(event DecisionEvent) error {
 	if event.FeatureFlagsApplied == nil {
 		event.FeatureFlagsApplied = []string{}
 	}
+	event = e.redactor.redactDecision(event)
 	if err := e.publisher.Publish(TopicDispatchDecision, event); err != nil {
 		return err
 	}
@@ -101,4 +141,82 @@ func (e *DecisionEmitter) EmitDecision(event DecisionEvent) error {
 		_ = e.anomaly.ObserveDecision(event)
 	}
 	return nil
+}
+
+func newTelemetryRedactor(cfg TelemetryRedactionConfig) telemetryRedactor {
+	requestIDMode := normalizeRequestIDMode(cfg.RequestIDMode)
+	if requestIDMode == "" {
+		requestIDMode = requestIDModeAllow
+	}
+	anomalyNotesMode := normalizeAnomalyNotesMode(cfg.AnomalyNotesMode)
+	if anomalyNotesMode == "" {
+		anomalyNotesMode = anomalyNotesModeAllow
+	}
+	return telemetryRedactor{
+		enabled:          cfg.Enabled,
+		requestIDMode:    requestIDMode,
+		anomalyNotesMode: anomalyNotesMode,
+		requestIDSalt:    strings.TrimSpace(cfg.RequestIDSalt),
+	}
+}
+
+func (r telemetryRedactor) redactDecision(event DecisionEvent) DecisionEvent {
+	if !r.enabled {
+		return event
+	}
+	switch r.requestIDMode {
+	case requestIDModeDrop:
+		event.RequestID = ""
+	case requestIDModeHash:
+		event.RequestID = r.hashRequestID(event.RequestID)
+	}
+	return event
+}
+
+func (r telemetryRedactor) redactAnomalyNotes(notes string) string {
+	if !r.enabled {
+		return notes
+	}
+	if r.anomalyNotesMode == anomalyNotesModeDrop {
+		return ""
+	}
+	return notes
+}
+
+func (r telemetryRedactor) hashRequestID(requestID string) string {
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		return ""
+	}
+	payload := requestID
+	if r.requestIDSalt != "" {
+		payload = r.requestIDSalt + ":" + requestID
+	}
+	digest := sha256.Sum256([]byte(payload))
+	// Keep a stable short hash for cardinality control while preserving correlation.
+	return "sha256:" + hex.EncodeToString(digest[:12])
+}
+
+func normalizeRequestIDMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case requestIDModeAllow:
+		return requestIDModeAllow
+	case requestIDModeHash:
+		return requestIDModeHash
+	case requestIDModeDrop:
+		return requestIDModeDrop
+	default:
+		return ""
+	}
+}
+
+func normalizeAnomalyNotesMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case anomalyNotesModeAllow:
+		return anomalyNotesModeAllow
+	case anomalyNotesModeDrop:
+		return anomalyNotesModeDrop
+	default:
+		return ""
+	}
 }

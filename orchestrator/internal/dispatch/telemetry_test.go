@@ -161,6 +161,56 @@ func TestDecisionEmitterEmitsAnomalyEventsWhenMonitorEnabled(t *testing.T) {
 	}
 }
 
+func TestDecisionEmitterRedactsRequestIDWhenConfigured(t *testing.T) {
+	broker := memorybroker.New(
+		memorybroker.WithCapacity(16),
+		memorybroker.WithIngressQueueSize(16),
+	)
+	defer broker.Close()
+
+	publisher := memorybroker.NewTeePublisher(nil, broker)
+	emitter := NewDecisionEmitterWithAnomalyMonitorAndRedaction(publisher, nil, TelemetryRedactionConfig{
+		Enabled:          true,
+		RequestIDMode:    "hash",
+		AnomalyNotesMode: "allow",
+		RequestIDSalt:    "phase5",
+	})
+
+	err := emitter.EmitDecision(DecisionEvent{
+		RequestID:             "rid-123",
+		PolicyVersion:         "policy-v2",
+		CapabilityEpoch:       12,
+		SelectedProvider:      "cpu-baseline",
+		FallbackChain:         []string{"cpu-baseline"},
+		FallbackCount:         0,
+		ReasonCode:            "accepted",
+		Confidence:            1,
+		EstimatedLatencyMS:    10,
+		ActualLatencyMS:       10,
+		FeatureFlagsApplied:   []string{"hhd.decisions"},
+		QualityGuardrailState: "pass",
+	})
+	if err != nil {
+		t.Fatalf("emit decision: %v", err)
+	}
+
+	records := waitForRecords(t, broker, TopicDispatchDecision)
+	if len(records) != 1 {
+		t.Fatalf("expected one decision record, got %d", len(records))
+	}
+
+	var event DecisionEvent
+	if err := decodePayload(records[0].Payload, &event); err != nil {
+		t.Fatalf("decode decision payload: %v", err)
+	}
+	if event.RequestID == "rid-123" {
+		t.Fatalf("expected request_id to be redacted, got %+v", event)
+	}
+	if event.RequestID == "" {
+		t.Fatalf("expected hashed request_id to be present")
+	}
+}
+
 func decodePayload(payload json.RawMessage, out any) error {
 	return json.Unmarshal(payload, out)
 }

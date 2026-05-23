@@ -46,6 +46,10 @@ type Config struct {
 	SandboxAllowDockerTrusted   bool     // permit docker-trusted tier in router mode (internal orchestrator use only)
 	HHDCapabilityRegistry       bool     // enable hardware-dispatch capability registry and snapshot telemetry
 	HHDDecisionTelemetry        bool     // enable dispatch decision telemetry emission
+	HHDTelemetryRedaction       bool     // enable sensitive field minimization/redaction for dispatch telemetry
+	HHDTelemetryRequestIDMode   string   // request-id handling mode: allow | hash | drop
+	HHDTelemetryAnomalyNotes    string   // anomaly note handling mode: allow | drop
+	HHDTelemetryRedactionSalt   string   // optional salt used when hashing request-id values
 	HHDEventMonitorEnabled      bool     // enable event-driven anomaly monitor from dispatch decisions
 	HHDEventMonitorEBPF         bool     // prefer eBPF signal path when capabilities permit (falls back automatically)
 	HHDEventMonitorLatencyMS    int      // anomaly threshold for actual latency in milliseconds
@@ -125,6 +129,10 @@ func Load(_ string) (*Config, error) {
 		SandboxAllowDockerTrusted:   envBool("CWSO_SANDBOX_ALLOW_DOCKER_TRUSTED", false),
 		HHDCapabilityRegistry:       envBool("CWSO_HHD_CAPABILITY_REGISTRY_ENABLED", false),
 		HHDDecisionTelemetry:        envBool("CWSO_HHD_DECISION_TELEMETRY_ENABLED", false),
+		HHDTelemetryRedaction:       envBool("CWSO_HHD_TELEMETRY_REDACTION_ENABLED", false),
+		HHDTelemetryRequestIDMode:   strings.ToLower(strings.TrimSpace(envOr("CWSO_HHD_TELEMETRY_REQUEST_ID_MODE", "hash"))),
+		HHDTelemetryAnomalyNotes:    strings.ToLower(strings.TrimSpace(envOr("CWSO_HHD_TELEMETRY_ANOMALY_NOTES_MODE", "drop"))),
+		HHDTelemetryRedactionSalt:   strings.TrimSpace(os.Getenv("CWSO_HHD_TELEMETRY_REDACTION_SALT")),
 		HHDEventMonitorEnabled:      envBool("CWSO_HHD_EVENT_MONITOR_ENABLED", false),
 		HHDEventMonitorEBPF:         envBool("CWSO_HHD_EVENT_MONITOR_EBPF_ENABLED", false),
 		HHDEventMonitorLatencyMS:    envInt("CWSO_HHD_EVENT_MONITOR_LATENCY_THRESHOLD_MS", 1200),
@@ -176,6 +184,12 @@ func Load(_ string) (*Config, error) {
 	}
 	if c.HHDEventMonitorLatencyMS <= 0 {
 		return nil, fmt.Errorf("CWSO_HHD_EVENT_MONITOR_LATENCY_THRESHOLD_MS must be > 0")
+	}
+	if c.HHDTelemetryRequestIDMode != "allow" && c.HHDTelemetryRequestIDMode != "hash" && c.HHDTelemetryRequestIDMode != "drop" {
+		return nil, fmt.Errorf("CWSO_HHD_TELEMETRY_REQUEST_ID_MODE must be one of: allow, hash, drop")
+	}
+	if c.HHDTelemetryAnomalyNotes != "allow" && c.HHDTelemetryAnomalyNotes != "drop" {
+		return nil, fmt.Errorf("CWSO_HHD_TELEMETRY_ANOMALY_NOTES_MODE must be one of: allow, drop")
 	}
 	if c.HHDPolicyMinConfidence < 0 || c.HHDPolicyMinConfidence > 1 {
 		return nil, fmt.Errorf("CWSO_HHD_POLICY_MIN_CONFIDENCE must be between 0 and 1")

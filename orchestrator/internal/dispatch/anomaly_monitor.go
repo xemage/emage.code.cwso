@@ -18,6 +18,7 @@ type DecisionAnomalyMonitorConfig struct {
 	PreferEBPF         bool
 	LatencyThresholdMS int
 	EBPFChecker        func() (bool, string)
+	Redaction          TelemetryRedactionConfig
 }
 
 // AnomalyEvent is the telemetry envelope for event-driven dispatch anomalies.
@@ -48,6 +49,7 @@ type DecisionAnomalyMonitor struct {
 	preferEBPF         bool
 	latencyThresholdMS int
 	checkEBPF          func() (bool, string)
+	redactor           telemetryRedactor
 }
 
 func NewDecisionAnomalyMonitor(publisher memorybroker.Publisher, cfg DecisionAnomalyMonitorConfig) *DecisionAnomalyMonitor {
@@ -67,6 +69,7 @@ func NewDecisionAnomalyMonitor(publisher memorybroker.Publisher, cfg DecisionAno
 		preferEBPF:         cfg.PreferEBPF,
 		latencyThresholdMS: cfg.LatencyThresholdMS,
 		checkEBPF:          check,
+		redactor:           newTelemetryRedactor(cfg.Redaction),
 	}
 }
 
@@ -136,7 +139,7 @@ func (m *DecisionAnomalyMonitor) newAnomaly(
 		FeatureFlagsApplied:   event.FeatureFlagsApplied,
 		QualityGuardrailState: event.QualityGuardrailState,
 		DetectedAt:            detectedAt.Format(time.RFC3339Nano),
-		Notes:                 notes,
+		Notes:                 m.redactor.redactAnomalyNotes(notes),
 	}
 }
 

@@ -228,14 +228,21 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 		}
 	}
 	if cfg.HHDDecisionTelemetry {
+		redactionCfg := dispatch.TelemetryRedactionConfig{
+			Enabled:          cfg.HHDTelemetryRedaction,
+			RequestIDMode:    cfg.HHDTelemetryRequestIDMode,
+			AnomalyNotesMode: cfg.HHDTelemetryAnomalyNotes,
+			RequestIDSalt:    cfg.HHDTelemetryRedactionSalt,
+		}
 		var anomalyMonitor *dispatch.DecisionAnomalyMonitor
 		if cfg.HHDEventMonitorEnabled {
 			anomalyMonitor = dispatch.NewDecisionAnomalyMonitor(publisher, dispatch.DecisionAnomalyMonitorConfig{
 				PreferEBPF:         cfg.HHDEventMonitorEBPF,
 				LatencyThresholdMS: cfg.HHDEventMonitorLatencyMS,
+				Redaction:          redactionCfg,
 			})
 		}
-		telemetryEmitter = dispatch.NewDecisionEmitterWithAnomalyMonitor(publisher, anomalyMonitor)
+		telemetryEmitter = dispatch.NewDecisionEmitterWithAnomalyMonitorAndRedaction(publisher, anomalyMonitor, redactionCfg)
 	}
 
 	s := &Server{

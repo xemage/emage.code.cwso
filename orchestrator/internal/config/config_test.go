@@ -23,6 +23,18 @@ func TestLoadDefaults(t *testing.T) {
 	if c.HHDDecisionTelemetry {
 		t.Fatal("expected decision telemetry disabled by default")
 	}
+	if c.HHDTelemetryRedaction {
+		t.Fatal("expected telemetry redaction disabled by default")
+	}
+	if c.HHDTelemetryRequestIDMode != "hash" {
+		t.Fatalf("expected default telemetry request-id mode hash, got %q", c.HHDTelemetryRequestIDMode)
+	}
+	if c.HHDTelemetryAnomalyNotes != "drop" {
+		t.Fatalf("expected default telemetry anomaly notes mode drop, got %q", c.HHDTelemetryAnomalyNotes)
+	}
+	if c.HHDTelemetryRedactionSalt != "" {
+		t.Fatalf("expected empty telemetry redaction salt by default, got %q", c.HHDTelemetryRedactionSalt)
+	}
 	if c.HHDEventMonitorEnabled {
 		t.Fatal("expected event monitor disabled by default")
 	}
@@ -256,6 +268,24 @@ func TestLoadRejectsInvalidHHDEventMonitorLatencyThreshold(t *testing.T) {
 
 	if _, err := Load(""); err == nil {
 		t.Fatal("expected invalid event monitor latency threshold rejection")
+	}
+}
+
+func TestLoadRejectsInvalidTelemetryRequestIDMode(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_TELEMETRY_REQUEST_ID_MODE", "mask")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid telemetry request-id mode rejection")
+	}
+}
+
+func TestLoadRejectsInvalidTelemetryAnomalyNotesMode(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_HHD_TELEMETRY_ANOMALY_NOTES_MODE", "hash")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid telemetry anomaly notes mode rejection")
 	}
 }
 

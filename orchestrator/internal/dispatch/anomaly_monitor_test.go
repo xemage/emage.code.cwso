@@ -144,6 +144,47 @@ func TestDecisionAnomalyMonitorEBPFPreferredFallsBackWhenUnavailable(t *testing.
 	}
 }
 
+func TestDecisionAnomalyMonitorDropsNotesWhenConfigured(t *testing.T) {
+	broker := memorybroker.New(
+		memorybroker.WithCapacity(16),
+		memorybroker.WithIngressQueueSize(16),
+	)
+	defer broker.Close()
+
+	monitor := NewDecisionAnomalyMonitor(memorybroker.NewTeePublisher(nil, broker), DecisionAnomalyMonitorConfig{
+		PreferEBPF:         true,
+		LatencyThresholdMS: 100,
+		EBPFChecker: func() (bool, string) {
+			return false, "capability denied"
+		},
+		Redaction: TelemetryRedactionConfig{
+			Enabled:          true,
+			RequestIDMode:    "hash",
+			AnomalyNotesMode: "drop",
+		},
+	})
+	if err := monitor.ObserveDecision(DecisionEvent{
+		DecisionID:       "decision-4",
+		SelectedProvider: "gpu-a",
+		ActualLatencyMS:  140,
+	}); err != nil {
+		t.Fatalf("observe decision: %v", err)
+	}
+
+	records := waitForAnomalyRecords(t, broker, 1)
+	if len(records) != 1 {
+		t.Fatalf("expected one anomaly record, got %d", len(records))
+	}
+
+	var event AnomalyEvent
+	if err := decodePayload(records[0].Payload, &event); err != nil {
+		t.Fatalf("decode anomaly payload: %v", err)
+	}
+	if event.Notes != "" {
+		t.Fatalf("expected notes to be dropped by redaction policy, got %+v", event)
+	}
+}
+
 func waitForAnomalyRecords(t *testing.T, broker *memorybroker.Broker, expected int) []memorybroker.Record {
 	t.Helper()
 	if expected <= 0 {
