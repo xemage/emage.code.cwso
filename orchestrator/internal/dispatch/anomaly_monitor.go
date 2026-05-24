@@ -23,23 +23,23 @@ type DecisionAnomalyMonitorConfig struct {
 
 // AnomalyEvent is the telemetry envelope for event-driven dispatch anomalies.
 type AnomalyEvent struct {
-	AnomalyID             string   `json:"anomaly_id"`
-	DecisionID            string   `json:"decision_id"`
-	CapabilityEpoch       uint64   `json:"capability_epoch"`
-	SelectedProvider      string   `json:"selected_provider"`
-	ReasonCode            string   `json:"reason_code"`
-	Severity              string   `json:"severity"`
-	ObservedValue         float64  `json:"observed_value"`
-	ThresholdValue        float64  `json:"threshold_value"`
-	SignalPath            string   `json:"signal_path"`
-	PrivilegeRequirement  string   `json:"privilege_requirement"`
-	DetectionLatencyMS    int      `json:"detection_latency_ms"`
-	DetectionLatencyMode  string   `json:"detection_latency_mode"`
-	DetectionLatencyIsAdvisory bool `json:"detection_latency_is_advisory"`
-	FeatureFlagsApplied   []string `json:"feature_flags_applied,omitempty"`
-	QualityGuardrailState string   `json:"quality_guardrail_state"`
-	DetectedAt            string   `json:"detected_at"`
-	Notes                 string   `json:"notes,omitempty"`
+	AnomalyID                  string   `json:"anomaly_id"`
+	DecisionID                 string   `json:"decision_id"`
+	CapabilityEpoch            uint64   `json:"capability_epoch"`
+	SelectedProvider           string   `json:"selected_provider"`
+	ReasonCode                 string   `json:"reason_code"`
+	Severity                   string   `json:"severity"`
+	ObservedValue              float64  `json:"observed_value"`
+	ThresholdValue             float64  `json:"threshold_value"`
+	SignalPath                 string   `json:"signal_path"`
+	PrivilegeRequirement       string   `json:"privilege_requirement"`
+	DetectionLatencyMS         int      `json:"detection_latency_ms"`
+	DetectionLatencyMode       string   `json:"detection_latency_mode"`
+	DetectionLatencyIsAdvisory bool     `json:"detection_latency_is_advisory"`
+	FeatureFlagsApplied        []string `json:"feature_flags_applied,omitempty"`
+	QualityGuardrailState      string   `json:"quality_guardrail_state"`
+	DetectedAt                 string   `json:"detected_at"`
+	Notes                      string   `json:"notes,omitempty"`
 }
 
 // DecisionAnomalyMonitor emits anomaly events from dispatch decision telemetry.
@@ -125,23 +125,23 @@ func (m *DecisionAnomalyMonitor) newAnomaly(
 ) AnomalyEvent {
 	latencyMS, mode, advisory := detectionLatency(event.EmittedAt, detectedAt, signalPath)
 	return AnomalyEvent{
-		AnomalyID:             fmt.Sprintf("anomaly-%d", m.nextID.Add(1)),
-		DecisionID:            event.DecisionID,
-		CapabilityEpoch:       event.CapabilityEpoch,
-		SelectedProvider:      event.SelectedProvider,
-		ReasonCode:            reasonCode,
-		Severity:              severity,
-		ObservedValue:         observed,
-		ThresholdValue:        threshold,
-		SignalPath:            signalPath,
-		PrivilegeRequirement:  privilege,
-		DetectionLatencyMS:    latencyMS,
-		DetectionLatencyMode:  mode,
+		AnomalyID:                  fmt.Sprintf("anomaly-%d", m.nextID.Add(1)),
+		DecisionID:                 event.DecisionID,
+		CapabilityEpoch:            event.CapabilityEpoch,
+		SelectedProvider:           event.SelectedProvider,
+		ReasonCode:                 reasonCode,
+		Severity:                   severity,
+		ObservedValue:              observed,
+		ThresholdValue:             threshold,
+		SignalPath:                 signalPath,
+		PrivilegeRequirement:       privilege,
+		DetectionLatencyMS:         latencyMS,
+		DetectionLatencyMode:       mode,
 		DetectionLatencyIsAdvisory: advisory,
-		FeatureFlagsApplied:   event.FeatureFlagsApplied,
-		QualityGuardrailState: event.QualityGuardrailState,
-		DetectedAt:            detectedAt.Format(time.RFC3339Nano),
-		Notes:                 m.redactor.redactAnomalyNotes(notes),
+		FeatureFlagsApplied:        event.FeatureFlagsApplied,
+		QualityGuardrailState:      event.QualityGuardrailState,
+		DetectedAt:                 detectedAt.Format(time.RFC3339Nano),
+		Notes:                      m.redactor.redactAnomalyNotes(notes),
 	}
 }
 
