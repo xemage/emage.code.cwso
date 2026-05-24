@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.2.0-rc1 - 2026-05-24
+
+### Phase 5 Hardening Closure
+- Closed all security hardening follow-ups from Phase 5 conditional pass:
+  - T073: Wasm module integrity verification (SHA-256 pin + trusted path)
+  - T074: Telemetry minimization/redaction policy (request ID and anomaly notes)
+  - T075: eBPF latency semantics hardening (explicit advisory signaling)
+- Updated dispatch telemetry and anomaly contracts to reduce false precision and
+  sensitive-field exposure while preserving deterministic fallback behavior.
+
+### Operations and Documentation
+- Expanded hardware-aware operator guidance in README with:
+  - mandatory Wasm integrity controls (`CWSO_HHD_WASM_SCORING_MODULE_SHA256`,
+    `CWSO_HHD_WASM_SCORING_TRUSTED_DIR`)
+  - telemetry redaction controls (`CWSO_HHD_TELEMETRY_*`)
+  - explicit advisory interpretation for `ebpf-hook` latency fields.
+- Added release-candidate readiness artifact for v0.2.0-rc1.
+
+### CI / Gates
+- Release-candidate validation reached green pipeline on `develop` after the
+  final hardening changes (`2548879153`).
+- No open active tasks remain in Phase 5 scope.
+
 ## v0.1.1 - 2026-05-22
 
 ### Release Blockers Closed

@@ -197,9 +197,18 @@ Wasm scoring controls (experimental):
 
 - `CWSO_HHD_WASM_SCORING_ENABLED`
 - `CWSO_HHD_WASM_SCORING_MODULE_PATH`
+- `CWSO_HHD_WASM_SCORING_MODULE_SHA256`
+- `CWSO_HHD_WASM_SCORING_TRUSTED_DIR`
 - `CWSO_HHD_WASM_SCORING_TIMEOUT_MS`
 - `CWSO_HHD_WASM_SCORING_MEMORY_LIMIT_PAGES`
 - `CWSO_HHD_WASM_SCORING_HOST_CALL_ALLOWLIST`
+
+Telemetry minimization controls:
+
+- `CWSO_HHD_TELEMETRY_REDACTION_ENABLED`
+- `CWSO_HHD_TELEMETRY_REQUEST_ID_MODE`
+- `CWSO_HHD_TELEMETRY_ANOMALY_NOTES_MODE`
+- `CWSO_HHD_TELEMETRY_REDACTION_SALT`
 
 ### Compatibility and rollout notes
 
@@ -212,6 +221,8 @@ Wasm scoring controls (experimental):
 - Wasm scoring plugin initialization or execution failures fail open to built-in
   policy scoring.
 - eBPF monitoring path is optional and can fall back to userspace telemetry.
+- eBPF anomaly latency semantics are explicit and advisory in `ebpf-hook` mode
+  (`detection_latency_mode=advisory`, `detection_latency_is_advisory=true`).
 
 ### Rollback
 
@@ -236,6 +247,7 @@ For Wasm-specific operations guidance, see
 - [Architecture](docs/artifacts/architecture-v1.md)
 - [Security Baseline](docs/artifacts/security-baseline-v1.md)
 - [Release v0.2.0 Hardware-Aware Readiness](docs/artifacts/release-v0.2.0-hardware-aware-v1.md)
+- [Release v0.2.0 RC1 Readiness](docs/artifacts/release-v0.2.0-rc1.md)
 - [ADR Index](docs/decisions/)
 - [Active Tasks](docs/tasks/active-tasks.md) · [Completed Tasks](docs/tasks/completed-tasks.md)
 - [Phase 1 Checkpoint](docs/checkpoints/checkpoint-001-phase1.md) · [Phase 2 Checkpoint](docs/checkpoints/checkpoint-002-phase2.md) · [T027 Tech Lead Gate](docs/checkpoints/gate-T027-phase2-techlead.md)
