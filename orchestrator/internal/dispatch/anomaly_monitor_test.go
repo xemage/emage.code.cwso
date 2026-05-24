@@ -55,6 +55,9 @@ func TestDecisionAnomalyMonitorFallbackPath(t *testing.T) {
 		if event.PrivilegeRequirement != "none" {
 			t.Fatalf("expected unprivileged path, got %+v", event)
 		}
+		if event.DetectionLatencyIsAdvisory {
+			t.Fatalf("expected fallback path latency to be non-advisory, got %+v", event)
+		}
 	}
 	if _, ok := reasons["latency_threshold_exceeded"]; !ok {
 		t.Fatalf("expected latency anomaly, got %+v", reasons)
@@ -100,8 +103,11 @@ func TestDecisionAnomalyMonitorEBPFPreferredUsesHookWhenAvailable(t *testing.T) 
 	if event.SignalPath != "ebpf-hook" {
 		t.Fatalf("expected ebpf-hook signal path, got %+v", event)
 	}
-	if event.DetectionLatencyMode != "estimated" || event.DetectionLatencyMS != 2 {
-		t.Fatalf("expected estimated eBPF latency, got %+v", event)
+	if event.DetectionLatencyMode != "advisory" || event.DetectionLatencyMS != 0 {
+		t.Fatalf("expected advisory eBPF latency semantics, got %+v", event)
+	}
+	if !event.DetectionLatencyIsAdvisory {
+		t.Fatalf("expected advisory marker for eBPF latency, got %+v", event)
 	}
 }
 
@@ -138,6 +144,9 @@ func TestDecisionAnomalyMonitorEBPFPreferredFallsBackWhenUnavailable(t *testing.
 	}
 	if event.SignalPath != "fallback-userspace" {
 		t.Fatalf("expected fallback signal path, got %+v", event)
+	}
+	if event.DetectionLatencyIsAdvisory {
+		t.Fatalf("expected fallback latency semantics to be non-advisory, got %+v", event)
 	}
 	if event.Notes == "" {
 		t.Fatalf("expected eBPF fallback reason in notes, got %+v", event)

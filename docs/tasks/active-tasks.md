@@ -52,7 +52,7 @@
 | T072 | Phase 5 documentation and release readiness | technical-writer | done (release-v0.2.0-hardware-aware-v1 published) | P1 | T071 | 2026-05-23 |
 | T073 | Wasm module integrity verification hardening | backend-developer | done (sha256 pin + trusted path enforcement) | P0 | T071 | 2026-05-23 |
 | T074 | Telemetry minimization/redaction policy | backend-developer | done (request-id/notes redaction policy + tests) | P1 | T073 | 2026-05-23 |
-| T075 | eBPF latency semantics hardening | backend-developer | pending | P1 | T073 | 2026-05-23 |
+| T075 | eBPF latency semantics hardening | backend-developer | done (advisory semantics + explicit marker + tests) | P1 | T073 | 2026-05-24 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled` · `partial` · `deferred`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)

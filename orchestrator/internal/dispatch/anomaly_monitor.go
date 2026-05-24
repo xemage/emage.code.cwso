@@ -35,6 +35,7 @@ type AnomalyEvent struct {
 	PrivilegeRequirement  string   `json:"privilege_requirement"`
 	DetectionLatencyMS    int      `json:"detection_latency_ms"`
 	DetectionLatencyMode  string   `json:"detection_latency_mode"`
+	DetectionLatencyIsAdvisory bool `json:"detection_latency_is_advisory"`
 	FeatureFlagsApplied   []string `json:"feature_flags_applied,omitempty"`
 	QualityGuardrailState string   `json:"quality_guardrail_state"`
 	DetectedAt            string   `json:"detected_at"`
@@ -122,7 +123,7 @@ func (m *DecisionAnomalyMonitor) newAnomaly(
 	signalPath, privilege, notes, reasonCode, severity string,
 	observed, threshold float64,
 ) AnomalyEvent {
-	latencyMS, mode := detectionLatency(event.EmittedAt, detectedAt, signalPath)
+	latencyMS, mode, advisory := detectionLatency(event.EmittedAt, detectedAt, signalPath)
 	return AnomalyEvent{
 		AnomalyID:             fmt.Sprintf("anomaly-%d", m.nextID.Add(1)),
 		DecisionID:            event.DecisionID,
@@ -136,6 +137,7 @@ func (m *DecisionAnomalyMonitor) newAnomaly(
 		PrivilegeRequirement:  privilege,
 		DetectionLatencyMS:    latencyMS,
 		DetectionLatencyMode:  mode,
+		DetectionLatencyIsAdvisory: advisory,
 		FeatureFlagsApplied:   event.FeatureFlagsApplied,
 		QualityGuardrailState: event.QualityGuardrailState,
 		DetectedAt:            detectedAt.Format(time.RFC3339Nano),
@@ -154,23 +156,23 @@ func (m *DecisionAnomalyMonitor) resolveSignalPath() (path, privilege, notes str
 	return "fallback-userspace", "none", ""
 }
 
-func detectionLatency(emittedAt string, detectedAt time.Time, path string) (int, string) {
+func detectionLatency(emittedAt string, detectedAt time.Time, path string) (int, string, bool) {
 	if path == "ebpf-hook" {
-		return 2, "estimated"
+		return 0, "advisory", true
 	}
 	emittedAt = strings.TrimSpace(emittedAt)
 	if emittedAt == "" {
-		return 0, "estimated"
+		return 0, "estimated", false
 	}
 	ts, err := time.Parse(time.RFC3339Nano, emittedAt)
 	if err != nil {
-		return 0, "estimated"
+		return 0, "estimated", false
 	}
 	delta := detectedAt.Sub(ts.UTC())
 	if delta < 0 {
 		delta = 0
 	}
-	return int(delta.Milliseconds()), "measured"
+	return int(delta.Milliseconds()), "measured", false
 }
 
 func defaultEBPFChecker() (bool, string) {
