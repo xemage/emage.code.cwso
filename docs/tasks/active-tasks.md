@@ -55,6 +55,8 @@
 | T075 | eBPF latency semantics hardening | backend-developer | done (advisory semantics + explicit marker + tests) | P1 | T073 | 2026-05-24 |
 | T076 | Release candidate v0.2.0-rc1 readiness gate | release-manager | done (phase5 hardening closure + RC artifact + changelog) | P0 | T075 | 2026-05-24 |
 | T077 | Publish v0.2.0-rc1 release assets + smoke verification | release-manager | done (tag/release/assets published; binary and compose smoke checks recorded) | P0 | T076 | 2026-05-24 |
+| T078 | Operator validation package for v0.2.0-rc1 | release-manager | done (operator-validation artifact with residual GA checks) | P0 | T077 | 2026-05-24 |
+| T079 | GA promotion gate for v0.2.0 | release-manager | pending (awaiting stakeholder/soak/rollback sign-off inputs) | P0 | T078 | 2026-05-24 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled` · `partial` · `deferred`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
