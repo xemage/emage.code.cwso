@@ -2,7 +2,7 @@
 
 - Phase: **5 (GA Promotion)** · Owner: **release-manager** · Priority: **P0**
 - Depends on: T078 · Blocks: —
-- Status: pending (created 2026-05-24)
+- Status: in_progress (2026-05-24)
 
 ## Objective
 Execute final GA promotion gate for v0.2.0 by completing residual acceptance checks and producing release-manager sign-off for tag and release publication.
@@ -31,6 +31,19 @@ Execute final GA promotion gate for v0.2.0 by completing residual acceptance che
 ## Planned execution checklist
 - [ ] Capture stakeholder validation outcome
 - [ ] Capture soak/rollback evidence or signed waiver
-- [ ] Prepare GA changelog/release notes delta from rc1
+- [x] Prepare GA changelog/release notes delta from rc1
 - [ ] Create v0.2.0 tag and publish release assets
 - [ ] Record final checkpoint and close task
+
+## Progress notes (2026-05-24)
+- Completed GA preflight:
+  - confirmed `v0.2.0` tag does not yet exist
+  - confirmed no existing GitLab release for `v0.2.0`
+  - confirmed rc1 release baseline metadata remains intact
+- Prepared GA execution artifacts:
+  - `docs/artifacts/ga-promotion-checklist-v0.2.0.md`
+  - `docs/artifacts/release-v0.2.0-draft.md`
+
+### Remaining blockers
+- External stakeholder acceptance outcome is pending.
+- Soak/rollback evidence (or signed waiver) is pending.
