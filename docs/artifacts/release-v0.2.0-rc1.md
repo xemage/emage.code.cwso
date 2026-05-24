@@ -51,6 +51,34 @@ v0.2.0-rc1 is the release-candidate consolidation for the hardware-aware Phase 5
 - Latest hardening-closure pipeline on `develop` reached all-green state:
   - Pipeline: `2548879153`
   - URL: https://gitlab.com/em-age/emage.code.cwso/-/pipelines/2548879153
+- RC readiness commit pipeline reached all-green state:
+  - Pipeline: `2548922954`
+  - URL: https://gitlab.com/em-age/emage.code.cwso/-/pipelines/2548922954
+
+## Publication evidence (2026-05-24)
+- Tag published: `v0.2.0-rc1`
+- GitLab release published: https://gitlab.com/em-age/emage.code.cwso/-/releases/v0.2.0-rc1
+- Uploaded assets:
+  - `cwso-orchestrator-linux-amd64`
+  - `cwso-git-shadow-linux-amd64`
+  - `cwso-merge-engine-linux-amd64`
+  - `cwso-orchestrator-image-v0.2.0-rc1.tar.gz`
+  - `cwso-git-shadow-image-v0.2.0-rc1.tar.gz`
+  - `cwso-merge-engine-image-v0.2.0-rc1.tar.gz`
+
+## Smoke verification evidence (2026-05-24)
+- Binary startup checks:
+  - `./dist/v0.2.0-rc1/cwso-orchestrator-linux-amd64 --help` returned usage output.
+  - `cwso-git-shadow` started successfully with temp overrides:
+    - `CWSO_GIT_SHADOW_SOCKET=/tmp/cwso-smoke/runtime/git-shadow.sock`
+    - `CWSO_GIT_SHADOW_STORAGE=/tmp/cwso-smoke/shadow`
+    - startup log: `cwso-git-shadow ready`
+  - `cwso-merge-engine` started successfully with temp override:
+    - `CWSO_MERGE_ENGINE_SOCKET=/tmp/cwso-smoke/runtime/merge-engine.sock`
+    - startup log: `cwso-merge-engine ready`
+- Container/image checks:
+  - Local images present for `cwso/orchestrator:v0.2.0-rc1`, `cwso/git-shadow:v0.2.0-rc1`, and `cwso/merge-engine:v0.2.0-rc1`.
+  - `docker compose -f deploy/docker-compose.yml config` succeeded.
 
 ## Release candidate verdict
 PASS (RC_READY)
@@ -61,6 +89,6 @@ Rationale:
 - CI evidence shows a green end-to-end gate on the final hardening commit line.
 
 ## Next release action
-- Cut tag `v0.2.0-rc1` from current `develop` head.
-- Run `make release-assets TAG=v0.2.0-rc1` to produce and upload install assets.
-- Promote to `v0.2.0` after stakeholder validation and any final release-manager sign-off.
+- Run stakeholder RC validation against published release artifacts.
+- Capture any RC feedback as follow-up tasks before GA.
+- Promote to `v0.2.0` after release-manager final sign-off.
