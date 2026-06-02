@@ -18,14 +18,6 @@ The artifact's content. Format depends on type:
 - `test-report-vN.md` → pass/fail counts per suite, validation gate verdict
 - `release-notes-vN.md` → changelog entries, breaking changes
 
-### Release Artifact Add-on (mandatory for release notes)
-When the artifact type is a release note, include an "Attached Install Assets"
-section listing:
-
-- Linux binaries uploaded to the GitLab release entry
-- Container image archives uploaded to the GitLab release entry
-- The exact command used for automation: `make release-assets TAG=vX.Y.Z`
-
 ## Consumed by
 List the downstream tasks/agents that should reference this artifact version explicitly.
 
