@@ -1,4 +1,9 @@
-# Task T095 — Bump Go toolchain to 1.25 (clear `go:audit` stdlib advisories)
+# Task T114 — Bump Go toolchain to 1.25 (clear `go:audit` stdlib advisories)
+
+> **ID note:** this chore was originally authored and merged (MR !22) as **T095**, which
+> collided with the roadmap's reserved **T095 = eBPF AST write-spike monitor** (Phase 7).
+> Renumbered to **T114** (next free sequential ID) to keep the roadmap intact; the merged git
+> commit message still references T095.
 
 - **Status:** in_review
 - **Owner:** devops-engineer
