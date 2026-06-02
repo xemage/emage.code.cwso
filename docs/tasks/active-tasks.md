@@ -36,7 +36,12 @@ The Go control-plane half of Feature A (Heterogeneous Hardware Dispatcher) lande
   falls back deterministically to `cpu-baseline`; without a socket it preserves the
   shadow-mode no-op. Constructor `NewDispatchHardwareAwareJobWithHAL` + server wiring select
   live vs. shadow. Selection/fallback/telemetry still driven entirely by `PolicyEngineV2`.
-  Live capability heartbeat sync is deferred to T089.
+- **T087 capability live-sync (follow-up, done):** `hal.Client.Capabilities()` +
+  `dispatch.CapabilitySyncer` refresh the capability registry from the live HAL (immediate
+  sync at boot + background refresh on `CWSO_HAL_CAPABILITY_SYNC_SECONDS`, default 15s).
+  With a HAL socket the catalog is loaded from the live HAL instead of the static seed; if
+  the HAL is unreachable at boot it falls back to the static catalog, and stale providers
+  age out via the registry's TTL rule. The CPU baseline stays fresh/terminal-safe.
 - **T088 (done, in review):** Phase 6 integration + reliability QA. Reliability budgets
   verified: dispatch overhead median ≈ 4µs (budget ≤ 10ms), fallback end-to-end ≈ 51ms
   (budget ≤ 2.0s), failure propagation sub-ms with preserved error. Server-level

@@ -39,6 +39,7 @@ type Server struct {
 	runner    sandbox.RunnerInterface
 	caps      *dispatch.CapabilityRegistry
 	emitter   *dispatch.DecisionEmitter
+	capSyncer *dispatch.CapabilitySyncer
 }
 
 // New constructs and initializes a Server with all Phase 1 tools registered.
@@ -227,7 +228,10 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 			broker.Close()
 			return nil, fmt.Errorf("seed capability registry: %w", err)
 		}
-		if cfg.HHDHardwareAwareDispatch {
+		// Shadow mode (no live HAL): seed the static provider catalog so the policy engine
+		// has something to route against. With a live HAL socket the catalog is populated
+		// by the CapabilitySyncer instead (see initCapabilitySync below).
+		if cfg.HHDHardwareAwareDispatch && cfg.HALSocket == "" {
 			for _, prov := range shadowHardwareProviders() {
 				if err := capRegistry.Upsert(prov); err != nil {
 					jobMgr.Close()
@@ -280,7 +284,67 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 		}
 		log.Info().Str("socket", cfg.MergeEngineSocket).Msg("merge tools enabled")
 	}
+	s.initCapabilitySync()
 	return s, nil
+}
+
+// initCapabilitySync wires the live capability syncer when hardware-aware dispatch runs
+// against a real HAL. It performs one synchronous sync so the first snapshot reflects live
+// adapter health; if the HAL is unreachable at boot it falls back to the static catalog so
+// routing still works (the CPU baseline remains terminal-safe regardless). The background
+// refresh is started later by Run, bound to the server lifecycle.
+func (s *Server) initCapabilitySync() {
+	if !s.cfg.HHDHardwareAwareDispatch || s.cfg.HALSocket == "" || s.caps == nil {
+		return
+	}
+	client := hal.NewClient(s.cfg.HALSocket)
+	fetcher := halCapabilityFetcher{client: client}
+	syncer := dispatch.NewCapabilitySyncer(fetcher, s.caps, time.Duration(s.cfg.HALCapabilitySyncSeconds)*time.Second)
+	syncer.OnError = func(err error) {
+		s.log.Warn().Err(err).Msg("capability sync: HAL refresh failed (using last-known/stale catalog)")
+	}
+	syncer.OnSync = func(n int) {
+		s.log.Debug().Int("providers", n).Msg("capability sync: refreshed from live HAL")
+	}
+	if n, err := syncer.SyncOnce(); err != nil {
+		s.log.Warn().Err(err).Msg("capability sync: initial HAL sync failed; seeding static catalog fallback")
+		for _, prov := range shadowHardwareProviders() {
+			if upErr := s.caps.Upsert(prov); upErr != nil {
+				s.log.Warn().Err(upErr).Str("provider", prov.ProviderID).Msg("capability sync: static seed failed")
+			}
+		}
+	} else {
+		s.log.Info().Int("providers", n).Msg("capability sync: live HAL catalog loaded")
+	}
+	s.capSyncer = syncer
+}
+
+// halCapabilityFetcher adapts the HAL client's capability call to the dispatch
+// CapabilityFetcher contract, mapping the wire records to the policy-facing struct.
+type halCapabilityFetcher struct {
+	client *hal.Client
+}
+
+func (f halCapabilityFetcher) FetchCapabilities() ([]dispatch.ProviderCapability, error) {
+	live, err := f.client.Capabilities()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]dispatch.ProviderCapability, 0, len(live))
+	for _, c := range live {
+		out = append(out, dispatch.ProviderCapability{
+			ProviderID:            c.ProviderID,
+			ContractVersion:       c.ContractVersion,
+			HealthState:           c.HealthState,
+			LatencyClass:          c.LatencyClass,
+			CostClass:             c.CostClass,
+			QueueDepth:            c.QueueDepth,
+			SupportedWorkloadTags: c.SupportedWorkloadTags,
+			ReliabilityClass:      c.ReliabilityClass,
+			FeatureFlags:          c.FeatureFlags,
+		})
+	}
+	return out, nil
 }
 
 // shadowHardwareProviders returns the Phase 6 shadow-mode provider catalog used
@@ -466,6 +530,10 @@ func (s *Server) registerBaselineTools() error {
 func (s *Server) Run(ctx context.Context) error {
 	defer s.jobs.Close()
 	defer s.memory.Close()
+
+	if s.capSyncer != nil {
+		s.capSyncer.Start(ctx)
+	}
 
 	switch s.cfg.Transport {
 	case "stdio":

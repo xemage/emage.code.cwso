@@ -63,29 +63,55 @@ func startFakeHAL(t *testing.T, socket string, infered chan<- map[string]any) {
 					Params json.RawMessage `json:"params"`
 				}
 				_ = json.Unmarshal(body, &env)
-				if env.Op == "infer" {
+
+				var result []byte
+				switch env.Op {
+				case "capabilities":
+					result, _ = json.Marshal(map[string]any{"providers": fakeHALProviders()})
+				case "infer":
 					var params map[string]any
 					_ = json.Unmarshal(env.Params, &params)
 					select {
 					case infered <- params:
 					default:
 					}
+					result, _ = json.Marshal(map[string]any{
+						"served_by":          "cpu-baseline",
+						"requested_provider": "lpu-realtime",
+						"fallback_count":     1,
+						"completion": map[string]any{
+							"provider_id": "cpu-baseline", "output": "ok",
+							"tokens_in": 1, "tokens_out": 1, "latency_ms": 1, "deterministic": true,
+						},
+						"attempts": []any{},
+					})
+				default:
+					result, _ = json.Marshal(map[string]any{"service": "cwso-hal"})
 				}
-				result, _ := json.Marshal(map[string]any{
-					"served_by":          "cpu-baseline",
-					"requested_provider": "lpu-realtime",
-					"fallback_count":     1,
-					"completion": map[string]any{
-						"provider_id": "cpu-baseline", "output": "ok",
-						"tokens_in": 1, "tokens_out": 1, "latency_ms": 1, "deterministic": true,
-					},
-					"attempts": []any{},
-				})
 				resp, _ := json.Marshal(map[string]any{"id": env.ID, "ok": true, "result": json.RawMessage(result)})
 				writeFrame(c, resp)
 			}(conn)
 		}
 	}()
+}
+
+// fakeHALProviders mirrors the live capability catalog the HAL would advertise so the
+// CapabilitySyncer can populate the registry (cpu-baseline + the specialized backends).
+func fakeHALProviders() []map[string]any {
+	cap := func(id, latency, cost, reliability string, tags []string) map[string]any {
+		return map[string]any{
+			"provider_id": id, "contract_version": "dispatch.provider/v2",
+			"health_state": "healthy", "latency_class": latency, "cost_class": cost,
+			"queue_depth": 0, "supported_workload_tags": tags,
+			"reliability_class": reliability, "feature_flags": []string{},
+		}
+	}
+	return []map[string]any{
+		cap("cpu-baseline", "baseline", "low", "standard", []string{"default"}),
+		cap("lpu-realtime", "ultra", "medium", "gold", []string{"realtime"}),
+		cap("gpu-accelerated", "fast", "high", "gold", []string{"inference-heavy", "deterministic-edit"}),
+		cap("ssm-longctx", "baseline", "medium", "gold", []string{"long-context"}),
+	}
 }
 
 func readFull(c net.Conn, buf []byte) (int, error) {
@@ -158,5 +184,43 @@ func TestHardwareAwareDispatchLiveHALIntegration(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for live HAL infer call")
+	}
+}
+
+// TestCapabilitySyncPopulatesRegistryFromHAL asserts the capability registry is loaded
+// from the live HAL catalog at startup (not the static shadow seed): all HAL-advertised
+// providers appear in the snapshot, healthy and fresh.
+func TestCapabilitySyncPopulatesRegistryFromHAL(t *testing.T) {
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "hal.sock")
+	startFakeHAL(t, socket, make(chan map[string]any, 1))
+
+	cfg := &config.Config{
+		Transport:                "stdio",
+		LogLevel:                 "error",
+		Workspace:                dir,
+		AllowedOrigins:           []string{"http://localhost"},
+		HHDCapabilityRegistry:    true,
+		HHDHardwareAwareDispatch: true,
+		HHDPolicyEngineV2:        true,
+		HALSocket:                socket,
+		HHDSnapshotTTLSeconds:    30,
+		HALCapabilitySyncSeconds: 5,
+		JobTimeoutSeconds:        30,
+	}
+	s, err := New(cfg, logging.New("error"))
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	snap := s.caps.Snapshot()
+	got := map[string]string{}
+	for _, p := range snap.Providers {
+		got[p.ProviderID] = p.HealthState
+	}
+	for _, id := range []string{"cpu-baseline", "lpu-realtime", "gpu-accelerated", "ssm-longctx"} {
+		if got[id] != "healthy" {
+			t.Fatalf("provider %q health = %q (want healthy); snapshot=%+v", id, got[id], got)
+		}
 	}
 }
