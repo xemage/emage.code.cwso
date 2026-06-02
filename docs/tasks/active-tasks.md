@@ -14,7 +14,12 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T086 | `dispatch_hardware_aware_job` MCP tool + schema | backend-developer | in_review | P0 | T083, T085 | 2026-06-02 |
 | T087 | Wire policy_engine_v2 to live adapters (remove spike stubs) | backend-developer | in_review | P0 | T086 | 2026-06-02 |
 | T088 | Phase 6 integration + reliability QA (fallback ≤ 2.0s, overhead ≤ 10ms) | qa-engineer | in_review | P0 | T087 | 2026-06-02 |
-| T089 | Phase 6 Tech-Lead + Security gate | tech-lead / security-engineer | pending | P0 | T088 | 2026-06-02 |
+| T089 | Phase 6 Tech-Lead + Security gate | tech-lead / security-engineer | in_review | P0 | T088 | 2026-06-02 |
+| T090 | Thread job context into `hal.Client.Infer` (cancellation propagation) | backend-developer | pending | P1 | T089 | 2026-06-02 |
+| T091 | Active HAL health probing → live `health_state`/`queue_depth` | backend-developer | pending | P1 | T089 | 2026-06-02 |
+| T092 | Hardware-aware job result retrieval (poll/stream completion) | backend-developer | pending | P2 | T089 | 2026-06-02 |
+| T093 | Enforce/document TLS for non-loopback HAL accelerator endpoints | devops-engineer | pending | P1 | T089 | 2026-06-02 |
+| T094 | CI dependency audit (`govulncheck` + `cargo audit`) | devops-engineer | pending | P2 | T089 | 2026-06-02 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -42,6 +47,11 @@ The Go control-plane half of Feature A (Heterogeneous Hardware Dispatcher) lande
   With a HAL socket the catalog is loaded from the live HAL instead of the static seed; if
   the HAL is unreachable at boot it falls back to the static catalog, and stale providers
   age out via the registry's TTL rule. The CPU baseline stays fresh/terminal-safe.
+- **T089 (done, in review):** Phase 6 validation gate — Tech-Lead (implementation) **PASS**
+  and Security **PASS**, recorded in `docs/artifacts/gate-phase6-feature-a-2026-06-02.md`.
+  No critical/high findings. Five non-blocking follow-ups tracked as **T090–T094** (ctx
+  propagation, active health probing, result retrieval, TLS guidance, CI dependency audit).
+  **Phase 6 Feature A is cleared to proceed.**
 - **T088 (done, in review):** Phase 6 integration + reliability QA. Reliability budgets
   verified: dispatch overhead median ≈ 4µs (budget ≤ 10ms), fallback end-to-end ≈ 51ms
   (budget ≤ 2.0s), failure propagation sub-ms with preserved error. Server-level
