@@ -27,6 +27,7 @@ type Config struct {
 	ShadowSocket                string   // UDS path for the cwso-git-shadow sidecar ("" disables shadow tools)
 	MergeEngineSocket           string   // UDS path for the cwso-merge-engine sidecar ("" disables merge tool)
 	HALSocket                   string   // UDS path for the cwso-hal sidecar ("" keeps hardware-aware dispatch in shadow mode)
+	HALCapabilitySyncSeconds    int      // interval for refreshing the capability registry from the live HAL
 	SandboxRunner               string   // "none" | "docker" | "gvisor"
 	SandboxDockerHost           string   // docker host URL (unix:///var/run/docker.sock by default)
 	SandboxImage                string   // default image used by baseline docker runner
@@ -112,6 +113,7 @@ func Load(_ string) (*Config, error) {
 		ShadowSocket:                os.Getenv("CWSO_GIT_SHADOW_SOCKET"),
 		MergeEngineSocket:           os.Getenv("CWSO_MERGE_ENGINE_SOCKET"),
 		HALSocket:                   os.Getenv("CWSO_HAL_SOCKET"),
+		HALCapabilitySyncSeconds:    envInt("CWSO_HAL_CAPABILITY_SYNC_SECONDS", 15),
 		SandboxRunner:               envOr("CWSO_SANDBOX_RUNNER", "none"),
 		SandboxDockerHost:           envOr("CWSO_DOCKER_HOST", "unix:///var/run/docker.sock"),
 		SandboxImage:                envOr("CWSO_DOCKER_IMAGE", "alpine:3.20"),

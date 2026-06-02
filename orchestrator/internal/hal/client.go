@@ -108,6 +108,32 @@ func (c *Client) Stat() (json.RawMessage, error) {
 	return out, nil
 }
 
+// Capability mirrors the cwso-hal `ProviderCapability` wire shape (field-aligned with the
+// Go dispatch.ProviderCapability, snake_case on the wire).
+type Capability struct {
+	ProviderID            string   `json:"provider_id"`
+	ContractVersion       string   `json:"contract_version"`
+	HealthState           string   `json:"health_state"`
+	LatencyClass          string   `json:"latency_class"`
+	CostClass             string   `json:"cost_class"`
+	QueueDepth            int      `json:"queue_depth"`
+	SupportedWorkloadTags []string `json:"supported_workload_tags"`
+	ReliabilityClass      string   `json:"reliability_class"`
+	FeatureFlags          []string `json:"feature_flags"`
+}
+
+// Capabilities returns the live capability records advertised by the HAL's registered
+// backends (used to keep the control-plane capability registry in sync).
+func (c *Client) Capabilities() ([]Capability, error) {
+	var out struct {
+		Providers []Capability `json:"providers"`
+	}
+	if err := c.Call("capabilities", nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Providers, nil
+}
+
 type envelope struct {
 	ID     string          `json:"id"`
 	Op     string          `json:"op"`
