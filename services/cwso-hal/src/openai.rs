@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 
 use serde_json::json;
@@ -7,6 +9,53 @@ use crate::backend::{
     InferenceRequest, ProviderCapability, CONTRACT_VERSION,
 };
 use crate::http::{HttpTransport, TransportError};
+
+/// HealthCache holds the most recently observed health for an accelerator backend so the
+/// dispatch hot path can read it locklessly with no network I/O, while a background prober
+/// (`probe`) and the `infer` outcome path keep it fresh. `queue_depth` is plumbed through
+/// but currently only ever 0 — see the note on `OpenAiCompatibleBackend`.
+#[derive(Debug)]
+struct HealthCache {
+    state: AtomicU8,
+    queue_depth: AtomicU32,
+}
+
+impl HealthCache {
+    fn new(initial: HealthState) -> Self {
+        Self {
+            state: AtomicU8::new(encode_state(initial)),
+            queue_depth: AtomicU32::new(0),
+        }
+    }
+
+    fn load(&self) -> HealthState {
+        decode_state(self.state.load(Ordering::Relaxed))
+    }
+
+    fn store(&self, state: HealthState) {
+        self.state.store(encode_state(state), Ordering::Relaxed);
+    }
+
+    fn queue_depth(&self) -> u32 {
+        self.queue_depth.load(Ordering::Relaxed)
+    }
+}
+
+fn encode_state(state: HealthState) -> u8 {
+    match state {
+        HealthState::Healthy => 0,
+        HealthState::Degraded => 1,
+        HealthState::Unavailable => 2,
+    }
+}
+
+fn decode_state(value: u8) -> HealthState {
+    match value {
+        0 => HealthState::Healthy,
+        1 => HealthState::Degraded,
+        _ => HealthState::Unavailable,
+    }
+}
 
 /// OpenAiBackendConfig configures an OpenAI-compatible chat-completions backend
 /// (vLLM, TensorRT-LLM, Groq, etc.). The same adapter serves both the GPU (T083) and
@@ -71,18 +120,37 @@ pub fn lpu_groq_config(
 
 /// OpenAiCompatibleBackend talks to an OpenAI-compatible `/chat/completions` endpoint.
 ///
-/// `health` is intentionally cheap (optimistic, no network I/O) so it never inflates the
-/// dispatch hot path beyond the single inference round-trip; liveness is enforced by the
-/// `infer` failure → fallback path. `probe_models` performs an explicit live readiness
-/// check for startup/diagnostics.
+/// `health()` is cheap: it returns a cached snapshot (no network I/O) so it never inflates
+/// the dispatch hot path. The cache is refreshed two ways (T091): a background prober calls
+/// `probe()` periodically (active liveness via `/models`), and every `infer` updates the
+/// cache from its own outcome (reactive). This makes the capability snapshot the Go control
+/// plane consumes carry *live* `health_state` instead of a hardcoded "healthy".
+///
+/// `queue_depth` is plumbed through the cache and capability record, but the OpenAI API has
+/// no standard queue-depth endpoint, so it currently stays 0; deriving a real value needs a
+/// provider-specific metrics scrape (e.g. vLLM `/metrics`) and is tracked as future work.
 pub struct OpenAiCompatibleBackend {
     cfg: OpenAiBackendConfig,
     transport: Box<dyn HttpTransport>,
+    health: Arc<HealthCache>,
 }
 
 impl OpenAiCompatibleBackend {
     pub fn new(cfg: OpenAiBackendConfig, transport: Box<dyn HttpTransport>) -> Self {
-        Self { cfg, transport }
+        Self {
+            cfg,
+            transport,
+            // Optimistic until the first probe/infer so a just-registered backend is
+            // eligible for routing; the startup probe in main.rs refreshes it immediately.
+            health: Arc::new(HealthCache::new(HealthState::Healthy)),
+        }
+    }
+
+    /// record_outcome updates the cached health from a completed inference attempt so the
+    /// next capability snapshot reflects reality without waiting for the next probe tick.
+    fn record_failure(&self, failure: BackendFailure) -> BackendFailure {
+        self.health.store(failure.class.to_health_state());
+        failure
     }
 
     fn chat_url(&self) -> String {
@@ -115,10 +183,10 @@ impl InferenceBackend for OpenAiCompatibleBackend {
         ProviderCapability {
             provider_id: self.cfg.provider_id.clone(),
             contract_version: CONTRACT_VERSION.to_string(),
-            health_state: HealthState::Healthy.as_wire().to_string(),
+            health_state: self.health.load().as_wire().to_string(),
             latency_class: self.cfg.latency_class.clone(),
             cost_class: self.cfg.cost_class.clone(),
-            queue_depth: 0,
+            queue_depth: self.health.queue_depth(),
             supported_workload_tags: self.cfg.supported_workload_tags.clone(),
             reliability_class: self.cfg.reliability_class.clone(),
             feature_flags: self.cfg.feature_flags.clone(),
@@ -127,10 +195,19 @@ impl InferenceBackend for OpenAiCompatibleBackend {
 
     fn health(&self) -> Health {
         Health {
-            state: HealthState::Healthy,
-            queue_depth: 0,
+            state: self.health.load(),
+            queue_depth: self.health.queue_depth(),
             detail: None,
         }
+    }
+
+    fn probe(&self) -> Health {
+        let state = match self.probe_models() {
+            Ok(()) => HealthState::Healthy,
+            Err(failure) => failure.class.to_health_state(),
+        };
+        self.health.store(state);
+        self.health()
     }
 
     fn infer(&self, req: &InferenceRequest) -> Result<Completion, BackendFailure> {
@@ -152,17 +229,24 @@ impl InferenceBackend for OpenAiCompatibleBackend {
         let resp = self
             .transport
             .post_json(&self.chat_url(), self.cfg.api_key.as_deref(), &body)
-            .map_err(map_transport_error)?;
+            .map_err(|error| self.record_failure(map_transport_error(error)))?;
 
         if !(200..300).contains(&resp.status) {
-            return Err(map_status_error(resp.status, &resp.body));
+            return Err(self.record_failure(map_status_error(resp.status, &resp.body)));
         }
 
-        parse_completion(
+        match parse_completion(
             &self.cfg.provider_id,
             &resp.body,
             started.elapsed().as_millis() as u64,
-        )
+        ) {
+            Ok(completion) => {
+                // A served request is the strongest possible liveness signal.
+                self.health.store(HealthState::Healthy);
+                Ok(completion)
+            }
+            Err(failure) => Err(self.record_failure(failure)),
+        }
     }
 }
 
@@ -373,5 +457,73 @@ mod tests {
         )));
         let err = gpu(transport).probe_models().expect_err("must fail");
         assert_eq!(err.class, FailureClass::Unavailable);
+    }
+
+    #[test]
+    fn probe_success_caches_healthy_and_capabilities_reflect_it() {
+        let transport = MockTransport::new().with_get(Ok(HttpResponse {
+            status: 200,
+            body: "{\"data\":[]}".to_string(),
+        }));
+        let backend = gpu(transport);
+        let health = backend.probe();
+        assert_eq!(health.state, HealthState::Healthy);
+        assert_eq!(backend.capabilities().health_state, "healthy");
+    }
+
+    #[test]
+    fn probe_unreachable_caches_unavailable_in_capabilities() {
+        let transport = MockTransport::new().with_get(Err(TransportError::Unreachable(
+            "connect refused".to_string(),
+        )));
+        let backend = gpu(transport);
+        let health = backend.probe();
+        assert_eq!(health.state, HealthState::Unavailable);
+        // The cheap health() and the capability snapshot must reflect the live probe.
+        assert_eq!(backend.health().state, HealthState::Unavailable);
+        assert_eq!(backend.capabilities().health_state, "unavailable");
+    }
+
+    #[test]
+    fn probe_overloaded_caches_degraded() {
+        let transport = MockTransport::new().with_get(Ok(HttpResponse {
+            status: 429,
+            body: "rate limited".to_string(),
+        }));
+        let backend = gpu(transport);
+        assert_eq!(backend.probe().state, HealthState::Degraded);
+        assert_eq!(backend.capabilities().health_state, "degraded");
+    }
+
+    #[test]
+    fn infer_failure_reactively_marks_unavailable() {
+        let transport = MockTransport::new().with_post(Ok(HttpResponse {
+            status: 503,
+            body: "down".to_string(),
+        }));
+        let backend = gpu(transport);
+        // Starts optimistic.
+        assert_eq!(backend.health().state, HealthState::Healthy);
+        let _ = backend.infer(&request()).expect_err("must fail");
+        // A 503 (Unavailable) inference must degrade cached health without a probe.
+        assert_eq!(backend.health().state, HealthState::Unavailable);
+    }
+
+    #[test]
+    fn infer_success_restores_healthy() {
+        let transport = MockTransport::new()
+            .with_post(Ok(HttpResponse {
+                status: 503,
+                body: "down".to_string(),
+            }))
+            .with_post(Ok(HttpResponse {
+                status: 200,
+                body: ok_body(),
+            }));
+        let backend = gpu(transport);
+        let _ = backend.infer(&request()).expect_err("first attempt fails");
+        assert_eq!(backend.health().state, HealthState::Unavailable);
+        let _ = backend.infer(&request()).expect("second attempt serves");
+        assert_eq!(backend.health().state, HealthState::Healthy);
     }
 }
