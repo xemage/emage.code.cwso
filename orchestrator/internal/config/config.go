@@ -55,6 +55,7 @@ type Config struct {
 	HHDEventMonitorLatencyMS    int      // anomaly threshold for actual latency in milliseconds
 	HHDSnapshotTTLSeconds       int      // stale capability threshold for policy-facing snapshots
 	HHDPolicyEngineV2           bool     // enable policy engine v2 backend selection and fallback
+	HHDHardwareAwareDispatch    bool     // enable dispatch_hardware_aware_job tool + shadow provider catalog (Phase 6)
 	HHDPolicyMinConfidence      float64  // minimum confidence before forcing baseline path
 	HHDPolicyMaxQueueDepth      int      // queue depth normalization denominator for policy scoring
 	HHDWeightHealth             float64  // policy weight for health signal
@@ -138,6 +139,7 @@ func Load(_ string) (*Config, error) {
 		HHDEventMonitorLatencyMS:    envInt("CWSO_HHD_EVENT_MONITOR_LATENCY_THRESHOLD_MS", 1200),
 		HHDSnapshotTTLSeconds:       envInt("CWSO_HHD_CAPABILITY_SNAPSHOT_TTL_SECONDS", 30),
 		HHDPolicyEngineV2:           envBool("CWSO_HHD_POLICY_ENGINE_V2_ENABLED", false),
+		HHDHardwareAwareDispatch:    envBool("CWSO_HHD_HARDWARE_AWARE_DISPATCH_ENABLED", false),
 		HHDPolicyMinConfidence:      envFloat64("CWSO_HHD_POLICY_MIN_CONFIDENCE", 0.5),
 		HHDPolicyMaxQueueDepth:      envInt("CWSO_HHD_POLICY_MAX_QUEUE_DEPTH", 32),
 		HHDWeightHealth:             envFloat64("CWSO_HHD_POLICY_WEIGHT_HEALTH", 0.35),

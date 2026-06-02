@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cwso.dev/schemas/dispatch_hardware_aware_job.json",
+  "title": "dispatch_hardware_aware_job",
+  "description": "Profile a task and dispatch it asynchronously to the most efficient hardware backend (LPU/GPU/SSM/Wasm-local) via deterministic policy routing. Returns a job_id and the assigned hardware profile immediately (fire-and-forget). Feature A: Heterogeneous Hardware Dispatcher.",
+  "type": "object",
+  "properties": {
+    "task_description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Natural-language description of the task. Used by the deterministic profiler to detect mechanical/deterministic edits."
+    },
+    "context_size_estimate": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Estimated context/token footprint. >= 32768 routes to SSM (linear context scaling); <= 8192 is eligible for LPU realtime routing."
+    },
+    "latency_requirement": {
+      "type": "string",
+      "enum": ["realtime", "batch"],
+      "description": "Latency intent. 'realtime' biases toward ultra-low-latency LPU backends; 'batch' permits denser/cheaper backends."
+    },
+    "workload_tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Optional caller-supplied workload tags merged with profiler-derived tags for policy matching."
+    },
+    "target_workspace_uuid": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Optional shadow workspace the dispatched job should operate against."
+    },
+    "hardware_target_hint": {
+      "type": "string",
+      "enum": ["auto", "lpu", "gpu", "photonic_sim", "edge_npu", "wasm_local"],
+      "description": "Advisory hint only. Server policy makes the authoritative routing decision; callers cannot force an unsafe backend."
+    },
+    "quality_floor": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Optional minimum acceptable quality score; used by policy guardrails when assist paths are enabled."
+    }
+  },
+  "required": ["task_description", "context_size_estimate", "latency_requirement"],
+  "additionalProperties": false,
+  "x-result": {
+    "type": "object",
+    "properties": {
+      "job_id": { "type": "string" },
+      "assigned_hardware_profile": {
+        "type": "object",
+        "properties": {
+          "selected_provider": { "type": "string" },
+          "ranked_fallback_chain": { "type": "array", "items": { "type": "string" } },
+          "policy_version": { "type": "string" },
+          "capability_epoch": { "type": "integer" },
+          "confidence": { "type": "number" },
+          "reason_code": { "type": "string" },
+          "recommended_class": { "type": "string" },
+          "workload_tags": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}
