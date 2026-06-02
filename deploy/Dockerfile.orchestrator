@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.6
 # CWSO Orchestrator (Go) — multi-stage build
 
-FROM golang:1.23-alpine AS builder
+FROM golang:1.25-alpine AS builder
 LABEL cwso=dev
 WORKDIR /src
 RUN apk add --no-cache git build-base

@@ -34,7 +34,7 @@ default:
 
 go:lint:
   stage: lint
-  image: golang:1.23
+  image: golang:1.25
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
@@ -67,7 +67,7 @@ rust:lint:
 
 go:test:
   stage: test
-  image: golang:1.23
+  image: golang:1.25
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
@@ -113,13 +113,12 @@ rust:test:
 
 go:audit:
   stage: audit
-  image: golang:1.23
+  image: golang:1.25
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
   script:
-    # Pinned: v1.3.0 requires Go >= 1.25; v1.1.4 builds on the Go 1.23 toolchain image.
-    - go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+    - go install golang.org/x/vuln/cmd/govulncheck@latest
     - cd orchestrator
     - $GOPATH/bin/govulncheck ./...
   allow_failure: true
