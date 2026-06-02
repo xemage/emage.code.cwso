@@ -9,9 +9,16 @@ import (
 	"time"
 
 	"github.com/emage/cwso/orchestrator/internal/dispatch"
+	"github.com/emage/cwso/orchestrator/internal/hal"
 	"github.com/emage/cwso/orchestrator/internal/jobs"
 	"github.com/emage/cwso/orchestrator/internal/mcp"
 )
+
+// halInferrer is the subset of the HAL client the dispatch tool needs (live execution).
+// It is an interface so the tool can be unit-tested without a running sidecar.
+type halInferrer interface {
+	Infer(providerID string, fallbackChain []string, req hal.InferenceRequest) (*hal.InferResult, error)
+}
 
 // DispatchHardwareAwareJob implements Feature A (Heterogeneous Hardware
 // Dispatcher). It profiles an incoming task, routes it through the
@@ -28,16 +35,33 @@ type DispatchHardwareAwareJob struct {
 	emitter        dispatchDecisionEmitter
 	snapshots      capabilitySnapshotReader
 	policyEngine   *dispatch.PolicyEngineV2
+	// halClient, when non-nil, executes dispatched jobs against the live HAL sidecar.
+	// When nil the tool runs in shadow mode (context-respecting no-op job body).
+	halClient halInferrer
 }
 
 // NewDispatchHardwareAwareJob constructs the hardware-aware dispatch tool bound
-// to the async job manager, capability snapshot reader, and policy engine.
+// to the async job manager, capability snapshot reader, and policy engine. It runs
+// in shadow mode (no live execution) — see NewDispatchHardwareAwareJobWithHAL.
 func NewDispatchHardwareAwareJob(
 	manager *jobs.Manager,
 	defaultTimeoutSeconds int,
 	emitter dispatchDecisionEmitter,
 	snapshots capabilitySnapshotReader,
 	policyCfg dispatch.PolicyV2Config,
+) *DispatchHardwareAwareJob {
+	return NewDispatchHardwareAwareJobWithHAL(manager, defaultTimeoutSeconds, emitter, snapshots, policyCfg, nil)
+}
+
+// NewDispatchHardwareAwareJobWithHAL constructs the tool with a live HAL client so the
+// selected backend executes real inference (T087). A nil halClient preserves shadow mode.
+func NewDispatchHardwareAwareJobWithHAL(
+	manager *jobs.Manager,
+	defaultTimeoutSeconds int,
+	emitter dispatchDecisionEmitter,
+	snapshots capabilitySnapshotReader,
+	policyCfg dispatch.PolicyV2Config,
+	halClient halInferrer,
 ) *DispatchHardwareAwareJob {
 	if defaultTimeoutSeconds <= 0 {
 		defaultTimeoutSeconds = defaultDispatchTimeoutSeconds
@@ -48,6 +72,7 @@ func NewDispatchHardwareAwareJob(
 		emitter:        emitter,
 		snapshots:      snapshots,
 		policyEngine:   dispatch.NewPolicyEngineV2(policyCfg),
+		halClient:      halClient,
 	}
 }
 
@@ -162,13 +187,20 @@ func (t *DispatchHardwareAwareJob) Execute(_ context.Context, args json.RawMessa
 		decision.CapabilityEpoch = snapshot.Epoch
 	}
 
-	job, enqErr := t.enqueue(p, decision.SelectedProvider)
+	inferReq := hal.InferenceRequest{
+		WorkloadTags:  tags,
+		Prompt:        strings.TrimSpace(p.TaskDescription),
+		ContextTokens: p.ContextSizeEstimate,
+		LatencyClass:  latency,
+	}
+
+	job, enqErr := t.enqueue(p, decision, inferReq)
 	if enqErr != nil {
 		// One deterministic fallback hop before surfacing a structured error.
 		fallback := t.policyEngine.FallbackOnFailure(decision, decision.SelectedProvider, classifyProviderFailure(enqErr))
 		if fb := strings.TrimSpace(fallback.SelectedProvider); fb != "" && fb != decision.SelectedProvider {
 			decision = fallback
-			job, enqErr = t.enqueue(p, decision.SelectedProvider)
+			job, enqErr = t.enqueue(p, decision, inferReq)
 		}
 	}
 	if enqErr != nil {
@@ -200,15 +232,15 @@ func (t *DispatchHardwareAwareJob) Execute(_ context.Context, args json.RawMessa
 	return mcp.TextResult(string(b)), nil
 }
 
-func (t *DispatchHardwareAwareJob) enqueue(p hwAwareArgs, providerID string) (jobs.Job, error) {
-	providerID = strings.TrimSpace(providerID)
+func (t *DispatchHardwareAwareJob) enqueue(p hwAwareArgs, decision dispatch.PolicyDecision, req hal.InferenceRequest) (jobs.Job, error) {
+	providerID := strings.TrimSpace(decision.SelectedProvider)
 	if providerID == "" {
 		providerID = dispatch.DefaultBaselineProviderID
 	}
 	return t.manager.Enqueue(jobs.Request{
 		Name:    buildHardwareAwareJobName(p, providerID),
 		Timeout: t.defaultTimeout,
-		Run:     hardwareAwareRunFunc(providerID),
+		Run:     t.runFunc(providerID, decision.RankedFallbackChain, req),
 	})
 }
 
@@ -284,18 +316,27 @@ func buildHardwareAwareJobName(p hwAwareArgs, providerID string) string {
 	return "hw-dispatch:" + strings.TrimSpace(providerID) + ":" + ws
 }
 
-// hardwareAwareRunFunc returns the job body. In the current shadow-mode rollout
-// (blueprint Stage B) execution is a context-respecting no-op: the decision is
-// logged and the job lifecycle is exercised, but no live provider call is made
-// until real HAL adapters land (Phase 6 T082-T084).
-func hardwareAwareRunFunc(providerID string) func(context.Context) error {
-	_ = providerID
-	return func(ctx context.Context) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			return nil
+// runFunc builds the job body. With a live HAL client (T087) it executes the request on
+// the selected backend, passing the ranked fallback chain so the HAL falls back
+// deterministically (terminating at cpu-baseline). Without a HAL client it preserves
+// shadow mode: a context-respecting no-op that exercises the job lifecycle only.
+func (t *DispatchHardwareAwareJob) runFunc(providerID string, fallbackChain []string, req hal.InferenceRequest) func(context.Context) error {
+	client := t.halClient
+	if client == nil {
+		return func(ctx context.Context) error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				return nil
+			}
 		}
+	}
+	return func(ctx context.Context) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		_, err := client.Infer(providerID, fallbackChain, req)
+		return err
 	}
 }
