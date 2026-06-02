@@ -20,7 +20,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T092 | Hardware-aware job result retrieval (poll/stream completion) | backend-developer | in_review | P2 | T089 | 2026-06-02 |
 | T093 | Enforce/document TLS for non-loopback HAL accelerator endpoints | devops-engineer | in_review | P1 | T089 | 2026-06-02 |
 | T094 | CI dependency audit (`govulncheck` + `cargo audit`) | devops-engineer | in_review | P2 | T089 | 2026-06-02 |
-| T095 | Bump Go toolchain to 1.25 (clear `go:audit` stdlib advisories) | devops-engineer | in_review | P2 | T094 | 2026-06-02 |
+| T114 | Bump Go toolchain to 1.25 (clear `go:audit` stdlib advisories) | devops-engineer | in_review | P2 | T094 | 2026-06-02 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -148,7 +148,10 @@ Landed on `feature/T091-T093-rust-hal-followups`:
 Briefs: `task-T091.md`, `task-T093.md`. This completes the Phase 6 gate follow-ups
 **T090–T094**.
 
-### T095 (done, in review) — bump Go toolchain to 1.25
+### T114 (done, in review) — bump Go toolchain to 1.25
+
+> Numbering note: merged as `feature/T095-bump-go-toolchain` (MR !22) before the collision with
+> the roadmap's reserved T095 (eBPF AST monitor) was spotted; renumbered to **T114** here.
 
 Landed on `feature/T095-bump-go-toolchain`. The first `go:audit` run (T094) flagged 18 Go
 **standard-library** advisories ("Fixed in go1.24.x"); these are toolchain-version artifacts,
