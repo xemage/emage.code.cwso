@@ -3,13 +3,117 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/emage/cwso/orchestrator/internal/dispatch"
+	"github.com/emage/cwso/orchestrator/internal/hal"
 	"github.com/emage/cwso/orchestrator/internal/jobs"
 	"github.com/emage/cwso/orchestrator/internal/mcp"
 )
+
+// fakeInferrer records the most recent Infer call so tests can assert that the
+// dispatched job executed against the selected backend via the HAL.
+type fakeInferrer struct {
+	mu          sync.Mutex
+	calls       int
+	lastID      string
+	lastChain   []string
+	lastRequest hal.InferenceRequest
+	err         error
+	done        chan struct{}
+}
+
+func newFakeInferrer() *fakeInferrer { return &fakeInferrer{done: make(chan struct{}, 1)} }
+
+func (f *fakeInferrer) Infer(providerID string, fallbackChain []string, req hal.InferenceRequest) (*hal.InferResult, error) {
+	f.mu.Lock()
+	f.calls++
+	f.lastID = providerID
+	f.lastChain = fallbackChain
+	f.lastRequest = req
+	err := f.err
+	f.mu.Unlock()
+	select {
+	case f.done <- struct{}{}:
+	default:
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &hal.InferResult{ServedBy: providerID, Completion: hal.Completion{ProviderID: providerID}}, nil
+}
+
+func (f *fakeInferrer) wait(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for HAL Infer to be called")
+	}
+}
+
+func TestHardwareAwareDispatchExecutesViaHAL(t *testing.T) {
+	mgr, err := jobs.NewManager(jobs.Config{Workers: 1, QueueSize: 8}, nil)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	defer mgr.Close()
+	policyCfg := dispatch.DefaultPolicyV2Config()
+	policyCfg.Enabled = true
+	fake := newFakeInferrer()
+	tool := NewDispatchHardwareAwareJobWithHAL(
+		mgr, 300, &recordingDispatchEmitter{},
+		stubCapabilitySnapshotReader{snapshot: hwAwareSnapshot()},
+		policyCfg, fake,
+	)
+
+	res, err := tool.Execute(context.Background(),
+		json.RawMessage(`{"task_description":"fix typo","context_size_estimate":1000,"latency_requirement":"realtime"}`))
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	out := decodeHWAwareResult(t, res)
+	if out.AssignedHardwareProfile.SelectedProvider != "lpu-realtime" {
+		t.Fatalf("selected provider = %q, want lpu-realtime", out.AssignedHardwareProfile.SelectedProvider)
+	}
+
+	fake.wait(t)
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.calls != 1 {
+		t.Fatalf("expected exactly one Infer call, got %d", fake.calls)
+	}
+	if fake.lastID != "lpu-realtime" {
+		t.Fatalf("Infer provider = %q, want lpu-realtime", fake.lastID)
+	}
+	if fake.lastRequest.Prompt != "fix typo" {
+		t.Fatalf("Infer prompt = %q, want 'fix typo'", fake.lastRequest.Prompt)
+	}
+	if fake.lastRequest.ContextTokens != 1000 {
+		t.Fatalf("Infer context tokens = %d, want 1000", fake.lastRequest.ContextTokens)
+	}
+	if len(fake.lastChain) == 0 || fake.lastChain[0] != "lpu-realtime" {
+		t.Fatalf("expected ranked fallback chain led by lpu-realtime, got %+v", fake.lastChain)
+	}
+}
+
+func TestHardwareAwareDispatchShadowModeNoInfer(t *testing.T) {
+	tool, mgr := newHWAwareTool(t, &recordingDispatchEmitter{})
+	defer mgr.Close()
+	if tool.halClient != nil {
+		t.Fatal("expected nil HAL client in shadow-mode constructor")
+	}
+	res, err := tool.Execute(context.Background(),
+		json.RawMessage(`{"task_description":"do work","context_size_estimate":500,"latency_requirement":"realtime"}`))
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected tool error: %+v", res)
+	}
+}
 
 func hwAwareSnapshot() dispatch.CapabilitySnapshot {
 	return dispatch.CapabilitySnapshot{

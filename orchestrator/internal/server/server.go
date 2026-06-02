@@ -10,6 +10,7 @@ import (
 	"github.com/emage/cwso/orchestrator/internal/config"
 	"github.com/emage/cwso/orchestrator/internal/dispatch"
 	"github.com/emage/cwso/orchestrator/internal/eventbus"
+	"github.com/emage/cwso/orchestrator/internal/hal"
 	"github.com/emage/cwso/orchestrator/internal/jobs"
 	"github.com/emage/cwso/orchestrator/internal/logging"
 	"github.com/emage/cwso/orchestrator/internal/mcp"
@@ -429,13 +430,26 @@ func (s *Server) registerBaselineTools() error {
 		dispatchTool,
 	}
 	if s.cfg.HHDHardwareAwareDispatch && s.caps != nil {
-		baseTools = append(baseTools, tools.NewDispatchHardwareAwareJob(
-			s.jobs,
-			s.cfg.JobTimeoutSeconds,
-			s.emitter,
-			s.caps,
-			policyCfg,
-		))
+		if s.cfg.HALSocket != "" {
+			s.log.Info().Str("socket", s.cfg.HALSocket).Msg("hardware-aware dispatch: live HAL execution enabled")
+			baseTools = append(baseTools, tools.NewDispatchHardwareAwareJobWithHAL(
+				s.jobs,
+				s.cfg.JobTimeoutSeconds,
+				s.emitter,
+				s.caps,
+				policyCfg,
+				hal.NewClient(s.cfg.HALSocket),
+			))
+		} else {
+			s.log.Info().Msg("hardware-aware dispatch: shadow mode (no HAL socket configured)")
+			baseTools = append(baseTools, tools.NewDispatchHardwareAwareJob(
+				s.jobs,
+				s.cfg.JobTimeoutSeconds,
+				s.emitter,
+				s.caps,
+				policyCfg,
+			))
+		}
 	}
 	for _, t := range baseTools {
 		if err := s.registry.Register(t); err != nil {

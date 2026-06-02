@@ -12,7 +12,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T084 | LPU adapter (Groq-style deterministic low-latency) | backend-developer | in_review | P1 | T082 | 2026-06-02 |
 | T085 | Profiling layer: tensor_tag derivation + workload mapping | backend-developer | in_review | P0 | T082 | 2026-06-02 |
 | T086 | `dispatch_hardware_aware_job` MCP tool + schema | backend-developer | in_review | P0 | T083, T085 | 2026-06-02 |
-| T087 | Wire policy_engine_v2 to live adapters (remove spike stubs) | backend-developer | in_progress | P0 | T086 | 2026-06-02 |
+| T087 | Wire policy_engine_v2 to live adapters (remove spike stubs) | backend-developer | in_review | P0 | T086 | 2026-06-02 |
 | T088 | Phase 6 integration + reliability QA (fallback ≤ 2.0s, overhead ≤ 10ms) | qa-engineer | in_progress | P0 | T087 | 2026-06-02 |
 | T089 | Phase 6 Tech-Lead + Security gate | tech-lead / security-engineer | pending | P0 | T088 | 2026-06-02 |
 
@@ -29,12 +29,17 @@ The Go control-plane half of Feature A (Heterogeneous Hardware Dispatcher) lande
   `WorkloadProfile` (tensor tags + recommended hardware class + request labels).
 - **T086 (done, in review):** `dispatch_hardware_aware_job` MCP tool + `schemas/dispatch_hardware_aware_job.json`,
   orchestrator-only, fire-and-forget (returns `job_id` + `assigned_hardware_profile`).
-- **T087 (in progress / shadow mode):** the tool routes through the existing deterministic
-  `PolicyEngineV2` against a shadow provider catalog (`lpu-realtime`, `gpu-accelerated`,
-  `ssm-longctx`) seeded behind `CWSO_HHD_HARDWARE_AWARE_DISPATCH_ENABLED`. Job bodies are
-  context-respecting no-ops until live HAL adapters land. **Blocked on T082 (Rust `cwso-hal`).**
-- **T088 (in progress):** Go unit tests + `go vet` + `-race` pass for all packages; reliability
-  benchmarks (fallback latency, dispatch overhead) still pending live adapters.
+- **T087 (done, in review):** live HAL execution wired. New Go HAL client
+  `orchestrator/internal/hal` (framed-JSON UDS, typed `Infer`). `dispatch_hardware_aware_job`
+  now executes the dispatched job against the live HAL when `CWSO_HAL_SOCKET` is set —
+  calling `Infer` on the selected provider and forwarding `RankedFallbackChain` so the HAL
+  falls back deterministically to `cpu-baseline`; without a socket it preserves the
+  shadow-mode no-op. Constructor `NewDispatchHardwareAwareJobWithHAL` + server wiring select
+  live vs. shadow. Selection/fallback/telemetry still driven entirely by `PolicyEngineV2`.
+  Live capability heartbeat sync is deferred to T089.
+- **T088 (in progress):** Go unit tests (incl. `internal/hal` round-trip + tool live-exec)
+  + `go vet` + gofmt pass for all packages; reliability benchmarks (fallback latency,
+  dispatch overhead) still pending.
 
 ### T082 (done, in review) — Rust HAL crate
 
