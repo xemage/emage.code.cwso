@@ -47,11 +47,14 @@ type Config struct {
 	Now       func() time.Time
 }
 
-// Request defines a job submission.
+// Request defines a job submission. Exactly one of Run or RunResult must be set:
+// Run is the classic side-effect-only body; RunResult additionally returns a result
+// payload captured into Job.Result and published on completion.
 type Request struct {
-	Name    string
-	Timeout time.Duration
-	Run     func(context.Context) error
+	Name      string
+	Timeout   time.Duration
+	Run       func(context.Context) error
+	RunResult func(context.Context) (string, error)
 }
 
 // Job is an immutable job snapshot returned by manager APIs.
@@ -60,6 +63,7 @@ type Job struct {
 	Name       string
 	State      State
 	Error      string
+	Result     string
 	CreatedAt  time.Time
 	StartedAt  *time.Time
 	FinishedAt *time.Time
@@ -67,10 +71,11 @@ type Job struct {
 }
 
 type record struct {
-	job    Job
-	run    func(context.Context) error
-	ctx    context.Context
-	cancel context.CancelFunc
+	job       Job
+	run       func(context.Context) error
+	runResult func(context.Context) (string, error)
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 // Manager executes jobs using a bounded queue and bounded worker pool.
@@ -137,8 +142,11 @@ func (m *Manager) Enqueue(req Request) (Job, error) {
 	if m.closed.Load() {
 		return Job{}, ErrClosed
 	}
-	if req.Run == nil {
+	if req.Run == nil && req.RunResult == nil {
 		return Job{}, fmt.Errorf("%w: run function is required", ErrInvalidJob)
+	}
+	if req.Run != nil && req.RunResult != nil {
+		return Job{}, fmt.Errorf("%w: set exactly one of Run or RunResult", ErrInvalidJob)
 	}
 	if req.Timeout < 0 {
 		return Job{}, fmt.Errorf("%w: timeout must be >= 0", ErrInvalidJob)
@@ -162,9 +170,10 @@ func (m *Manager) Enqueue(req Request) (Job, error) {
 			CreatedAt: now,
 			Timeout:   req.Timeout,
 		},
-		run:    req.Run,
-		ctx:    jobCtx,
-		cancel: cancel,
+		run:       req.Run,
+		runResult: req.RunResult,
+		ctx:       jobCtx,
+		cancel:    cancel,
 	}
 
 	m.mu.Lock()
@@ -248,7 +257,13 @@ func (m *Manager) runRecord(r *record) {
 		return
 	}
 
-	err := r.run(r.ctx)
+	var result string
+	var err error
+	if r.runResult != nil {
+		result, err = r.runResult(r.ctx)
+	} else {
+		err = r.run(r.ctx)
+	}
 	// Capture the context error before cancel(): the post-run cancel() below would
 	// otherwise make ctx.Err() report Canceled for every job, masking genuine
 	// failures as cancellations and discarding the real error reason.
@@ -256,7 +271,7 @@ func (m *Manager) runRecord(r *record) {
 	r.cancel()
 
 	if err == nil {
-		m.transition(r.job.ID, StateCompleted, "")
+		m.transitionWithResult(r.job.ID, StateCompleted, "", result)
 		return
 	}
 
@@ -270,6 +285,10 @@ func (m *Manager) runRecord(r *record) {
 }
 
 func (m *Manager) transition(id string, next State, errMsg string) bool {
+	return m.transitionWithResult(id, next, errMsg, "")
+}
+
+func (m *Manager) transitionWithResult(id string, next State, errMsg, result string) bool {
 	m.mu.Lock()
 	r, ok := m.jobs[id]
 	if !ok {
@@ -290,6 +309,9 @@ func (m *Manager) transition(id string, next State, errMsg string) bool {
 	}
 	r.job.State = next
 	r.job.Error = errMsg
+	if result != "" {
+		r.job.Result = result
+	}
 	snapshot := r.job
 	m.mu.Unlock()
 
@@ -313,6 +335,9 @@ func (m *Manager) publishTransition(job Job, previous State) {
 	}
 	if job.Error != "" {
 		payload["error"] = job.Error
+	}
+	if job.Result != "" {
+		payload["result"] = job.Result
 	}
 	m.publish(eventbus.TopicNotificationsJobState, payload)
 }

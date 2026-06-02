@@ -4,6 +4,7 @@
 package hal
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -87,9 +88,11 @@ func NewClient(socket string) *Client {
 
 // Infer dispatches one inference request to the selected provider, passing the ranked
 // fallback chain so the HAL can fall back deterministically (terminating at cpu-baseline).
-func (c *Client) Infer(providerID string, fallbackChain []string, req InferenceRequest) (*InferResult, error) {
+// The context bounds the call: if it is cancelled or its deadline passes, the in-flight
+// request is aborted and the context error is returned.
+func (c *Client) Infer(ctx context.Context, providerID string, fallbackChain []string, req InferenceRequest) (*InferResult, error) {
 	var out InferResult
-	if err := c.Call("infer", inferParams{
+	if err := c.Call(ctx, "infer", inferParams{
 		SelectedProvider: providerID,
 		FallbackChain:    fallbackChain,
 		Request:          req,
@@ -102,7 +105,7 @@ func (c *Client) Infer(providerID string, fallbackChain []string, req InferenceR
 // Stat returns the sidecar service banner (used as a connectivity probe).
 func (c *Client) Stat() (json.RawMessage, error) {
 	var out json.RawMessage
-	if err := c.Call("stat", nil, &out); err != nil {
+	if err := c.Call(context.Background(), "stat", nil, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -128,7 +131,7 @@ func (c *Client) Capabilities() ([]Capability, error) {
 	var out struct {
 		Providers []Capability `json:"providers"`
 	}
-	if err := c.Call("capabilities", nil, &out); err != nil {
+	if err := c.Call(context.Background(), "capabilities", nil, &out); err != nil {
 		return nil, err
 	}
 	return out.Providers, nil
@@ -152,8 +155,16 @@ type response struct {
 	} `json:"error,omitempty"`
 }
 
-// Call sends one request and waits for the matching reply.
-func (c *Client) Call(op string, params any, out any) error {
+// Call sends one request and waits for the matching reply, bounded by ctx. Cancelling ctx
+// (or hitting its deadline) closes the connection to unblock any in-flight I/O and returns
+// the context error.
+func (c *Client) Call(ctx context.Context, op string, params any, out any) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	var raw json.RawMessage
 	if params != nil {
 		b, err := json.Marshal(params)
@@ -176,13 +187,36 @@ func (c *Client) Call(op string, params any, out any) error {
 		return fmt.Errorf("dial %s: %w", c.socket, err)
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(ioTimeout))
+
+	// Bound I/O by the smaller of the fixed ceiling and the context deadline.
+	deadline := time.Now().Add(ioTimeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	_ = conn.SetDeadline(deadline)
+
+	// Close the connection on cancellation so a blocked read/write returns promptly.
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-stop:
+		}
+	}()
 
 	if err := writeFrame(conn, body); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		return fmt.Errorf("write: %w", err)
 	}
 	respBody, err := readFrame(conn)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		return fmt.Errorf("read: %w", err)
 	}
 

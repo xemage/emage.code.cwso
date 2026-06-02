@@ -15,11 +15,11 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T087 | Wire policy_engine_v2 to live adapters (remove spike stubs) | backend-developer | in_review | P0 | T086 | 2026-06-02 |
 | T088 | Phase 6 integration + reliability QA (fallback ≤ 2.0s, overhead ≤ 10ms) | qa-engineer | in_review | P0 | T087 | 2026-06-02 |
 | T089 | Phase 6 Tech-Lead + Security gate | tech-lead / security-engineer | in_review | P0 | T088 | 2026-06-02 |
-| T090 | Thread job context into `hal.Client.Infer` (cancellation propagation) | backend-developer | pending | P1 | T089 | 2026-06-02 |
+| T090 | Thread job context into `hal.Client.Infer` (cancellation propagation) | backend-developer | in_review | P1 | T089 | 2026-06-02 |
 | T091 | Active HAL health probing → live `health_state`/`queue_depth` | backend-developer | pending | P1 | T089 | 2026-06-02 |
-| T092 | Hardware-aware job result retrieval (poll/stream completion) | backend-developer | pending | P2 | T089 | 2026-06-02 |
+| T092 | Hardware-aware job result retrieval (poll/stream completion) | backend-developer | in_review | P2 | T089 | 2026-06-02 |
 | T093 | Enforce/document TLS for non-loopback HAL accelerator endpoints | devops-engineer | pending | P1 | T089 | 2026-06-02 |
-| T094 | CI dependency audit (`govulncheck` + `cargo audit`) | devops-engineer | pending | P2 | T089 | 2026-06-02 |
+| T094 | CI dependency audit (`govulncheck` + `cargo audit`) | devops-engineer | in_review | P2 | T089 | 2026-06-02 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -100,3 +100,26 @@ Landed on `feature/T083-T084-gpu-lpu-adapters`:
 
 Per-task briefs live alongside this file as `task-T082.md`, `task-T083.md`, `task-T084.md`,
 `task-T085.md`, `task-T086.md`, `task-T087.md`.
+
+### T090 / T092 / T094 (done, in review) — Phase 6 Go follow-ups
+
+Landed on `feature/T090-T092-T094-go-followups` (Rust-side follow-ups T091/T093 deferred to a
+separate MR):
+
+- **T090 — context propagation (P1):** `hal.Client.Call` now takes a `context.Context` and
+  `hal.Client.Infer(ctx, …)` threads the job context through. Cancelling the job (or hitting
+  its deadline) closes the UDS connection to unblock in-flight I/O and returns the context
+  error, so an aborted hardware-aware job stops waiting on the HAL. Guards:
+  `TestClientInferContextCancelled`, `TestClientInferContextDeadline`.
+- **T092 — job result retrieval (P2):** `jobs.Manager` gained a `RunResult func(ctx) (string,
+  error)` body variant; the returned payload is captured into `Job.Result` and published on
+  the job-state SSE notification. `dispatch_hardware_aware_job` now executes via `RunResult`
+  and stores a compact completion summary (`served_by`, `fallback_count`, `tokens_out`,
+  `deterministic`, `output`) retrievable via `Manager.Get` / job-state stream. Guards:
+  `jobs.TestLifecycleRunResultCaptured`, `jobs.TestEnqueueRejectsBothRunAndRunResult`,
+  `tools.TestHardwareAwareDispatchCapturesJobResult`.
+- **T094 — CI dependency audit (P2):** new `audit` stage runs `govulncheck ./...` (Go) and
+  `cargo audit` (Rust). Non-blocking (`allow_failure: true`) during the PoC phase so a fresh
+  advisory surfaces in the pipeline without wedging delivery.
+
+Briefs: `task-T090.md`, `task-T092.md`, `task-T094.md`.

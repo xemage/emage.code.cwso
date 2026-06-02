@@ -13,6 +13,7 @@ stages:
   - lint
   - build
   - test
+  - audit
   - e2e
   - deploy
 
@@ -102,6 +103,46 @@ rust:test:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH
+
+# -----------------------------------------------------------------------------
+# Dependency audit (T094)
+# -----------------------------------------------------------------------------
+# Scans Go and Rust dependency trees for known vulnerabilities. Non-blocking
+# during the PoC phase (allow_failure) so a freshly-disclosed advisory does not
+# wedge delivery, but the report is always surfaced in the pipeline.
+
+go:audit:
+  stage: audit
+  image: golang:1.23
+  cache:
+    key: go-mod-$CI_COMMIT_REF_SLUG
+    paths: [.gopath/pkg/mod]
+  script:
+    # Pinned: v1.3.0 requires Go >= 1.25; v1.1.4 builds on the Go 1.23 toolchain image.
+    - go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+    - cd orchestrator
+    - $GOPATH/bin/govulncheck ./...
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+rust:audit:
+  stage: audit
+  image: rust:1.86
+  cache:
+    key: cargo-$CI_COMMIT_REF_SLUG
+    paths: [.cargo, services/target]
+  script:
+    - cargo install cargo-audit --locked
+    - cd services
+    - cargo audit
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
 
 # -----------------------------------------------------------------------------
 # Build container images

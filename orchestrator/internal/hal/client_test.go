@@ -1,6 +1,7 @@
 package hal
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // fakeHAL is a minimal length-prefixed JSON UDS server that mimics cwso-hal for
@@ -75,7 +77,7 @@ func TestClientInferRoundTrip(t *testing.T) {
 	})
 
 	client := NewClient(socket)
-	res, err := client.Infer("lpu-realtime", []string{"lpu-realtime", "cpu-baseline"}, InferenceRequest{
+	res, err := client.Infer(context.Background(), "lpu-realtime", []string{"lpu-realtime", "cpu-baseline"}, InferenceRequest{
 		Prompt:        "fix typo",
 		ContextTokens: 1000,
 		WorkloadTags:  []string{"realtime"},
@@ -103,7 +105,7 @@ func TestClientInferStructuredError(t *testing.T) {
 		return nil, &struct{ Code, Message string }{Code: "unavailable", Message: "all backends down"}
 	})
 	client := NewClient(socket)
-	_, err := client.Infer("gpu-accelerated", nil, InferenceRequest{Prompt: "x"})
+	_, err := client.Infer(context.Background(), "gpu-accelerated", nil, InferenceRequest{Prompt: "x"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -118,8 +120,53 @@ func TestClientInferStructuredError(t *testing.T) {
 
 func TestClientDialFailure(t *testing.T) {
 	client := NewClient(filepath.Join(t.TempDir(), "does-not-exist.sock"))
-	_, err := client.Infer("cpu-baseline", nil, InferenceRequest{Prompt: "x"})
+	_, err := client.Infer(context.Background(), "cpu-baseline", nil, InferenceRequest{Prompt: "x"})
 	if err == nil {
 		t.Fatal("expected dial error")
+	}
+}
+
+func TestClientInferContextCancelled(t *testing.T) {
+	// A server that accepts but never replies, so the call blocks until ctx cancels it.
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "hal.sock")
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn // hold the connection open without replying
+		}
+	}()
+
+	client := NewClient(socket)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	start := time.Now()
+	_, err = client.Infer(ctx, "cpu-baseline", nil, InferenceRequest{Prompt: "x"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("cancellation took too long: %v", elapsed)
+	}
+}
+
+func TestClientInferContextDeadline(t *testing.T) {
+	client := NewClient(filepath.Join(t.TempDir(), "hal.sock"))
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	_, err := client.Infer(ctx, "cpu-baseline", nil, InferenceRequest{Prompt: "x"})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected context.DeadlineExceeded, got %v", err)
 	}
 }
