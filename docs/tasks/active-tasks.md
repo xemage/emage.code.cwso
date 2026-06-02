@@ -16,9 +16,9 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T088 | Phase 6 integration + reliability QA (fallback ≤ 2.0s, overhead ≤ 10ms) | qa-engineer | in_review | P0 | T087 | 2026-06-02 |
 | T089 | Phase 6 Tech-Lead + Security gate | tech-lead / security-engineer | in_review | P0 | T088 | 2026-06-02 |
 | T090 | Thread job context into `hal.Client.Infer` (cancellation propagation) | backend-developer | in_review | P1 | T089 | 2026-06-02 |
-| T091 | Active HAL health probing → live `health_state`/`queue_depth` | backend-developer | pending | P1 | T089 | 2026-06-02 |
+| T091 | Active HAL health probing → live `health_state`/`queue_depth` | backend-developer | in_review | P1 | T089 | 2026-06-02 |
 | T092 | Hardware-aware job result retrieval (poll/stream completion) | backend-developer | in_review | P2 | T089 | 2026-06-02 |
-| T093 | Enforce/document TLS for non-loopback HAL accelerator endpoints | devops-engineer | pending | P1 | T089 | 2026-06-02 |
+| T093 | Enforce/document TLS for non-loopback HAL accelerator endpoints | devops-engineer | in_review | P1 | T089 | 2026-06-02 |
 | T094 | CI dependency audit (`govulncheck` + `cargo audit`) | devops-engineer | in_review | P2 | T089 | 2026-06-02 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
@@ -123,3 +123,26 @@ separate MR):
   advisory surfaces in the pipeline without wedging delivery.
 
 Briefs: `task-T090.md`, `task-T092.md`, `task-T094.md`.
+
+### T091 / T093 (done, in review) — Phase 6 Rust HAL follow-ups
+
+Landed on `feature/T091-T093-rust-hal-followups`:
+
+- **T091 — active health probing (P1):** the `InferenceBackend` trait gained a `probe()`
+  method (default = cheap `health()` for dependency-free backends). The OpenAI adapter now
+  keeps a lockless cached health snapshot refreshed (a) actively by a background prober
+  thread calling `BackendRegistry::probe_all()` every `CWSO_HAL_HEALTH_PROBE_SECONDS`
+  (default 10s) via a `/models` readiness check, seeded by a startup probe at registration,
+  and (b) reactively from every `infer` outcome (served → healthy; failure → mapped state).
+  `health()`/`capabilities()` read only the cache, so dispatch stays fast and the capability
+  snapshot the Go `CapabilitySyncer` consumes now carries live `health_state`. `queue_depth`
+  is plumbed but stays 0 (no standard OpenAI endpoint; provider-metrics scrape is future work).
+- **T093 — endpoint TLS enforcement (P1):** new `security::validate_endpoint` refuses
+  plaintext `http://` to non-loopback hosts (bearer key would be sent in cleartext); `https`
+  and loopback `http` are allowed, with a `CWSO_HAL_ALLOW_INSECURE_ENDPOINTS=true` override
+  (warned). A rejected endpoint is not registered (falls back to CPU baseline). Documented in
+  `SECURITY.md`.
+- Validation: `cargo fmt --check` clean, `cargo test -p cwso-hal` green (46 tests).
+
+Briefs: `task-T091.md`, `task-T093.md`. This completes the Phase 6 gate follow-ups
+**T090–T094**.

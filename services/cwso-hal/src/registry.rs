@@ -71,6 +71,17 @@ impl BackendRegistry {
         self.backends.get(provider_id).map(|b| b.health())
     }
 
+    /// probe_all actively probes every backend (may do network I/O) and returns the
+    /// refreshed health snapshots. Intended to be called periodically by a background
+    /// prober so capability snapshots carry live health, keeping network I/O off the
+    /// dispatch hot path (which only reads the cheap cached `health()`).
+    pub fn probe_all(&self) -> Vec<(String, Health)> {
+        self.backends
+            .iter()
+            .map(|(id, backend)| (id.clone(), backend.probe()))
+            .collect()
+    }
+
     /// dispatch attempts the selected provider, then the fallback chain, then the CPU
     /// baseline, returning the first successful completion or an exhaustion error.
     pub fn dispatch(
@@ -329,5 +340,70 @@ mod tests {
     fn build_order_dedupes_and_appends_baseline() {
         let order = build_order("gpu-a", &["gpu-a".to_string(), "lpu-b".to_string()]);
         assert_eq!(order, vec!["gpu-a", "lpu-b", CPU_BASELINE_PROVIDER_ID]);
+    }
+
+    /// ProbeStub records how many times `probe` is invoked so we can assert the registry
+    /// actively probes (rather than reading the cheap `health()`).
+    struct ProbeStub {
+        id: String,
+        probes: std::sync::atomic::AtomicU32,
+    }
+
+    impl InferenceBackend for ProbeStub {
+        fn capabilities(&self) -> ProviderCapability {
+            ProviderCapability {
+                provider_id: self.id.clone(),
+                contract_version: "dispatch.provider/v2".to_string(),
+                health_state: "healthy".to_string(),
+                latency_class: "fast".to_string(),
+                cost_class: "high".to_string(),
+                queue_depth: 0,
+                supported_workload_tags: vec![],
+                reliability_class: "gold".to_string(),
+                feature_flags: vec![],
+            }
+        }
+        fn health(&self) -> Health {
+            Health {
+                state: HealthState::Healthy,
+                queue_depth: 0,
+                detail: None,
+            }
+        }
+        fn probe(&self) -> Health {
+            self.probes
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Health {
+                state: HealthState::Degraded,
+                queue_depth: 0,
+                detail: None,
+            }
+        }
+        fn infer(&self, _req: &InferenceRequest) -> Result<Completion, BackendFailure> {
+            Err(BackendFailure::new(FailureClass::Internal, "n/a"))
+        }
+    }
+
+    #[test]
+    fn probe_all_invokes_active_probe_on_each_backend() {
+        let mut reg = BackendRegistry::with_cpu_baseline();
+        reg.register(Box::new(ProbeStub {
+            id: "gpu-a".to_string(),
+            probes: std::sync::atomic::AtomicU32::new(0),
+        }));
+
+        let results = reg.probe_all();
+        // Baseline + the stub.
+        assert_eq!(results.len(), 2);
+        let gpu = results
+            .iter()
+            .find(|(id, _)| id == "gpu-a")
+            .expect("gpu-a probed");
+        assert_eq!(gpu.1.state, HealthState::Degraded);
+        let baseline = results
+            .iter()
+            .find(|(id, _)| id == CPU_BASELINE_PROVIDER_ID)
+            .expect("baseline probed");
+        assert_eq!(baseline.1.state, HealthState::Healthy);
     }
 }

@@ -103,6 +103,18 @@ impl FailureClass {
     pub fn retryable_via_fallback(self) -> bool {
         !matches!(self, FailureClass::InvalidRequest)
     }
+
+    /// to_health_state maps an observed failure to the health it implies for the backend.
+    /// Transient pressure (timeout/overloaded) degrades rather than disables the backend;
+    /// connectivity / server faults mark it unavailable so the router skips it. A malformed
+    /// request says nothing bad about the backend, so it is treated as (at worst) degraded.
+    pub fn to_health_state(self) -> HealthState {
+        match self {
+            FailureClass::Timeout | FailureClass::Overloaded => HealthState::Degraded,
+            FailureClass::Unavailable | FailureClass::Internal => HealthState::Unavailable,
+            FailureClass::InvalidRequest => HealthState::Degraded,
+        }
+    }
 }
 
 /// BackendFailure is the error type returned by an adapter's `infer`.
@@ -135,8 +147,18 @@ pub trait InferenceBackend: Send + Sync {
     /// capabilities returns the policy-facing capability record for routing.
     fn capabilities(&self) -> ProviderCapability;
 
-    /// health returns the backend's current readiness.
+    /// health returns the backend's current readiness. This MUST be cheap (no network
+    /// I/O): it is read on the dispatch hot path, so it should return a cached snapshot.
     fn health(&self) -> Health;
+
+    /// probe performs an *active* readiness check (may do network I/O), refreshes the
+    /// backend's cached health, and returns the fresh snapshot. It is intended to be
+    /// called periodically by a background prober — never on the dispatch hot path. The
+    /// default delegates to the cheap `health()` for backends with no remote dependency
+    /// (e.g. the CPU baseline), which are always ready.
+    fn probe(&self) -> Health {
+        self.health()
+    }
 
     /// infer executes one request, returning a completion or a classified failure.
     fn infer(&self, req: &InferenceRequest) -> Result<Completion, BackendFailure>;
@@ -174,5 +196,29 @@ mod tests {
         assert_eq!(HealthState::Healthy.as_wire(), "healthy");
         assert_eq!(HealthState::Degraded.as_wire(), "degraded");
         assert_eq!(HealthState::Unavailable.as_wire(), "unavailable");
+    }
+
+    #[test]
+    fn failure_class_maps_to_health_state() {
+        assert_eq!(
+            FailureClass::Timeout.to_health_state(),
+            HealthState::Degraded
+        );
+        assert_eq!(
+            FailureClass::Overloaded.to_health_state(),
+            HealthState::Degraded
+        );
+        assert_eq!(
+            FailureClass::Unavailable.to_health_state(),
+            HealthState::Unavailable
+        );
+        assert_eq!(
+            FailureClass::Internal.to_health_state(),
+            HealthState::Unavailable
+        );
+        assert_eq!(
+            FailureClass::InvalidRequest.to_health_state(),
+            HealthState::Degraded
+        );
     }
 }
