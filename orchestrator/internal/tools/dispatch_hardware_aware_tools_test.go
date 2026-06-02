@@ -27,7 +27,7 @@ type fakeInferrer struct {
 
 func newFakeInferrer() *fakeInferrer { return &fakeInferrer{done: make(chan struct{}, 1)} }
 
-func (f *fakeInferrer) Infer(providerID string, fallbackChain []string, req hal.InferenceRequest) (*hal.InferResult, error) {
+func (f *fakeInferrer) Infer(_ context.Context, providerID string, fallbackChain []string, req hal.InferenceRequest) (*hal.InferResult, error) {
 	f.mu.Lock()
 	f.calls++
 	f.lastID = providerID
@@ -42,7 +42,16 @@ func (f *fakeInferrer) Infer(providerID string, fallbackChain []string, req hal.
 	if err != nil {
 		return nil, err
 	}
-	return &hal.InferResult{ServedBy: providerID, Completion: hal.Completion{ProviderID: providerID}}, nil
+	return &hal.InferResult{
+		ServedBy:      providerID,
+		FallbackCount: 0,
+		Completion: hal.Completion{
+			ProviderID:    providerID,
+			Output:        "patched line 42",
+			TokensOut:     7,
+			Deterministic: true,
+		},
+	}, nil
 }
 
 func (f *fakeInferrer) wait(t *testing.T) {
@@ -96,6 +105,57 @@ func TestHardwareAwareDispatchExecutesViaHAL(t *testing.T) {
 	}
 	if len(fake.lastChain) == 0 || fake.lastChain[0] != "lpu-realtime" {
 		t.Fatalf("expected ranked fallback chain led by lpu-realtime, got %+v", fake.lastChain)
+	}
+}
+
+func TestHardwareAwareDispatchCapturesJobResult(t *testing.T) {
+	mgr, err := jobs.NewManager(jobs.Config{Workers: 1, QueueSize: 8}, nil)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	defer mgr.Close()
+	policyCfg := dispatch.DefaultPolicyV2Config()
+	policyCfg.Enabled = true
+	fake := newFakeInferrer()
+	tool := NewDispatchHardwareAwareJobWithHAL(
+		mgr, 300, &recordingDispatchEmitter{},
+		stubCapabilitySnapshotReader{snapshot: hwAwareSnapshot()},
+		policyCfg, fake,
+	)
+
+	res, err := tool.Execute(context.Background(),
+		json.RawMessage(`{"task_description":"fix typo","context_size_estimate":1000,"latency_requirement":"realtime"}`))
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	out := decodeHWAwareResult(t, res)
+	fake.wait(t)
+
+	var result string
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		snap, ok := mgr.Get(out.JobID)
+		if ok && snap.State == jobs.StateCompleted {
+			result = snap.Result
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if result == "" {
+		t.Fatal("expected non-empty job result after completion")
+	}
+	var summary hwAwareJobResult
+	if err := json.Unmarshal([]byte(result), &summary); err != nil {
+		t.Fatalf("unmarshal result: %v (%q)", err, result)
+	}
+	if summary.ServedBy != "lpu-realtime" {
+		t.Fatalf("result served_by = %q, want lpu-realtime", summary.ServedBy)
+	}
+	if summary.Output != "patched line 42" {
+		t.Fatalf("result output = %q, want 'patched line 42'", summary.Output)
+	}
+	if !summary.Deterministic || summary.TokensOut != 7 {
+		t.Fatalf("result summary mismatch: %+v", summary)
 	}
 }
 

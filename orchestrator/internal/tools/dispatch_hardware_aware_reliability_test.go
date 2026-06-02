@@ -37,7 +37,7 @@ func newLatencyFake(delay time.Duration, servedBy string) *latencyFakeInferrer {
 	return &latencyFakeInferrer{delay: delay, servedBy: servedBy, done: make(chan struct{}, 64)}
 }
 
-func (f *latencyFakeInferrer) Infer(providerID string, fallbackChain []string, _ hal.InferenceRequest) (*hal.InferResult, error) {
+func (f *latencyFakeInferrer) Infer(_ context.Context, providerID string, fallbackChain []string, _ hal.InferenceRequest) (*hal.InferResult, error) {
 	if f.delay > 0 {
 		time.Sleep(f.delay)
 	}

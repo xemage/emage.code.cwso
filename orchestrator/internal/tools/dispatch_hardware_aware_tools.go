@@ -17,7 +17,18 @@ import (
 // halInferrer is the subset of the HAL client the dispatch tool needs (live execution).
 // It is an interface so the tool can be unit-tested without a running sidecar.
 type halInferrer interface {
-	Infer(providerID string, fallbackChain []string, req hal.InferenceRequest) (*hal.InferResult, error)
+	Infer(ctx context.Context, providerID string, fallbackChain []string, req hal.InferenceRequest) (*hal.InferResult, error)
+}
+
+// hwAwareJobResult is the compact completion summary captured into the job result so the
+// caller can retrieve which backend served and the produced output via the job-state
+// notification (or Manager.Get).
+type hwAwareJobResult struct {
+	ServedBy      string `json:"served_by"`
+	FallbackCount int    `json:"fallback_count"`
+	TokensOut     int    `json:"tokens_out"`
+	Deterministic bool   `json:"deterministic"`
+	Output        string `json:"output"`
 }
 
 // DispatchHardwareAwareJob implements Feature A (Heterogeneous Hardware
@@ -238,9 +249,9 @@ func (t *DispatchHardwareAwareJob) enqueue(p hwAwareArgs, decision dispatch.Poli
 		providerID = dispatch.DefaultBaselineProviderID
 	}
 	return t.manager.Enqueue(jobs.Request{
-		Name:    buildHardwareAwareJobName(p, providerID),
-		Timeout: t.defaultTimeout,
-		Run:     t.runFunc(providerID, decision.RankedFallbackChain, req),
+		Name:      buildHardwareAwareJobName(p, providerID),
+		Timeout:   t.defaultTimeout,
+		RunResult: t.runFunc(providerID, decision.RankedFallbackChain, req),
 	})
 }
 
@@ -318,25 +329,41 @@ func buildHardwareAwareJobName(p hwAwareArgs, providerID string) string {
 
 // runFunc builds the job body. With a live HAL client (T087) it executes the request on
 // the selected backend, passing the ranked fallback chain so the HAL falls back
-// deterministically (terminating at cpu-baseline). Without a HAL client it preserves
-// shadow mode: a context-respecting no-op that exercises the job lifecycle only.
-func (t *DispatchHardwareAwareJob) runFunc(providerID string, fallbackChain []string, req hal.InferenceRequest) func(context.Context) error {
+// deterministically (terminating at cpu-baseline), and returns a compact completion
+// summary captured into the job result (T092). The job context is propagated to the HAL
+// call so a cancelled/timed-out job aborts the in-flight request (T090). Without a HAL
+// client it preserves shadow mode: a context-respecting no-op with no result.
+func (t *DispatchHardwareAwareJob) runFunc(providerID string, fallbackChain []string, req hal.InferenceRequest) func(context.Context) (string, error) {
 	client := t.halClient
 	if client == nil {
-		return func(ctx context.Context) error {
+		return func(ctx context.Context) (string, error) {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return "", ctx.Err()
 			default:
-				return nil
+				return "", nil
 			}
 		}
 	}
-	return func(ctx context.Context) error {
+	return func(ctx context.Context) (string, error) {
 		if err := ctx.Err(); err != nil {
-			return err
+			return "", err
 		}
-		_, err := client.Infer(providerID, fallbackChain, req)
-		return err
+		res, err := client.Infer(ctx, providerID, fallbackChain, req)
+		if err != nil {
+			return "", err
+		}
+		summary := hwAwareJobResult{
+			ServedBy:      res.ServedBy,
+			FallbackCount: res.FallbackCount,
+			TokensOut:     res.Completion.TokensOut,
+			Deterministic: res.Completion.Deterministic,
+			Output:        res.Completion.Output,
+		}
+		b, mErr := json.Marshal(summary)
+		if mErr != nil {
+			return "", mErr
+		}
+		return string(b), nil
 	}
 }

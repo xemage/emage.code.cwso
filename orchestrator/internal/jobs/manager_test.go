@@ -72,6 +72,47 @@ func TestLifecycleFailedPreservesError(t *testing.T) {
 	}
 }
 
+func TestLifecycleRunResultCaptured(t *testing.T) {
+	m, err := NewManager(Config{Workers: 1, QueueSize: 2}, nil)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	defer m.Close()
+
+	job, err := m.Enqueue(Request{
+		Name: "with-result",
+		RunResult: func(context.Context) (string, error) {
+			return `{"served_by":"lpu-realtime"}`, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	waitForState(t, m, job.ID, StateCompleted, 500*time.Millisecond)
+	snapshot, ok := m.Get(job.ID)
+	if !ok {
+		t.Fatal("expected job snapshot")
+	}
+	if snapshot.Result != `{"served_by":"lpu-realtime"}` {
+		t.Fatalf("result = %q, want captured payload", snapshot.Result)
+	}
+}
+
+func TestEnqueueRejectsBothRunAndRunResult(t *testing.T) {
+	m, err := NewManager(Config{Workers: 1, QueueSize: 2}, nil)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	defer m.Close()
+	_, err = m.Enqueue(Request{
+		Run:       func(context.Context) error { return nil },
+		RunResult: func(context.Context) (string, error) { return "", nil },
+	})
+	if !errors.Is(err, ErrInvalidJob) {
+		t.Fatalf("expected ErrInvalidJob, got %v", err)
+	}
+}
+
 func TestBoundedConcurrency(t *testing.T) {
 	const workers = 2
 	const totalJobs = 6
