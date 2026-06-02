@@ -8,8 +8,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T080 | Phase 6 requirements + hardware benchmark targets | product-owner | done | P0 | — | 2026-06-02 |
 | T081 | HAL design: `InferenceBackend` trait + plugin loading + `dispatch.provider/v2` | solution-architect | done | P0 | T080 | 2026-06-02 |
 | T082 | Rust `cwso-hal` crate + CPU-baseline adapter | backend-developer | in_review | P0 | T081 | 2026-06-02 |
-| T083 | GPU adapter (vLLM/TensorRT-LLM, OpenAI-compatible) | backend-developer | pending | P0 | T082 | 2026-06-02 |
-| T084 | LPU adapter (Groq-style deterministic low-latency) | backend-developer | pending | P1 | T082 | 2026-06-02 |
+| T083 | GPU adapter (vLLM/TensorRT-LLM, OpenAI-compatible) | backend-developer | in_review | P0 | T082 | 2026-06-02 |
+| T084 | LPU adapter (Groq-style deterministic low-latency) | backend-developer | in_review | P1 | T082 | 2026-06-02 |
 | T085 | Profiling layer: tensor_tag derivation + workload mapping | backend-developer | in_review | P0 | T082 | 2026-06-02 |
 | T086 | `dispatch_hardware_aware_job` MCP tool + schema | backend-developer | in_review | P0 | T083, T085 | 2026-06-02 |
 | T087 | Wire policy_engine_v2 to live adapters (remove spike stubs) | backend-developer | in_progress | P0 | T086 | 2026-06-02 |
@@ -53,5 +53,24 @@ The Hardware Abstraction Layer crate `services/cwso-hal` landed on
 - CI: `cargo test --release -p cwso-hal` added to the `rust:test` job (21 tests, fmt clean).
 
 Unblocks **T083/T084** (GPU/LPU adapters register alongside the baseline) and the live half
-of **T087**. Per-task briefs live alongside this file as `task-T082.md`, `task-T085.md`,
-`task-T086.md`, `task-T087.md`.
+of **T087**.
+
+### T083 / T084 (done, in review) — GPU + LPU adapters
+
+Landed on `feature/T083-T084-gpu-lpu-adapters`:
+
+- `http.rs`: `HttpTransport` trait + blocking `UreqTransport` (production) + a mock for
+  offline unit tests; transport errors normalized to `Timeout` / `Unreachable` / `Other`.
+- `openai.rs`: `OpenAiCompatibleBackend` over `/chat/completions`, with `gpu_vllm_config`
+  (**T083**, provider `gpu-accelerated`, latency `fast`, tags `inference-heavy` +
+  `deterministic-edit`) and `lpu_groq_config` (**T084**, provider `lpu-realtime`, latency
+  `ultra`, tag `realtime`) presets. HTTP/transport failures map to `FailureClass`
+  (429→overloaded, 400/422→invalid_request, 5xx→unavailable, timeout→timeout) so the
+  registry fallback behaves correctly. `health()` is cheap/optimistic to protect the
+  dispatch hot path; `probe_models()` does an explicit live readiness check.
+- `main.rs`: adapters register only when `CWSO_HAL_{GPU,LPU}_BASE_URL` + `_MODEL` are set,
+  so the default deployment (and CI/e2e) runs baseline-only and safe.
+- 31 unit tests (mock-transport), fmt clean, 0 warnings.
+
+Per-task briefs live alongside this file as `task-T082.md`, `task-T083.md`, `task-T084.md`,
+`task-T085.md`, `task-T086.md`, `task-T087.md`.
