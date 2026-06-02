@@ -39,6 +39,39 @@ func TestLifecycleCompleted(t *testing.T) {
 	}
 }
 
+func TestLifecycleFailedPreservesError(t *testing.T) {
+	m, err := NewManager(Config{Workers: 1, QueueSize: 2}, nil)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	defer m.Close()
+
+	wantErr := errors.New("backend unavailable")
+	job, err := m.Enqueue(Request{
+		Name: "boom",
+		Run: func(context.Context) error {
+			return wantErr
+		},
+	})
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	waitForState(t, m, job.ID, StateFailed, 500*time.Millisecond)
+	snapshot, ok := m.Get(job.ID)
+	if !ok {
+		t.Fatal("expected job snapshot")
+	}
+	// Regression guard: a genuine run error must be classified as failed (not
+	// cancelled) and must preserve the original error reason for diagnostics.
+	if snapshot.State != StateFailed {
+		t.Fatalf("state = %q, want failed", snapshot.State)
+	}
+	if snapshot.Error != wantErr.Error() {
+		t.Fatalf("error = %q, want %q", snapshot.Error, wantErr.Error())
+	}
+}
+
 func TestBoundedConcurrency(t *testing.T) {
 	const workers = 2
 	const totalJobs = 6

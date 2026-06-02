@@ -13,7 +13,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T085 | Profiling layer: tensor_tag derivation + workload mapping | backend-developer | in_review | P0 | T082 | 2026-06-02 |
 | T086 | `dispatch_hardware_aware_job` MCP tool + schema | backend-developer | in_review | P0 | T083, T085 | 2026-06-02 |
 | T087 | Wire policy_engine_v2 to live adapters (remove spike stubs) | backend-developer | in_review | P0 | T086 | 2026-06-02 |
-| T088 | Phase 6 integration + reliability QA (fallback ≤ 2.0s, overhead ≤ 10ms) | qa-engineer | in_progress | P0 | T087 | 2026-06-02 |
+| T088 | Phase 6 integration + reliability QA (fallback ≤ 2.0s, overhead ≤ 10ms) | qa-engineer | in_review | P0 | T087 | 2026-06-02 |
 | T089 | Phase 6 Tech-Lead + Security gate | tech-lead / security-engineer | pending | P0 | T088 | 2026-06-02 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
@@ -37,9 +37,15 @@ The Go control-plane half of Feature A (Heterogeneous Hardware Dispatcher) lande
   shadow-mode no-op. Constructor `NewDispatchHardwareAwareJobWithHAL` + server wiring select
   live vs. shadow. Selection/fallback/telemetry still driven entirely by `PolicyEngineV2`.
   Live capability heartbeat sync is deferred to T089.
-- **T088 (in progress):** Go unit tests (incl. `internal/hal` round-trip + tool live-exec)
-  + `go vet` + gofmt pass for all packages; reliability benchmarks (fallback latency,
-  dispatch overhead) still pending.
+- **T088 (done, in review):** Phase 6 integration + reliability QA. Reliability budgets
+  verified: dispatch overhead median ≈ 4µs (budget ≤ 10ms), fallback end-to-end ≈ 51ms
+  (budget ≤ 2.0s), failure propagation sub-ms with preserved error. Server-level
+  integration test exercises the full `config → server → hal.Client → UDS` path against a
+  fake `cwso-hal`. Full suite passes under `go test -race ./...` + gofmt + vet.
+  **QA found & fixed a latent reliability bug:** `jobs.Manager.runRecord` cancelled the job
+  context *before* reading `ctx.Err()`, misclassifying genuine failures as `cancelled` and
+  dropping the error reason — fixed (capture ctxErr pre-cancel) with regression guard
+  `jobs.TestLifecycleFailedPreservesError`.
 
 ### T082 (done, in review) — Rust HAL crate
 
