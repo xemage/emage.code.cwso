@@ -249,6 +249,10 @@ func (m *Manager) runRecord(r *record) {
 	}
 
 	err := r.run(r.ctx)
+	// Capture the context error before cancel(): the post-run cancel() below would
+	// otherwise make ctx.Err() report Canceled for every job, masking genuine
+	// failures as cancellations and discarding the real error reason.
+	ctxErr := r.ctx.Err()
 	r.cancel()
 
 	if err == nil {
@@ -256,8 +260,8 @@ func (m *Manager) runRecord(r *record) {
 		return
 	}
 
-	if errors.Is(err, context.Canceled) || errors.Is(r.ctx.Err(), context.Canceled) ||
-		errors.Is(r.ctx.Err(), context.DeadlineExceeded) {
+	if errors.Is(err, context.Canceled) || errors.Is(ctxErr, context.Canceled) ||
+		errors.Is(ctxErr, context.DeadlineExceeded) {
 		m.transition(r.job.ID, StateCancelled, context.Canceled.Error())
 		return
 	}
