@@ -226,6 +226,15 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 			broker.Close()
 			return nil, fmt.Errorf("seed capability registry: %w", err)
 		}
+		if cfg.HHDHardwareAwareDispatch {
+			for _, prov := range shadowHardwareProviders() {
+				if err := capRegistry.Upsert(prov); err != nil {
+					jobMgr.Close()
+					broker.Close()
+					return nil, fmt.Errorf("seed shadow provider %q: %w", prov.ProviderID, err)
+				}
+			}
+		}
 	}
 	if cfg.HHDDecisionTelemetry {
 		redactionCfg := dispatch.TelemetryRedactionConfig{
@@ -271,6 +280,50 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 		log.Info().Str("socket", cfg.MergeEngineSocket).Msg("merge tools enabled")
 	}
 	return s, nil
+}
+
+// shadowHardwareProviders returns the Phase 6 shadow-mode provider catalog used
+// by hardware-aware dispatch. These represent specialized backends (LPU, dense
+// GPU, SSM long-context) advertised to the deterministic policy engine. Until
+// live HAL adapters land (Phase 6 T082-T084) selection is exercised end-to-end
+// but jobs execute as context-respecting no-ops; the CPU baseline remains the
+// terminal-safe fallback.
+func shadowHardwareProviders() []dispatch.ProviderCapability {
+	return []dispatch.ProviderCapability{
+		{
+			ProviderID:            "lpu-realtime",
+			ContractVersion:       "dispatch.provider/v1.0",
+			HealthState:           dispatch.HealthHealthy,
+			LatencyClass:          "ultra",
+			CostClass:             "medium",
+			QueueDepth:            0,
+			SupportedWorkloadTags: []string{"realtime"},
+			ReliabilityClass:      "gold",
+			FeatureFlags:          []string{},
+		},
+		{
+			ProviderID:            "gpu-accelerated",
+			ContractVersion:       "dispatch.provider/v1.0",
+			HealthState:           dispatch.HealthHealthy,
+			LatencyClass:          "fast",
+			CostClass:             "high",
+			QueueDepth:            0,
+			SupportedWorkloadTags: []string{"inference-heavy", "deterministic-edit"},
+			ReliabilityClass:      "gold",
+			FeatureFlags:          []string{"hhd.sparse_quantized_assist"},
+		},
+		{
+			ProviderID:            "ssm-longctx",
+			ContractVersion:       "dispatch.provider/v1.0",
+			HealthState:           dispatch.HealthHealthy,
+			LatencyClass:          "baseline",
+			CostClass:             "medium",
+			QueueDepth:            0,
+			SupportedWorkloadTags: []string{"long-context"},
+			ReliabilityClass:      "gold",
+			FeatureFlags:          []string{"hhd.ssm_sequence_assist"},
+		},
+	}
 }
 
 func (s *Server) registerMergeTools(socket string) error {
@@ -369,12 +422,22 @@ func (s *Server) registerBaselineTools() error {
 			policyCfg,
 		)
 	}
-	for _, t := range []tools.Tool{
+	baseTools := []tools.Tool{
 		&tools.ReadFileSync{Workspace: s.cfg.Workspace},
 		&tools.WriteFileSync{Workspace: s.cfg.Workspace},
 		&tools.ListDir{Workspace: s.cfg.Workspace},
 		dispatchTool,
-	} {
+	}
+	if s.cfg.HHDHardwareAwareDispatch && s.caps != nil {
+		baseTools = append(baseTools, tools.NewDispatchHardwareAwareJob(
+			s.jobs,
+			s.cfg.JobTimeoutSeconds,
+			s.emitter,
+			s.caps,
+			policyCfg,
+		))
+	}
+	for _, t := range baseTools {
 		if err := s.registry.Register(t); err != nil {
 			return err
 		}
