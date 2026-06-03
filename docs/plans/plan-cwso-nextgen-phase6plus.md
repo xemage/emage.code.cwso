@@ -48,7 +48,8 @@ graph LR
 > Go toolchain bump), so these Phase 7–9 IDs are now **feature placeholders**, not active task
 > IDs. Active IDs are assigned sequentially from `docs/tasks/active-tasks.md` (continuing after
 > T114) as each feature is picked up. Mapping so far: **T095 (eBPF AST write-spike monitor) →
-> active T115**. See the reconciliation section in `active-tasks.md`.
+> active T115**, **T096 (spike filter + semantic-conflict pre-warning) → active T116**. See
+> the reconciliation section in `active-tasks.md`.
 
 ## Phase 7 — Sparse Micro-Agents & Spiking Monitors (Features B + C)
 

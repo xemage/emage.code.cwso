@@ -35,11 +35,21 @@ type ASTWriteSpikeMonitorConfig struct {
 
 // WriteEvent is one AST-affecting write observed by the monitor. Source is agnostic: an
 // eBPF write probe or a userspace filesystem watcher can both feed ObserveWrite.
+//
+// The trailing fields are optional semantic hints used by the spike filter (T116). A raw
+// volume feeder may leave them empty; a feeder that already parsed the edit can populate
+// Symbol/SignatureHash (and optionally a pre-classified ChangeKind) so the filter can gate
+// on semantic significance instead of write volume alone.
 type WriteEvent struct {
 	Path      string
 	Workspace string
 	Language  string
 	At        time.Time
+
+	Symbol        string
+	NodePath      string
+	SignatureHash string
+	ChangeKind    SpikeKind
 }
 
 // ASTSpikeEvent is the telemetry envelope emitted when a write-spike crosses threshold.
