@@ -5,6 +5,18 @@ import (
 	"testing"
 )
 
+func TestLoadASTSpikeResourcesEnabled(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_AST_SPIKE_RESOURCES_ENABLED", "true")
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.ASTSpikeResourcesEnabled {
+		t.Fatal("expected ast spike resources enabled via env")
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("CWSO_TRANSPORT", "stdio")
 	c, err := Load("")
@@ -37,6 +49,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if c.HHDEventMonitorEnabled {
 		t.Fatal("expected event monitor disabled by default")
+	}
+	if c.ASTSpikeResourcesEnabled {
+		t.Fatal("expected ast spike resources disabled by default")
 	}
 	if c.HHDEventMonitorEBPF {
 		t.Fatal("expected eBPF monitor path disabled by default")

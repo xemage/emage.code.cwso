@@ -40,6 +40,7 @@ type Server struct {
 	caps      *dispatch.CapabilityRegistry
 	emitter   *dispatch.DecisionEmitter
 	capSyncer *dispatch.CapabilitySyncer
+	spikeSubs *dispatch.SpikeSubscriptionRegistry
 }
 
 // New constructs and initializes a Server with all Phase 1 tools registered.
@@ -259,9 +260,15 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 		telemetryEmitter = dispatch.NewDecisionEmitterWithAnomalyMonitorAndRedaction(publisher, anomalyMonitor, redactionCfg)
 	}
 
+	var spikeSubs *dispatch.SpikeSubscriptionRegistry
+	if cfg.ASTSpikeResourcesEnabled {
+		spikeSubs = dispatch.NewSpikeSubscriptionRegistry()
+	}
+
 	s := &Server{
 		cfg: cfg, log: log, registry: tools.NewRegistry(), bus: bus, memory: broker,
 		publisher: publisher, jobs: jobMgr, runner: baselineRunner, caps: capRegistry, emitter: telemetryEmitter,
+		spikeSubs: spikeSubs,
 	}
 	if err := s.registerBaselineTools(); err != nil {
 		jobMgr.Close()
@@ -493,6 +500,10 @@ func (s *Server) registerBaselineTools() error {
 		&tools.ListDir{Workspace: s.cfg.Workspace},
 		dispatchTool,
 	}
+	if s.spikeSubs != nil {
+		baseTools = append(baseTools, tools.NewSubscribeASTSpikes(s.spikeSubs))
+		s.log.Info().Msg("ast spike resources enabled: subscribe_ast_spikes tool + cwso://spikes resources")
+	}
 	if s.cfg.HHDHardwareAwareDispatch && s.caps != nil {
 		if s.cfg.HALSocket != "" {
 			s.log.Info().Str("socket", s.cfg.HALSocket).Msg("hardware-aware dispatch: live HAL execution enabled")
@@ -539,7 +550,11 @@ func (s *Server) Run(ctx context.Context) error {
 	case "stdio":
 		return transport.RunStdio(ctx, s.log, s.Handle)
 	case "http":
-		return transport.RunHTTP(ctx, s.cfg, s.log, s.bus, s.memory, s.publisher, s.Handle)
+		var httpOpts []transport.HTTPOption
+		if s.spikeSubs != nil {
+			httpOpts = append(httpOpts, transport.WithSubscriptionResolver(s.spikeResolver()))
+		}
+		return transport.RunHTTP(ctx, s.cfg, s.log, s.bus, s.memory, s.publisher, s.Handle, httpOpts...)
 	default:
 		return fmt.Errorf("unsupported transport: %s", s.cfg.Transport)
 	}
@@ -564,6 +579,16 @@ func (s *Server) Handle(ctx context.Context, sess *transport.Session, raw []byte
 		resp = s.handleToolsList(req)
 	case "tools/call":
 		resp = s.handleToolsCall(ctx, sess, req)
+	case "resources/list":
+		resp = s.handleResourcesList(req)
+	case "resources/templates/list":
+		resp = s.handleResourceTemplatesList(req)
+	case "resources/read":
+		resp = s.handleResourcesRead(req)
+	case "resources/subscribe":
+		resp = s.handleResourcesSubscribe(req)
+	case "resources/unsubscribe":
+		resp = s.handleResourcesUnsubscribe(req)
 	case "ping":
 		resp = mcp.OK(req.ID, map[string]any{"pong": true})
 	case "notifications/initialized":
@@ -591,12 +616,16 @@ func (s *Server) handleInitialize(req *mcp.Request) *mcp.Response {
 			return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrInvalidParams, err.Error()))
 		}
 	}
+	caps := map[string]any{
+		"tools": map[string]any{"listChanged": false},
+	}
+	if s.spikeSubs != nil {
+		caps["resources"] = map[string]any{"subscribe": true, "listChanged": true}
+	}
 	result := mcp.InitializeResult{
 		ProtocolVersion: mcp.SupportedProtocolVersion,
-		Capabilities: map[string]any{
-			"tools": map[string]any{"listChanged": false},
-		},
-		ServerInfo: mcp.ServerInfo{Name: "cwso-orchestrator", Version: "0.1.0-dev"},
+		Capabilities:    caps,
+		ServerInfo:      mcp.ServerInfo{Name: "cwso-orchestrator", Version: "0.1.0-dev"},
 	}
 	return mcp.OK(req.ID, result)
 }
@@ -637,6 +666,155 @@ func (s *Server) handleToolsCall(ctx context.Context, sess *transport.Session, r
 		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrInternal, "tool returned nil"))
 	}
 	return mcp.OK(req.ID, res)
+}
+
+// defaultSpikeSnapshotLimit bounds how many recent matching events resources/read replays.
+const defaultSpikeSnapshotLimit = 100
+
+func (s *Server) resourcesEnabled(req *mcp.Request) (*mcp.Response, bool) {
+	if s.spikeSubs == nil {
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrMethodNotFound, "method not found: "+req.Method)), false
+	}
+	return nil, true
+}
+
+func (s *Server) handleResourcesList(req *mcp.Request) *mcp.Response {
+	if errResp, ok := s.resourcesEnabled(req); !ok {
+		return errResp
+	}
+	subs := s.spikeSubs.List()
+	resources := make([]mcp.Resource, 0, len(subs))
+	for _, sub := range subs {
+		resources = append(resources, mcp.Resource{
+			URI:         sub.URI(),
+			Name:        "AST spike stream " + sub.ID,
+			Description: fmt.Sprintf("Semantic AST spike events (threshold=%s) for path=%q", sub.SemanticThreshold, sub.Path),
+			MimeType:    "application/json",
+		})
+	}
+	return mcp.OK(req.ID, mcp.ResourcesListResult{Resources: resources})
+}
+
+func (s *Server) handleResourceTemplatesList(req *mcp.Request) *mcp.Response {
+	if errResp, ok := s.resourcesEnabled(req); !ok {
+		return errResp
+	}
+	return mcp.OK(req.ID, mcp.ResourceTemplatesListResult{
+		ResourceTemplates: []mcp.ResourceTemplate{{
+			URITemplate: dispatch.SpikeResourcePrefix + "{subscription_id}",
+			Name:        "ast_spike_stream",
+			Description: "Semantic AST write-spike stream created via subscribe_ast_spikes. Read for a recent snapshot or open over SSE (GET /mcp?subscription=<id>) for the live stream.",
+			MimeType:    "application/json",
+		}},
+	})
+}
+
+func (s *Server) handleResourcesRead(req *mcp.Request) *mcp.Response {
+	if errResp, ok := s.resourcesEnabled(req); !ok {
+		return errResp
+	}
+	var p mcp.ResourceURIParams
+	if err := json.Unmarshal(req.Params, &p); err != nil {
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrInvalidParams, err.Error()))
+	}
+	id, ok := dispatch.ParseSpikeResourceID(p.URI)
+	if !ok {
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown resource uri: "+p.URI))
+	}
+	sub, ok := s.spikeSubs.Get(id)
+	if !ok {
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown subscription: "+id))
+	}
+
+	type snapshotItem struct {
+		Topic    string          `json:"topic"`
+		Sequence uint64          `json:"sequence"`
+		At       string          `json:"at"`
+		Event    json.RawMessage `json:"event"`
+	}
+	items := make([]snapshotItem, 0)
+	if s.memory != nil {
+		records := s.memory.Query(memorybroker.QueryOptions{
+			Topics: dispatch.ASTSpikeTopics(),
+			Limit:  defaultSpikeSnapshotLimit,
+		})
+		for _, rec := range records {
+			if !sub.Allow(rec.Topic, rec.Payload) {
+				continue
+			}
+			items = append(items, snapshotItem{
+				Topic:    rec.Topic,
+				Sequence: rec.Sequence,
+				At:       rec.At.UTC().Format(time.RFC3339Nano),
+				Event:    rec.Payload,
+			})
+		}
+	}
+	body, err := json.Marshal(map[string]any{
+		"subscription_id":    sub.ID,
+		"semantic_threshold": string(sub.SemanticThreshold),
+		"path":               sub.Path,
+		"workspace_scope":    sub.WorkspaceScope,
+		"events":             items,
+	})
+	if err != nil {
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrInternal, err.Error()))
+	}
+	return mcp.OK(req.ID, mcp.ResourceReadResult{Contents: []mcp.ResourceContents{{
+		URI:      sub.URI(),
+		MimeType: "application/json",
+		Text:     string(body),
+	}}})
+}
+
+func (s *Server) handleResourcesSubscribe(req *mcp.Request) *mcp.Response {
+	if errResp, ok := s.resourcesEnabled(req); !ok {
+		return errResp
+	}
+	var p mcp.ResourceURIParams
+	if err := json.Unmarshal(req.Params, &p); err != nil {
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrInvalidParams, err.Error()))
+	}
+	id, ok := dispatch.ParseSpikeResourceID(p.URI)
+	if !ok {
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown resource uri: "+p.URI))
+	}
+	if _, ok := s.spikeSubs.Get(id); !ok {
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown subscription: "+id))
+	}
+	// Live delivery happens over the SSE transport (GET /mcp?subscription=<id>); the
+	// subscription is already registered by subscribe_ast_spikes, so this acknowledges intent.
+	return mcp.OK(req.ID, map[string]any{})
+}
+
+func (s *Server) handleResourcesUnsubscribe(req *mcp.Request) *mcp.Response {
+	if errResp, ok := s.resourcesEnabled(req); !ok {
+		return errResp
+	}
+	var p mcp.ResourceURIParams
+	if err := json.Unmarshal(req.Params, &p); err != nil {
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrInvalidParams, err.Error()))
+	}
+	id, ok := dispatch.ParseSpikeResourceID(p.URI)
+	if !ok {
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown resource uri: "+p.URI))
+	}
+	if !s.spikeSubs.Remove(id) {
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown subscription: "+id))
+	}
+	return mcp.OK(req.ID, map[string]any{})
+}
+
+// spikeResolver adapts the spike subscription registry to the transport's
+// SubscriptionResolver contract for subscription-scoped SSE streams.
+func (s *Server) spikeResolver() transport.SubscriptionResolver {
+	return func(id string) (transport.RecordFilter, bool) {
+		sub, ok := s.spikeSubs.Get(id)
+		if !ok {
+			return nil, false
+		}
+		return sub, true
+	}
 }
 
 // Registry exposes the tool registry for tests.
