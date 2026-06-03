@@ -50,7 +50,9 @@ graph LR
 > T114) as each feature is picked up. Mapping so far: **T095 (eBPF AST write-spike monitor) →
 > active T115**, **T096 (spike filter + semantic-conflict pre-warning) → active T116**, **T097
 > (`subscribe_ast_spikes` MCP resource) → active T117** (its write-event feeder half split into
-> **active T118**). See the reconciliation section in `active-tasks.md`.
+> **active T118**). Feature B: **T090 (Wasm sandbox tier design + security review) → active T119**,
+> and pre-mapped **T091 → T120**, **T092 → T121**, **T093 → T122**, **T094 → T123**, **T098 →
+> T124**, **T099 → T125**. See the reconciliation section in `active-tasks.md`.
 
 ## Phase 7 — Sparse Micro-Agents & Spiking Monitors (Features B + C)
 
