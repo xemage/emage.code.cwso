@@ -24,7 +24,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T115 | AST write-spike monitor (generalize `anomaly_monitor`) + userspace fallback | backend-developer | done | P0 | T089 | 2026-06-03 |
 | T116 | Spike filter (semantic classifier) + semantic-conflict pre-warning | backend-developer | done | P1 | T115 | 2026-06-03 |
 | T117 | `subscribe_ast_spikes` MCP Resources layer (SSE, threshold-gated) | backend-developer | in_review | P1 | T116 | 2026-06-03 |
-| T118 | AST write-event feeder wiring (`write_shadow_file` → monitor/filter) | backend-developer | in_review | P1 | T117 | 2026-06-03 |
+| T118 | AST write-event feeder wiring (`write_shadow_file` → monitor/filter) | backend-developer | done | P1 | T117 | 2026-06-03 |
+| T119 | Sparse Wasm micro-agent sandbox tier design + security envelope review | solution-architect | in_review | P0 | T089 | 2026-06-03 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -48,6 +49,10 @@ already-completed control-plane work. Rule going forward:
   - roadmap **Feature C / placeholder T097 (`subscribe_ast_spikes` MCP resource)** →
     **active T117** (the MCP Resources protocol layer + tool + threshold-gated SSE). The
     runtime write-event feeder portion of roadmap T097 is split into **active T118**.
+  - roadmap **Feature B / placeholder T090 (T0 Wasm sandbox tier design + security envelope
+    review)** → **active T119**. The Feature B implementation tasks are pre-mapped in the
+    design artifact: roadmap **T091 → active T120**, **T092 → T121**, **T093 → T122**,
+    **T094 → T123**, and the Phase 7 QA/gate **T098 → T124**, **T099 → T125**.
 
 ## Phase 6 execution notes (2026-06-02)
 
@@ -321,3 +326,27 @@ in-process write source so the T117 `cwso://spikes` resources stream live edits 
 Feature C is now wired end-to-end (write → spike topics → `cwso://spikes` resources). Remaining
 Phase 7 work: real eBPF/fs-watch write sources and the sparse-model scorer (scorer seam already
 in place). Brief: `task-T118.md`.
+
+### T119 (in review) — Sparse Wasm micro-agent tier design (Feature B kickoff)
+
+> **Phase 7 (Feature B — Ephemeral Wasm Micro-Agents). Active T119 = roadmap placeholder T090.**
+> Docs/architecture only; gates the Feature B implementation tasks T120–T125.
+
+Landed on `feature/T119-wasm-sparse-agent-design`. Opens the second Phase 7 track (the sparse
+1.58-bit Wasm micro-agent tier) with its gating design + decision record:
+
+- **`ADR-008-wasm-sparse-agent-tier.md`** (accepted): two-runtime split — control-side scorers reuse
+  the existing wazero host (`wasm_scoring_plugin.go`) verbatim; data-side inference runs in a new
+  Rust `cwso-sparse` **wasmtime** sidecar over UDS (cwso-hal pattern). The deterministic **ternary
+  GEMM is a native Rust kernel behind a tight `ternary_gemm` host-call allowlist** (full-Wasm kernel
+  deferred as the promotion path). Weights are SHA-256-pinned, pruned `{-1,0,+1}` skill-slices,
+  mmap'd copy-on-write so N agents share one resident copy. Quality-floor breaches reuse the existing
+  `quality_guardrail_autodisable` path to escalate to a dense GPU backend. Alternatives A–D tabled.
+- **`wasm-sparse-agent-design-v1.md`**: positions the new **T0** tier beneath the ADR-003
+  gVisor/Firecracker tiers (< 10 ms cold start), specifies the `create_ephemeral_sparse_agent` schema
+  + lifecycle, the `cwso://agents/{id}/telemetry` resource (reusing the T117 SSE layer), the security
+  envelope mapping (no new capabilities beyond `ternary_gemm`), and the T120–T125 implementation
+  breakdown.
+
+Next (**T120**): build the `cwso-sparse` wasmtime sidecar + native ternary GEMM host-call + UDS
+protocol (deterministic kernel, feature-flagged). Brief: `task-T119.md`.
