@@ -21,10 +21,25 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T093 | Enforce/document TLS for non-loopback HAL accelerator endpoints | devops-engineer | in_review | P1 | T089 | 2026-06-02 |
 | T094 | CI dependency audit (`govulncheck` + `cargo audit`) | devops-engineer | in_review | P2 | T089 | 2026-06-02 |
 | T114 | Bump Go toolchain to 1.25 (clear `go:audit` stdlib advisories) | devops-engineer | in_review | P2 | T094 | 2026-06-02 |
+| T115 | AST write-spike monitor (generalize `anomaly_monitor`) + userspace fallback | backend-developer | in_review | P0 | T089 | 2026-06-03 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
 > Owners are agent names from `knowledge/agents/`.
+
+## Task-numbering reconciliation (authoritative)
+
+The roadmap `plan-cwso-nextgen-phase6plus.md` pre-allocated **T090–T113** to Phases 7–9 when
+it was authored. During execution the Phase 6 gate (T089) follow-ups consumed **T090–T094**
+and the toolchain chore took **T114**, so the roadmap's Phase 7–9 IDs now collide with
+already-completed control-plane work. Rule going forward:
+
+- **Active IDs are assigned sequentially from the board, continuing after T114** — they are
+  the single source of truth for what is actually being executed.
+- The roadmap's `T090`–`T113` are **feature placeholders**, not active IDs. Each is mapped to
+  a fresh active ID when the work is picked up (recorded here + in the task brief).
+- Mapping so far: roadmap **Feature C / placeholder T095 (eBPF AST write-spike monitor)** →
+  **active T115**.
 
 ## Phase 6 execution notes (2026-06-02)
 
@@ -160,3 +175,36 @@ only in 1.25.8), **go1.25.10 → none**. Bumped `orchestrator/go.mod` to `go 1.2
 the explicit `toolchain` line), the CI `go:*` images and orchestrator Dockerfile builder to
 `golang:1.25`, and `go:audit` to `govulncheck@latest`. Build/vet/test green; `govulncheck`
 clean under 1.25. Audits stay `allow_failure: true` for the PoC phase.
+
+### T115 (done, in review) — AST write-spike monitor + userspace fallback
+
+> **Phase 7 kickoff (Feature C).** Roadmap placeholder T095 → active T115 (see numbering
+> reconciliation above). Depends only on T089.
+
+Landed on `feature/T115-ast-write-spike-monitor`. Generalizes the event-driven core of the
+dispatch `anomaly_monitor` into a filesystem AST write-spike detector:
+
+- **Shared signal-path machinery (`signal_path.go`):** extracted the eBPF-vs-userspace
+  resolver, detection-latency semantics (`advisory`/`measured`/`estimated`), and the
+  conservative `defaultEBPFChecker` out of `anomaly_monitor.go` into a reusable
+  `signalPathResolver`. The dispatch anomaly monitor now consumes it — identical behaviour,
+  guarded by the existing anomaly tests.
+- **`ASTWriteSpikeMonitor` (`ast_spike_monitor.go`):** per-workspace sliding-window spike
+  detector. `ObserveWrite(WriteEvent)` is source-agnostic (an eBPF write probe **or** a
+  userspace filesystem watcher can feed it). On threshold crossing it publishes an
+  `ASTSpikeEvent` to topic `ast/spike` with hot paths, distinct-path count, languages,
+  severity (`warning`, escalating to `critical` at 2× threshold), and the resolved signal
+  path / privilege / detection-latency characterization. Debounce (default = window)
+  collapses a sustained burst into a single event.
+- **Userspace fallback:** when eBPF is preferred but unavailable (non-Linux, missing
+  `CAP_BPF`, no bpffs) detection degrades to the unprivileged userspace path with measured
+  latency and the reason recorded in notes — detection never depends on privilege.
+- **Privacy:** hot paths are dropped alongside notes under the `anomaly_notes_mode=drop`
+  redaction policy (filesystem structure is treated as sensitive).
+- 9 new unit tests (threshold, silence-below-threshold, window pruning, debounce, severity
+  escalation, eBPF-hook + fallback semantics, redaction, workspace isolation). Full
+  orchestrator suite + gofmt + vet green.
+
+Follow-ups (next Phase 7 tasks): spike-filter sparse mini-model + semantic-conflict
+pre-warning (roadmap T096), and the `subscribe_ast_spikes` MCP SSE resource + write-event
+feeder wiring (roadmap T097). Brief: `task-T115.md`.

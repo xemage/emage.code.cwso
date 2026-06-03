@@ -2,9 +2,6 @@ package dispatch
 
 import (
 	"fmt"
-	"os"
-	"runtime"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -47,9 +44,8 @@ type DecisionAnomalyMonitor struct {
 	publisher          memorybroker.Publisher
 	now                func() time.Time
 	nextID             atomic.Uint64
-	preferEBPF         bool
 	latencyThresholdMS int
-	checkEBPF          func() (bool, string)
+	resolver           signalPathResolver
 	redactor           telemetryRedactor
 }
 
@@ -60,16 +56,11 @@ func NewDecisionAnomalyMonitor(publisher memorybroker.Publisher, cfg DecisionAno
 	if cfg.LatencyThresholdMS <= 0 {
 		cfg.LatencyThresholdMS = defaultAnomalyLatencyThresholdMS
 	}
-	check := cfg.EBPFChecker
-	if check == nil {
-		check = defaultEBPFChecker
-	}
 	return &DecisionAnomalyMonitor{
 		publisher:          publisher,
 		now:                time.Now,
-		preferEBPF:         cfg.PreferEBPF,
 		latencyThresholdMS: cfg.LatencyThresholdMS,
-		checkEBPF:          check,
+		resolver:           newSignalPathResolver(signalPathConfig{PreferEBPF: cfg.PreferEBPF, EBPFChecker: cfg.EBPFChecker}),
 		redactor:           newTelemetryRedactor(cfg.Redaction),
 	}
 }
@@ -79,7 +70,7 @@ func (m *DecisionAnomalyMonitor) ObserveDecision(event DecisionEvent) error {
 		return nil
 	}
 	detectedAt := m.now().UTC()
-	signalPath, privilege, notes := m.resolveSignalPath()
+	signalPath, privilege, notes := m.resolver.resolve()
 
 	anomalies := make([]AnomalyEvent, 0, 2)
 	if event.ActualLatencyMS >= m.latencyThresholdMS {
@@ -143,47 +134,4 @@ func (m *DecisionAnomalyMonitor) newAnomaly(
 		DetectedAt:                 detectedAt.Format(time.RFC3339Nano),
 		Notes:                      m.redactor.redactAnomalyNotes(notes),
 	}
-}
-
-func (m *DecisionAnomalyMonitor) resolveSignalPath() (path, privilege, notes string) {
-	if m.preferEBPF {
-		ok, reason := m.checkEBPF()
-		if ok {
-			return "ebpf-hook", "CAP_BPF/CAP_PERFMON or root", ""
-		}
-		return "fallback-userspace", "none", fmt.Sprintf("ebpf unavailable: %s", strings.TrimSpace(reason))
-	}
-	return "fallback-userspace", "none", ""
-}
-
-func detectionLatency(emittedAt string, detectedAt time.Time, path string) (int, string, bool) {
-	if path == "ebpf-hook" {
-		return 0, "advisory", true
-	}
-	emittedAt = strings.TrimSpace(emittedAt)
-	if emittedAt == "" {
-		return 0, "estimated", false
-	}
-	ts, err := time.Parse(time.RFC3339Nano, emittedAt)
-	if err != nil {
-		return 0, "estimated", false
-	}
-	delta := detectedAt.Sub(ts.UTC())
-	if delta < 0 {
-		delta = 0
-	}
-	return int(delta.Milliseconds()), "measured", false
-}
-
-func defaultEBPFChecker() (bool, string) {
-	if runtime.GOOS != "linux" {
-		return false, "non-linux host"
-	}
-	if os.Geteuid() != 0 {
-		return false, "missing root/CAP_BPF privileges"
-	}
-	if _, err := os.Stat("/sys/fs/bpf"); err != nil {
-		return false, "bpffs is unavailable"
-	}
-	return true, ""
 }
