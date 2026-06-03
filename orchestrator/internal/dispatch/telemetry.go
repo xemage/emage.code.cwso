@@ -15,6 +15,7 @@ const (
 	TopicDispatchCapabilities = "dispatch/capabilities"
 	TopicDispatchDecision     = "dispatch/decision"
 	TopicDispatchAnomaly      = "dispatch/anomaly"
+	TopicASTSpike             = "ast/spike"
 
 	requestIDModeAllow = "allow"
 	requestIDModeHash  = "hash"

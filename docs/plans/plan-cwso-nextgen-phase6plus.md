@@ -43,6 +43,13 @@ graph LR
 | T088 | Phase 6 integration + reliability QA (fallback ≤ 2.0s, overhead ≤ 10ms) | qa-engineer | P0 | T087 |
 | T089 | Phase 6 Tech-Lead + Security gate | tech-lead / security-engineer | P0 | T088 |
 
+> **Numbering note (2026-06-03):** the IDs below (T090–T113) were allocated when this roadmap
+> was authored. The Phase 6 gate follow-ups later consumed **T090–T094** (+ **T114** for the
+> Go toolchain bump), so these Phase 7–9 IDs are now **feature placeholders**, not active task
+> IDs. Active IDs are assigned sequentially from `docs/tasks/active-tasks.md` (continuing after
+> T114) as each feature is picked up. Mapping so far: **T095 (eBPF AST write-spike monitor) →
+> active T115**. See the reconciliation section in `active-tasks.md`.
+
 ## Phase 7 — Sparse Micro-Agents & Spiking Monitors (Features B + C)
 
 | ID | Title | Owner | Pri | Depends |
