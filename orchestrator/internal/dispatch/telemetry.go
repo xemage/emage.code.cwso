@@ -16,6 +16,8 @@ const (
 	TopicDispatchDecision     = "dispatch/decision"
 	TopicDispatchAnomaly      = "dispatch/anomaly"
 	TopicASTSpike             = "ast/spike"
+	TopicASTSemanticSpike     = "ast/semantic-spike"
+	TopicASTConflictWarning   = "ast/conflict-warning"
 
 	requestIDModeAllow = "allow"
 	requestIDModeHash  = "hash"

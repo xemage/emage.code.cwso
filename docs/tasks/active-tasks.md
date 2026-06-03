@@ -21,7 +21,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T093 | Enforce/document TLS for non-loopback HAL accelerator endpoints | devops-engineer | in_review | P1 | T089 | 2026-06-02 |
 | T094 | CI dependency audit (`govulncheck` + `cargo audit`) | devops-engineer | in_review | P2 | T089 | 2026-06-02 |
 | T114 | Bump Go toolchain to 1.25 (clear `go:audit` stdlib advisories) | devops-engineer | in_review | P2 | T094 | 2026-06-02 |
-| T115 | AST write-spike monitor (generalize `anomaly_monitor`) + userspace fallback | backend-developer | in_review | P0 | T089 | 2026-06-03 |
+| T115 | AST write-spike monitor (generalize `anomaly_monitor`) + userspace fallback | backend-developer | done | P0 | T089 | 2026-06-03 |
+| T116 | Spike filter (semantic classifier) + semantic-conflict pre-warning | backend-developer | in_review | P1 | T115 | 2026-06-03 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -38,8 +39,10 @@ already-completed control-plane work. Rule going forward:
   the single source of truth for what is actually being executed.
 - The roadmap's `T090`–`T113` are **feature placeholders**, not active IDs. Each is mapped to
   a fresh active ID when the work is picked up (recorded here + in the task brief).
-- Mapping so far: roadmap **Feature C / placeholder T095 (eBPF AST write-spike monitor)** →
-  **active T115**.
+- Mapping so far:
+  - roadmap **Feature C / placeholder T095 (eBPF AST write-spike monitor)** → **active T115**.
+  - roadmap **Feature C / placeholder T096 (spike filter + semantic-conflict pre-warning)** →
+    **active T116**.
 
 ## Phase 6 execution notes (2026-06-02)
 
@@ -208,3 +211,40 @@ dispatch `anomaly_monitor` into a filesystem AST write-spike detector:
 Follow-ups (next Phase 7 tasks): spike-filter sparse mini-model + semantic-conflict
 pre-warning (roadmap T096), and the `subscribe_ast_spikes` MCP SSE resource + write-event
 feeder wiring (roadmap T097). Brief: `task-T115.md`.
+
+### T116 (done, in review) — semantic spike filter + conflict pre-warning
+
+> **Phase 7 (Feature C, step 2 + 5).** Roadmap placeholder T096 → active T116. Depends on T115.
+
+Landed on `feature/T116-ast-spike-filter-semantic-prewarning`. Sits downstream of the T115
+volume monitor: the monitor detects write *volume*, the filter decides whether an edit
+*matters* and whether it overlaps a sibling agent's in-flight change.
+
+- **`ASTSpikeFilter` (`ast_spike_filter.go`):** classifies each `WriteEvent` into a
+  `SpikeKind` (`none` < `cosmetic` < `symbol_added`/`symbol_removed` < `signature_change`)
+  and a confidence, then gates on a configurable `SemanticThreshold` (`signature_change`
+  default, or `symbol_added`/`symbol_removed`/`any`). Emits `SemanticSpikeEvent` on topic
+  `ast/semantic-spike` only when the threshold is crossed (zero-noise / neuromorphic
+  event-driven principle).
+- **Pluggable `SemanticScorer` seam:** the default `HeuristicSemanticScorer` is deterministic
+  and dependency-free (trusts a feeder-supplied `ChangeKind`, else diffs the symbol's
+  `SignatureHash` against the last seen one). The blueprint's *sparse Wasm mini-model* (from
+  Feature B, not yet built) can drop in later via the `Scorer` config field without touching
+  correlation logic.
+- **Semantic-conflict pre-warning (step 5):** a per-symbol recent-writers index (bounded by a
+  correlation window) detects when ≥2 distinct workspaces produce semantic spikes on the same
+  symbol, and publishes `SemanticConflictWarning` on `ast/conflict-warning` with
+  `potential_conflict_with: [workspace…]` — letting the orchestrator pre-warn agents *before*
+  `merge_concurrent_results` runs. Severity escalates to `critical` for `signature_change`.
+- **`WriteEvent`** gained optional semantic hints (`Symbol`, `NodePath`, `SignatureHash`,
+  `ChangeKind`); the T115 volume monitor ignores them, so the two stages share one ingestion
+  shape.
+- **Reuse + privacy:** shares the `signalPathResolver` (eBPF-hook vs userspace fallback) and
+  detection-latency semantics; under `anomaly_notes_mode=drop` it blanks symbol/path/node-path
+  (source structure) alongside notes, after correlation has already happened.
+- 9 new unit tests (classification, threshold gating incl. `any`, conflict detection, single-
+  workspace no-op, window pruning, eBPF fallback, redaction, custom-scorer seam). Full suite +
+  `go test -race` + gofmt + vet green.
+
+Next: `subscribe_ast_spikes` MCP SSE resource + concrete write-event feeders (eBPF probe /
+userspace fs watcher) — roadmap T097. Brief: `task-T116.md`.
