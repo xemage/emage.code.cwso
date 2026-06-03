@@ -26,7 +26,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T117 | `subscribe_ast_spikes` MCP Resources layer (SSE, threshold-gated) | backend-developer | in_review | P1 | T116 | 2026-06-03 |
 | T118 | AST write-event feeder wiring (`write_shadow_file` → monitor/filter) | backend-developer | done | P1 | T117 | 2026-06-03 |
 | T119 | Sparse Wasm micro-agent sandbox tier design + security envelope review | solution-architect | done | P0 | T089 | 2026-06-03 |
-| T120 | Rust `cwso-sparse` sidecar: deterministic ternary GEMM kernel + UDS protocol | backend-developer | in_review | P0 | T119 | 2026-06-03 |
+| T120 | Rust `cwso-sparse` sidecar: deterministic ternary GEMM kernel + UDS protocol | backend-developer | done | P0 | T119 | 2026-06-03 |
+| T121 | `.cwsl` pruned-slice container + COW mmap loader + SHA-256 pinning | backend-developer | in_review | P1 | T120 | 2026-06-03 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -376,3 +377,29 @@ module-instantiation envelope is deferred to the agent-lifecycle slice (**T122**
 focused, dependency-light, deterministic core; T120 ships the sidecar + protocol + kernel +
 host-call contract. Next (**T121**): the `.cwsl` pruned-slice container + COW mmap loader feeding
 this kernel. Brief: `task-T120.md`.
+
+### T121 (in review) — `.cwsl` pruned-slice container + COW mmap loader + SHA-256 pinning
+
+> **Phase 7 (Feature B). Active T121 = roadmap placeholder T092.** Depends on T120.
+
+Landed on `feature/T121-cwsl-slice-loader`. Gives the kernel its weight-supply path so N agents can
+share one resident copy of a pruned skill slice:
+
+- **Kernel refactor (`gemm.rs`):** extracted a borrowed `TernaryView<'a>` (the GEMM now runs over
+  borrowed `scales`/`packed` slices); owning `TernaryWeights` delegates via `as_view()`. This lets
+  the loader run inference **directly over the mmap** without copying weights per agent.
+- **`.cwsl` container (`slice.rs`):** little-endian header (magic `CWSL`, version, quantization,
+  `n`/`k`/`scale_count`/`packed_len`) + `f32` scales + 2-bit-packed ternary weights. `serialize` +
+  `SliceHeader::parse` + `content_hash` (SHA-256 = content address).
+- **`MappedSlice::open` (memmap2):** maps the file **read-only** (OS shares resident weight pages
+  across agents — the COW story), verifies declared length, **verifies SHA-256 against the pinned
+  hash** (hard error on mismatch), validates dims against the kernel contract, materialises only the
+  small scale vector, and exposes a zero-copy `view()` borrowing `packed` from the mmap.
+- **`SliceManifest`:** JSON `skill_domain → {path, sha256}`, resolves relative paths and
+  `load_slice(domain)` → integrity-verified `MappedSlice`.
+- 24 unit tests (9 new): serialize/parse round-trip, hash stability, gemm-from-mmap, integrity
+  mismatch, non-hex pin, truncation, bad magic/version, length mismatch, manifest resolve. New deps:
+  `memmap2`, `hex` (+ existing `sha2`). `cargo test --release`, `fmt --check`, workspace build green.
+
+Next (**T122**): `create_ephemeral_sparse_agent` MCP tool + wasmtime instantiation +
+`cwso://agents/{id}/telemetry`, consuming this loader. Brief: `task-T121.md`.

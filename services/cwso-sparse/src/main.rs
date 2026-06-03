@@ -12,6 +12,7 @@ use std::path::PathBuf;
 mod gemm;
 mod ipc;
 mod proto;
+mod slice;
 
 const SOCKET_PATH_DEFAULT: &str = "/run/cwso/sparse.sock";
 

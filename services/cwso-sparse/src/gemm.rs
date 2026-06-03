@@ -69,6 +69,106 @@ fn decode_weight(code: u8, index: usize) -> Result<i32, GemmError> {
     }
 }
 
+/// Validate that `scales` (length n) and `packed` (length n·ceil(k/4)) describe an `[n, k]`
+/// ternary matrix. Shared by the owning `TernaryWeights` and the borrowed `TernaryView`.
+fn validate_dims(
+    n: usize,
+    k: usize,
+    scales_len: usize,
+    packed_len: usize,
+) -> Result<(), GemmError> {
+    if scales_len != n {
+        return Err(GemmError::Dimension(format!(
+            "scales length {scales_len} != n {n}"
+        )));
+    }
+    let expected = n
+        .checked_mul(packed_row_bytes(k))
+        .ok_or_else(|| GemmError::Dimension(format!("n {n} * row_bytes overflow for k {k}")))?;
+    if packed_len != expected {
+        return Err(GemmError::Dimension(format!(
+            "packed length {packed_len} != expected {expected} (n={n}, k={k})"
+        )));
+    }
+    Ok(())
+}
+
+/// A borrowed view of an `[n, k]` ternary matrix: the scale vector and packed weights live
+/// elsewhere (e.g. an mmap'd `.cwsl` slice). This is what makes weight sharing real — the
+/// kernel runs directly over the resident, read-only bytes without copying them per agent.
+#[derive(Debug, Clone, Copy)]
+pub struct TernaryView<'a> {
+    n: usize,
+    k: usize,
+    scales: &'a [f32],
+    packed: &'a [u8],
+}
+
+impl<'a> TernaryView<'a> {
+    /// Construct a view from borrowed slices, validating shape invariants.
+    pub fn new(n: usize, k: usize, scales: &'a [f32], packed: &'a [u8]) -> Result<Self, GemmError> {
+        validate_dims(n, k, scales.len(), packed.len())?;
+        Ok(Self {
+            n,
+            k,
+            scales,
+            packed,
+        })
+    }
+
+    /// Construct without re-validating dimensions. Callers (the owning `TernaryWeights` and the
+    /// `.cwsl` loader, which both validate up front) guarantee the invariants.
+    pub(crate) fn new_unchecked(n: usize, k: usize, scales: &'a [f32], packed: &'a [u8]) -> Self {
+        Self {
+            n,
+            k,
+            scales,
+            packed,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn n(&self) -> usize {
+        self.n
+    }
+
+    #[allow(dead_code)]
+    pub fn k(&self) -> usize {
+        self.k
+    }
+
+    /// Compute `Y[m,n] = scale ∘ (A[m,k] · Wᵀ)` for row-major activations `A` of `m` rows.
+    /// Deterministic: fixed k-ascending reduction, no parallel float nondeterminism.
+    pub fn gemm(&self, activations: &[f32], m: usize) -> Result<Vec<f32>, GemmError> {
+        if activations.len() != m * self.k {
+            return Err(GemmError::Dimension(format!(
+                "activations length {} != m*k {}",
+                activations.len(),
+                m * self.k
+            )));
+        }
+        let row_bytes = packed_row_bytes(self.k);
+        let mut out = vec![0.0f32; m * self.n];
+        for i in 0..m {
+            let a_row = &activations[i * self.k..i * self.k + self.k];
+            for j in 0..self.n {
+                let w_row = &self.packed[j * row_bytes..j * row_bytes + row_bytes];
+                let mut acc = 0.0f32;
+                for (kk, &a) in a_row.iter().enumerate() {
+                    let code = (w_row[kk / 4] >> ((kk % 4) * 2)) & TERNARY_MASK;
+                    match decode_weight(code, kk)? {
+                        1 => acc += a,
+                        -1 => acc -= a,
+                        _ => {}
+                    }
+                }
+                out[i * self.n + j] = self.scales[j] * acc;
+            }
+        }
+        Ok(out)
+    }
+}
+
 /// A pruned ternary weight matrix of shape `[n, k]` (output features × input features) with a
 /// per-output-row `f32` scale. This is the in-memory form of a packed skill slice (T121 will
 /// add the on-disk `.cwsl` container + mmap loader; this kernel is the consumer).
@@ -83,21 +183,7 @@ pub struct TernaryWeights {
 impl TernaryWeights {
     /// Construct from a pre-packed buffer, validating shape invariants.
     pub fn new(n: usize, k: usize, scales: Vec<f32>, packed: Vec<u8>) -> Result<Self, GemmError> {
-        if scales.len() != n {
-            return Err(GemmError::Dimension(format!(
-                "scales length {} != n {n}",
-                scales.len()
-            )));
-        }
-        let expected = n
-            .checked_mul(packed_row_bytes(k))
-            .ok_or_else(|| GemmError::Dimension(format!("n {n} * row_bytes overflow for k {k}")))?;
-        if packed.len() != expected {
-            return Err(GemmError::Dimension(format!(
-                "packed length {} != expected {expected} (n={n}, k={k})",
-                packed.len()
-            )));
-        }
+        validate_dims(n, k, scales.len(), packed.len())?;
         Ok(Self {
             n,
             k,
@@ -141,35 +227,14 @@ impl TernaryWeights {
         self.k
     }
 
+    /// Borrow this matrix as a zero-copy [`TernaryView`].
+    pub fn as_view(&self) -> TernaryView<'_> {
+        TernaryView::new_unchecked(self.n, self.k, &self.scales, &self.packed)
+    }
+
     /// Compute `Y[m,n] = scale ∘ (A[m,k] · Wᵀ)` for row-major activations `A` of `m` rows.
-    /// Deterministic: fixed k-ascending reduction, no parallel float nondeterminism.
     pub fn gemm(&self, activations: &[f32], m: usize) -> Result<Vec<f32>, GemmError> {
-        if activations.len() != m * self.k {
-            return Err(GemmError::Dimension(format!(
-                "activations length {} != m*k {}",
-                activations.len(),
-                m * self.k
-            )));
-        }
-        let row_bytes = packed_row_bytes(self.k);
-        let mut out = vec![0.0f32; m * self.n];
-        for i in 0..m {
-            let a_row = &activations[i * self.k..i * self.k + self.k];
-            for j in 0..self.n {
-                let w_row = &self.packed[j * row_bytes..j * row_bytes + row_bytes];
-                let mut acc = 0.0f32;
-                for (kk, &a) in a_row.iter().enumerate() {
-                    let code = (w_row[kk / 4] >> ((kk % 4) * 2)) & TERNARY_MASK;
-                    match decode_weight(code, kk)? {
-                        1 => acc += a,
-                        -1 => acc -= a,
-                        _ => {}
-                    }
-                }
-                out[i * self.n + j] = self.scales[j] * acc;
-            }
-        }
-        Ok(out)
+        self.as_view().gemm(activations, m)
     }
 }
 
