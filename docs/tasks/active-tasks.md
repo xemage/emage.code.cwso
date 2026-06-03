@@ -25,7 +25,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T116 | Spike filter (semantic classifier) + semantic-conflict pre-warning | backend-developer | done | P1 | T115 | 2026-06-03 |
 | T117 | `subscribe_ast_spikes` MCP Resources layer (SSE, threshold-gated) | backend-developer | in_review | P1 | T116 | 2026-06-03 |
 | T118 | AST write-event feeder wiring (`write_shadow_file` → monitor/filter) | backend-developer | done | P1 | T117 | 2026-06-03 |
-| T119 | Sparse Wasm micro-agent sandbox tier design + security envelope review | solution-architect | in_review | P0 | T089 | 2026-06-03 |
+| T119 | Sparse Wasm micro-agent sandbox tier design + security envelope review | solution-architect | done | P0 | T089 | 2026-06-03 |
+| T120 | Rust `cwso-sparse` sidecar: deterministic ternary GEMM kernel + UDS protocol | backend-developer | in_review | P0 | T119 | 2026-06-03 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -350,3 +351,28 @@ Landed on `feature/T119-wasm-sparse-agent-design`. Opens the second Phase 7 trac
 
 Next (**T120**): build the `cwso-sparse` wasmtime sidecar + native ternary GEMM host-call + UDS
 protocol (deterministic kernel, feature-flagged). Brief: `task-T119.md`.
+
+### T120 (in review) — `cwso-sparse` sidecar: deterministic ternary GEMM + UDS protocol
+
+> **Phase 7 (Feature B). Active T120 = roadmap placeholder T091.** Depends on T119.
+
+Landed on `feature/T120-cwso-sparse-sidecar`. Establishes the data-side sidecar for the sparse
+micro-agent tier with its deterministic compute core and wire protocol:
+
+- **New Rust crate `services/cwso-sparse`** (added to the workspace + `rust:test` CI job).
+- **`gemm.rs` — deterministic 1.58-bit ternary GEMM kernel** (BitNet b1.58, weights ∈ {-1,0,+1}
+  packed 2-bit/4-per-byte + per-row `f32` scale). Pure add/subtract/skip inner product in fixed
+  k-ascending order → byte-identical output across runs. Validated against an independent dense
+  reference, with pack/unpack, multi-row, determinism (1000×), shape-mismatch and invalid-encoding
+  tests.
+- **`ipc.rs` — UDS framed-JSON protocol** (4-byte length prefix + JSON body) with `SO_PEERCRED`
+  peer-auth, identical envelope to `cwso-hal`. Ops: `stat` and the single bounds-checked
+  `ternary_gemm` host-call (the only compute capability — no FS/network/process surface).
+- 15 unit tests; `cargo test --release -p cwso-sparse`, `cargo fmt --check`, and workspace build
+  all green locally.
+
+**Delivery note:** per ADR-008 the data-side runtime is wasmtime, but the heavy
+module-instantiation envelope is deferred to the agent-lifecycle slice (**T122**) to keep this MR a
+focused, dependency-light, deterministic core; T120 ships the sidecar + protocol + kernel +
+host-call contract. Next (**T121**): the `.cwsl` pruned-slice container + COW mmap loader feeding
+this kernel. Brief: `task-T120.md`.
