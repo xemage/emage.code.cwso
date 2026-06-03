@@ -55,6 +55,7 @@ type Config struct {
 	HHDEventMonitorEnabled      bool     // enable event-driven anomaly monitor from dispatch decisions
 	HHDEventMonitorEBPF         bool     // prefer eBPF signal path when capabilities permit (falls back automatically)
 	HHDEventMonitorLatencyMS    int      // anomaly threshold for actual latency in milliseconds
+	ASTSpikeResourcesEnabled    bool     // enable subscribe_ast_spikes tool + cwso://spikes MCP resources (Phase 7 / T117)
 	HHDSnapshotTTLSeconds       int      // stale capability threshold for policy-facing snapshots
 	HHDPolicyEngineV2           bool     // enable policy engine v2 backend selection and fallback
 	HHDHardwareAwareDispatch    bool     // enable dispatch_hardware_aware_job tool + shadow provider catalog (Phase 6)
@@ -141,6 +142,7 @@ func Load(_ string) (*Config, error) {
 		HHDEventMonitorEnabled:      envBool("CWSO_HHD_EVENT_MONITOR_ENABLED", false),
 		HHDEventMonitorEBPF:         envBool("CWSO_HHD_EVENT_MONITOR_EBPF_ENABLED", false),
 		HHDEventMonitorLatencyMS:    envInt("CWSO_HHD_EVENT_MONITOR_LATENCY_THRESHOLD_MS", 1200),
+		ASTSpikeResourcesEnabled:    envBool("CWSO_AST_SPIKE_RESOURCES_ENABLED", false),
 		HHDSnapshotTTLSeconds:       envInt("CWSO_HHD_CAPABILITY_SNAPSHOT_TTL_SECONDS", 30),
 		HHDPolicyEngineV2:           envBool("CWSO_HHD_POLICY_ENGINE_V2_ENABLED", false),
 		HHDHardwareAwareDispatch:    envBool("CWSO_HHD_HARDWARE_AWARE_DISPATCH_ENABLED", false),

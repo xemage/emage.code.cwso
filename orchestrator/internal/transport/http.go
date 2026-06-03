@@ -27,6 +27,30 @@ type eventPublisher interface {
 	Publish(topic string, payload any) error
 }
 
+// RecordFilter decides whether a broker/bus record should be delivered to a
+// subscription-scoped SSE stream. Implemented by dispatch.SpikeSubscription.
+type RecordFilter interface {
+	Allow(topic string, payload []byte) bool
+}
+
+// SubscriptionResolver resolves a subscription id (from the ?subscription= query
+// parameter) to its record filter. ok=false means the id is unknown.
+type SubscriptionResolver func(id string) (RecordFilter, bool)
+
+type httpOptions struct {
+	resolveSub SubscriptionResolver
+}
+
+// HTTPOption configures optional HTTP transport behaviour without growing the
+// already-wide RunHTTP/newHTTPHandler positional signatures (see TD-02).
+type HTTPOption func(*httpOptions)
+
+// WithSubscriptionResolver enables subscription-scoped SSE: GET /mcp?subscription=<id>
+// streams only the records the resolved filter allows.
+func WithSubscriptionResolver(r SubscriptionResolver) HTTPOption {
+	return func(o *httpOptions) { o.resolveSub = r }
+}
+
 // RunHTTP starts the Streamable HTTP transport per MCP spec 2025-03-26.
 //
 // Endpoints:
@@ -44,6 +68,7 @@ func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 	broker *memorybroker.Broker,
 	samplePublisher eventPublisher,
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
+	opts ...HTTPOption,
 ) error {
 	if bus == nil {
 		bus = eventbus.New()
@@ -56,7 +81,7 @@ func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 		}
 	}
 
-	handler := newHTTPHandler(ctx, cfg, log, bus, broker, samplePublisher, h)
+	handler := newHTTPHandler(ctx, cfg, log, bus, broker, samplePublisher, h, opts...)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -89,7 +114,12 @@ func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 func newHTTPHandler(ctx context.Context, cfg *config.Config, log *logging.Logger, bus *eventbus.Bus, broker *memorybroker.Broker,
 	samplePublisher eventPublisher,
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
+	opts ...HTTPOption,
 ) http.Handler {
+	var o httpOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
 	mux := http.NewServeMux()
 
 	originSet := make(map[string]struct{}, len(cfg.AllowedOrigins))
@@ -123,7 +153,7 @@ func newHTTPHandler(ctx context.Context, cfg *config.Config, log *logging.Logger
 				return
 			}
 			defer rateLimiter.sseConns.release(ip)
-			handleSSE(w, r, log, bus, broker)
+			handleSSE(w, r, log, bus, broker, o.resolveSub)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -180,9 +210,25 @@ func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger, pub
 	_, _ = w.Write(resp)
 }
 
-func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus *eventbus.Bus, broker *memorybroker.Broker) {
+func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus *eventbus.Bus, broker *memorybroker.Broker, resolve SubscriptionResolver) {
+	// Resolve an optional subscription scope before writing any SSE headers so an unknown
+	// id can still return a clean 404.
+	var filter RecordFilter
+	if id := r.URL.Query().Get("subscription"); id != "" {
+		if resolve == nil {
+			http.Error(w, "subscriptions not enabled", http.StatusNotFound)
+			return
+		}
+		f, ok := resolve(id)
+		if !ok {
+			http.Error(w, "unknown subscription", http.StatusNotFound)
+			return
+		}
+		filter = f
+	}
+
 	if broker != nil {
-		handleBrokerSSE(w, r, log, broker)
+		handleBrokerSSE(w, r, log, broker, filter)
 		return
 	}
 	if bus == nil {
@@ -225,6 +271,9 @@ func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus 
 			if !ok {
 				return
 			}
+			if filter != nil && !filter.Allow(msg.Topic, msg.Payload) {
+				continue
+			}
 			envelope, err := marshalJSONRPCNotification(msg.Topic, msg.Payload)
 			if err != nil {
 				log.Warn().Err(err).Str("topic", msg.Topic).Msg("failed to marshal notification envelope")
@@ -239,7 +288,7 @@ func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus 
 	}
 }
 
-func handleBrokerSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, broker *memorybroker.Broker) {
+func handleBrokerSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, broker *memorybroker.Broker, filter RecordFilter) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
@@ -285,6 +334,9 @@ func handleBrokerSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger
 		case rec, ok := <-sub.Messages():
 			if !ok {
 				return
+			}
+			if filter != nil && !filter.Allow(rec.Topic, rec.Payload) {
+				continue
 			}
 			if !throttle.Allow(rec) {
 				continue

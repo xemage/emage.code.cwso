@@ -22,7 +22,9 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T094 | CI dependency audit (`govulncheck` + `cargo audit`) | devops-engineer | in_review | P2 | T089 | 2026-06-02 |
 | T114 | Bump Go toolchain to 1.25 (clear `go:audit` stdlib advisories) | devops-engineer | in_review | P2 | T094 | 2026-06-02 |
 | T115 | AST write-spike monitor (generalize `anomaly_monitor`) + userspace fallback | backend-developer | done | P0 | T089 | 2026-06-03 |
-| T116 | Spike filter (semantic classifier) + semantic-conflict pre-warning | backend-developer | in_review | P1 | T115 | 2026-06-03 |
+| T116 | Spike filter (semantic classifier) + semantic-conflict pre-warning | backend-developer | done | P1 | T115 | 2026-06-03 |
+| T117 | `subscribe_ast_spikes` MCP Resources layer (SSE, threshold-gated) | backend-developer | in_review | P1 | T116 | 2026-06-03 |
+| T118 | AST write-event feeder wiring (`write_shadow_file` → monitor/filter) | backend-developer | pending | P1 | T117 | 2026-06-03 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -43,6 +45,9 @@ already-completed control-plane work. Rule going forward:
   - roadmap **Feature C / placeholder T095 (eBPF AST write-spike monitor)** → **active T115**.
   - roadmap **Feature C / placeholder T096 (spike filter + semantic-conflict pre-warning)** →
     **active T116**.
+  - roadmap **Feature C / placeholder T097 (`subscribe_ast_spikes` MCP resource)** →
+    **active T117** (the MCP Resources protocol layer + tool + threshold-gated SSE). The
+    runtime write-event feeder portion of roadmap T097 is split into **active T118**.
 
 ## Phase 6 execution notes (2026-06-02)
 
@@ -248,3 +253,40 @@ volume monitor: the monitor detects write *volume*, the filter decides whether a
 
 Next: `subscribe_ast_spikes` MCP SSE resource + concrete write-event feeders (eBPF probe /
 userspace fs watcher) — roadmap T097. Brief: `task-T116.md`.
+
+### T117 (in review) — `subscribe_ast_spikes` MCP Resources layer (SSE, threshold-gated)
+
+> **Phase 7 (Feature C, step 3).** Roadmap placeholder T097 → active T117. Depends on T116.
+> The runtime write-event **feeder** half of roadmap T097 is split into **T118** (the resource
+> machinery filters broker records regardless of producer, so it ships and is testable first).
+
+Landed on `feature/T117-subscribe-ast-spikes-resource`. Exposes the T115/T116 spike topics as
+subscribable MCP resources under the `cwso://` scheme — the first MCP **Resources** surface in
+the server (previously tools-only):
+
+- **`subscribe_ast_spikes` tool** (`tools/ast_spike_tools.go`, orchestrator + worker): validates
+  `path` (glob), `semantic_threshold` (`signature_change` default · `symbol_added` · `symbol_removed`
+  · `any`), and `workspace_scope`, registers a subscription, and returns
+  `{subscription_id, stream_resource: "cwso://spikes/<id>", topics, transport_hint}`.
+- **Subscription registry + filter** (`dispatch/spike_subscriptions.go`): concurrency-safe store;
+  `SpikeSubscription.Allow(topic, payload)` is the shared predicate (threshold rank gating, path
+  glob via `path.Match`, workspace scope; volume `ast/spike` events only pass the `any` threshold,
+  matched against hot paths). Implements the transport's `RecordFilter` contract.
+- **MCP Resources handlers** (`server.go`): `resources/list`, `resources/templates/list`
+  (`cwso://spikes/{subscription_id}`), `resources/read` (a threshold/path/workspace-filtered
+  **snapshot** replayed from the broker log), `resources/subscribe`, `resources/unsubscribe`.
+  The `resources` capability (`subscribe:true`) is advertised in `initialize` only when enabled;
+  when disabled the methods return method-not-found.
+- **Threshold-gated scoped SSE** (`transport/http.go`): `GET /mcp?subscription=<id>` resolves the
+  subscription via a new `WithSubscriptionResolver` option and streams **only** matching spike
+  events (unknown id → 404). Added as a variadic option rather than a 8th positional param
+  (respects TD-02).
+- **Config:** `CWSO_AST_SPIKE_RESOURCES_ENABLED` (default false) gates registry construction +
+  tool registration + capability + SSE resolver.
+- 20 new unit tests across dispatch (filter matrix), tools (tool contract), server (capability,
+  routing, list/read/subscribe lifecycle, threshold-gated snapshot), transport (scoped SSE filter,
+  404 paths), and config. Full suite + `go test -race` + gofmt + vet green.
+
+Next (**T118**): wire a concrete write-event feeder (`write_shadow_file` → `ASTWriteSpikeMonitor` +
+`ASTSpikeFilter`, config-gated) so live edits drive the stream end-to-end; eBPF/fs-watch sources
+remain a later option. Brief: `task-T117.md`.
