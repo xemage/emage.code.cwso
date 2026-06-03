@@ -141,12 +141,20 @@ cannot open files, sockets, or clocks beyond the host-provided deadline.
 | Active ID | Roadmap | Title | Owner | Pri | Depends |
 |-----------|---------|-------|-------|-----|---------|
 | **T119** | T090 | This design + security envelope review (sandbox T0 tier) | solution-architect | P0 | T089 |
-| T120 | T091 | Rust `cwso-sparse` sidecar: wasmtime host + native ternary GEMM host-call + UDS protocol | backend-developer | P0 | T119 |
+| T120 | T091 | Rust `cwso-sparse` sidecar: deterministic ternary GEMM host-call + UDS protocol | backend-developer | P0 | T119 |
 | T121 | T092 | Pruned skill-slice (`.cwsl`) packaging + COW mmap loader + SHA-256 pinning | backend-developer | P1 | T120 |
 | T122 | T093 | `create_ephemeral_sparse_agent` MCP tool + schema + `cwso://agents/{id}/telemetry` | backend-developer | P0 | T120, T121 |
 | T123 | T094 | Quality-floor guardrail → dense GPU escalation (reuse `quality_guardrail_autodisable`) | backend-developer | P0 | T122 |
 | T124 | T098 | Phase 7 integration QA (cold start < 10 ms, 0% idle CPU, escalation) | qa-engineer | P0 | T118, T123 |
 | T125 | T099 | Phase 7 Tech-Lead + Security gate | tech-lead / security-engineer | P0 | T124 |
+
+> **Delivery note (T120, 2026-06-03):** T120 shipped the `cwso-sparse` sidecar + UDS protocol +
+> the deterministic native ternary GEMM kernel and its bounds-checked `ternary_gemm` host-call.
+> The **wasmtime module-instantiation envelope** (instantiating the sandboxed orchestration module
+> that drives the kernel) is folded into **T122** (agent lifecycle), where it is first exercised —
+> this keeps the heavy `wasmtime` dependency in a single, separately-reviewable change rather than
+> landing it before any agent runs. The security envelope (§9) is unchanged: the host-call surface
+> is still exactly `{ternary_gemm}`.
 
 ## 11. Risks & mitigations (blueprint §7)
 

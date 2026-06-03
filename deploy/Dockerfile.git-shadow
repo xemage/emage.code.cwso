@@ -10,6 +10,7 @@ COPY services/Cargo.toml ./Cargo.toml
 COPY services/cwso-git-shadow ./cwso-git-shadow
 COPY services/cwso-merge-engine ./cwso-merge-engine
 COPY services/cwso-hal ./cwso-hal
+COPY services/cwso-sparse ./cwso-sparse
 RUN cargo build --release -p cwso-git-shadow
 
 FROM debian:bookworm-slim

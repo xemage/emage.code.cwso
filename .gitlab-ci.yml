@@ -100,6 +100,7 @@ rust:test:
     - cargo test --release -p cwso-git-shadow
     - cargo test --release -p cwso-merge-engine
     - cargo test --release -p cwso-hal
+    - cargo test --release -p cwso-sparse
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH

@@ -1,5 +1,5 @@
 [workspace]
-members = ["cwso-git-shadow", "cwso-merge-engine", "cwso-hal"]
+members = ["cwso-git-shadow", "cwso-merge-engine", "cwso-hal", "cwso-sparse"]
 resolver = "2"
 
 [workspace.package]
