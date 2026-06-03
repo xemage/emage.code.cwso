@@ -17,6 +17,55 @@ func TestLoadASTSpikeResourcesEnabled(t *testing.T) {
 	}
 }
 
+func TestLoadASTSpikeMonitorDefaults(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ASTSpikeMonitorEnabled {
+		t.Fatal("expected ast spike monitor disabled by default")
+	}
+	if c.ASTSpikeWindowMS != 1000 || c.ASTSpikeThreshold != 8 {
+		t.Fatalf("unexpected monitor defaults: window=%d threshold=%d", c.ASTSpikeWindowMS, c.ASTSpikeThreshold)
+	}
+	if c.ASTSpikeSemanticThreshold != "signature_change" {
+		t.Fatalf("expected default semantic threshold signature_change, got %q", c.ASTSpikeSemanticThreshold)
+	}
+}
+
+func TestLoadASTSpikeMonitorEnabled(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_AST_SPIKE_MONITOR_ENABLED", "true")
+	t.Setenv("CWSO_AST_SPIKE_THRESHOLD", "3")
+	t.Setenv("CWSO_AST_SPIKE_SEMANTIC_THRESHOLD", "any")
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.ASTSpikeMonitorEnabled || c.ASTSpikeThreshold != 3 || c.ASTSpikeSemanticThreshold != "any" {
+		t.Fatalf("unexpected monitor config: %+v", c)
+	}
+}
+
+func TestLoadASTSpikeMonitorRejectsBadThreshold(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_AST_SPIKE_MONITOR_ENABLED", "true")
+	t.Setenv("CWSO_AST_SPIKE_SEMANTIC_THRESHOLD", "bogus")
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected error for invalid semantic threshold")
+	}
+}
+
+func TestLoadASTSpikeMonitorRejectsNonPositiveWindow(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_AST_SPIKE_MONITOR_ENABLED", "true")
+	t.Setenv("CWSO_AST_SPIKE_WINDOW_MS", "0")
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected error for non-positive window")
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("CWSO_TRANSPORT", "stdio")
 	c, err := Load("")

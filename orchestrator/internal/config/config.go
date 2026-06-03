@@ -56,6 +56,16 @@ type Config struct {
 	HHDEventMonitorEBPF         bool     // prefer eBPF signal path when capabilities permit (falls back automatically)
 	HHDEventMonitorLatencyMS    int      // anomaly threshold for actual latency in milliseconds
 	ASTSpikeResourcesEnabled    bool     // enable subscribe_ast_spikes tool + cwso://spikes MCP resources (Phase 7 / T117)
+	ASTSpikeMonitorEnabled      bool     // enable the AST write-spike monitor+filter fed by write_shadow_file (Phase 7 / T118)
+	ASTSpikePreferEBPF          bool     // prefer eBPF signal path for AST spike detection (falls back to userspace)
+	ASTSpikeWindowMS            int      // sliding window for write-volume spike detection
+	ASTSpikeThreshold           int      // write count within the window that constitutes a volume spike
+	ASTSpikeDebounceMS          int      // suppress repeat volume spikes within this interval (0 = window)
+	ASTSpikeMaxHotPaths         int      // max hot paths reported in a volume spike event
+	ASTSpikeSemanticThreshold   string   // min semantic significance to emit: signature_change|symbol_added|symbol_removed|any
+	ASTSpikeConflictWindowMS    int      // correlation window for cross-workspace semantic-conflict pre-warnings
+	ASTSpikeSignatureTTLMS      int      // TTL for the per-symbol signature memory used by the semantic filter
+	ASTSpikeMaxConflictPeers    int      // max peer workspaces listed in a conflict pre-warning
 	HHDSnapshotTTLSeconds       int      // stale capability threshold for policy-facing snapshots
 	HHDPolicyEngineV2           bool     // enable policy engine v2 backend selection and fallback
 	HHDHardwareAwareDispatch    bool     // enable dispatch_hardware_aware_job tool + shadow provider catalog (Phase 6)
@@ -143,6 +153,16 @@ func Load(_ string) (*Config, error) {
 		HHDEventMonitorEBPF:         envBool("CWSO_HHD_EVENT_MONITOR_EBPF_ENABLED", false),
 		HHDEventMonitorLatencyMS:    envInt("CWSO_HHD_EVENT_MONITOR_LATENCY_THRESHOLD_MS", 1200),
 		ASTSpikeResourcesEnabled:    envBool("CWSO_AST_SPIKE_RESOURCES_ENABLED", false),
+		ASTSpikeMonitorEnabled:      envBool("CWSO_AST_SPIKE_MONITOR_ENABLED", false),
+		ASTSpikePreferEBPF:          envBool("CWSO_AST_SPIKE_EBPF_ENABLED", false),
+		ASTSpikeWindowMS:            envInt("CWSO_AST_SPIKE_WINDOW_MS", 1000),
+		ASTSpikeThreshold:           envInt("CWSO_AST_SPIKE_THRESHOLD", 8),
+		ASTSpikeDebounceMS:          envInt("CWSO_AST_SPIKE_DEBOUNCE_MS", 0),
+		ASTSpikeMaxHotPaths:         envInt("CWSO_AST_SPIKE_MAX_HOT_PATHS", 5),
+		ASTSpikeSemanticThreshold:   strings.ToLower(strings.TrimSpace(envOr("CWSO_AST_SPIKE_SEMANTIC_THRESHOLD", "signature_change"))),
+		ASTSpikeConflictWindowMS:    envInt("CWSO_AST_SPIKE_CONFLICT_WINDOW_MS", 2000),
+		ASTSpikeSignatureTTLMS:      envInt("CWSO_AST_SPIKE_SIGNATURE_TTL_MS", 30000),
+		ASTSpikeMaxConflictPeers:    envInt("CWSO_AST_SPIKE_MAX_CONFLICT_PEERS", 8),
 		HHDSnapshotTTLSeconds:       envInt("CWSO_HHD_CAPABILITY_SNAPSHOT_TTL_SECONDS", 30),
 		HHDPolicyEngineV2:           envBool("CWSO_HHD_POLICY_ENGINE_V2_ENABLED", false),
 		HHDHardwareAwareDispatch:    envBool("CWSO_HHD_HARDWARE_AWARE_DISPATCH_ENABLED", false),
@@ -192,6 +212,25 @@ func Load(_ string) (*Config, error) {
 	}
 	if c.HHDEventMonitorLatencyMS <= 0 {
 		return nil, fmt.Errorf("CWSO_HHD_EVENT_MONITOR_LATENCY_THRESHOLD_MS must be > 0")
+	}
+	if c.ASTSpikeMonitorEnabled {
+		switch c.ASTSpikeSemanticThreshold {
+		case "signature_change", "symbol_added", "symbol_removed", "any":
+		default:
+			return nil, fmt.Errorf("CWSO_AST_SPIKE_SEMANTIC_THRESHOLD must be one of: signature_change, symbol_added, symbol_removed, any")
+		}
+		if c.ASTSpikeWindowMS <= 0 {
+			return nil, fmt.Errorf("CWSO_AST_SPIKE_WINDOW_MS must be > 0")
+		}
+		if c.ASTSpikeThreshold <= 0 {
+			return nil, fmt.Errorf("CWSO_AST_SPIKE_THRESHOLD must be > 0")
+		}
+		if c.ASTSpikeConflictWindowMS <= 0 {
+			return nil, fmt.Errorf("CWSO_AST_SPIKE_CONFLICT_WINDOW_MS must be > 0")
+		}
+		if c.ASTSpikeSignatureTTLMS <= 0 {
+			return nil, fmt.Errorf("CWSO_AST_SPIKE_SIGNATURE_TTL_MS must be > 0")
+		}
 	}
 	if c.HHDTelemetryRequestIDMode != "allow" && c.HHDTelemetryRequestIDMode != "hash" && c.HHDTelemetryRequestIDMode != "drop" {
 		return nil, fmt.Errorf("CWSO_HHD_TELEMETRY_REQUEST_ID_MODE must be one of: allow, hash, drop")
