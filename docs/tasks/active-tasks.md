@@ -24,7 +24,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T115 | AST write-spike monitor (generalize `anomaly_monitor`) + userspace fallback | backend-developer | done | P0 | T089 | 2026-06-03 |
 | T116 | Spike filter (semantic classifier) + semantic-conflict pre-warning | backend-developer | done | P1 | T115 | 2026-06-03 |
 | T117 | `subscribe_ast_spikes` MCP Resources layer (SSE, threshold-gated) | backend-developer | in_review | P1 | T116 | 2026-06-03 |
-| T118 | AST write-event feeder wiring (`write_shadow_file` → monitor/filter) | backend-developer | pending | P1 | T117 | 2026-06-03 |
+| T118 | AST write-event feeder wiring (`write_shadow_file` → monitor/filter) | backend-developer | in_review | P1 | T117 | 2026-06-03 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -290,3 +290,34 @@ the server (previously tools-only):
 Next (**T118**): wire a concrete write-event feeder (`write_shadow_file` → `ASTWriteSpikeMonitor` +
 `ASTSpikeFilter`, config-gated) so live edits drive the stream end-to-end; eBPF/fs-watch sources
 remain a later option. Brief: `task-T117.md`.
+
+### T118 (in review) — AST write-event feeder (`write_shadow_file` → monitor/filter)
+
+> **Phase 7 (Feature C, runtime feeder half of roadmap T097).** Active T118. Depends on T117.
+
+Landed on `feature/T118-ast-write-event-feeder`. Lights up the T115/T116 monitors with a real
+in-process write source so the T117 `cwso://spikes` resources stream live edits end-to-end:
+
+- **`dispatch.WriteEventSink` + `NewWriteEventFanout`** (`write_event_sink.go`): one write feeds
+  both the volume monitor (`ASTWriteSpikeMonitor`) and the semantic filter (`ASTSpikeFilter`);
+  nil sinks drop out, a failing sink doesn't starve the others.
+- **`write_shadow_file` feeder:** `NewWriteShadowFileWithObserver` emits a `dispatch.WriteEvent`
+  after each *successful* write (failed writes never feed). Language is derived from the file
+  extension (Go/Python/Rust/TS/JS, matching `query_ast`). **Symbol surface is approximated by
+  the file path and the signature by a content SHA-256** — so the volume monitor sees real
+  write rates, and the semantic filter detects content changes (`signature_change`) and
+  cross-workspace edits to the same file (conflict pre-warning). AST-symbol-level extraction
+  (via `query_ast`) is the documented next refinement.
+- **Server wiring + config:** `buildASTWriteSink` constructs monitor+filter (sharing the HHD
+  telemetry redaction policy) when `CWSO_AST_SPIKE_MONITOR_ENABLED=true`, and
+  `registerShadowTools` injects the sink into `write_shadow_file`. New
+  `CWSO_AST_SPIKE_{WINDOW_MS,THRESHOLD,DEBOUNCE_MS,MAX_HOT_PATHS,SEMANTIC_THRESHOLD,
+  CONFLICT_WINDOW_MS,SIGNATURE_TTL_MS,MAX_CONFLICT_PEERS,EBPF_ENABLED}` knobs with validation.
+- 11 new unit tests (observer fires/doesn't-fire on success/failure, language detection,
+  fanout delivery/nil-drop/error-continue, fanout-through-real-stages, config defaults +
+  validation, and a server end-to-end test: 3 worker `write_shadow_file` calls → `ast/spike`
+  on the broker). Full suite + `go test -race` + gofmt + vet green.
+
+Feature C is now wired end-to-end (write → spike topics → `cwso://spikes` resources). Remaining
+Phase 7 work: real eBPF/fs-watch write sources and the sparse-model scorer (scorer seam already
+in place). Brief: `task-T118.md`.

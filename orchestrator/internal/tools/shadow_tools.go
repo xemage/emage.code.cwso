@@ -13,10 +13,16 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"path"
+	"strings"
+	"time"
 
+	"github.com/emage/cwso/orchestrator/internal/dispatch"
 	"github.com/emage/cwso/orchestrator/internal/mcp"
 	"github.com/emage/cwso/orchestrator/internal/shadow"
 )
@@ -203,11 +209,24 @@ func (t *ReadShadowFile) Execute(_ context.Context, args json.RawMessage) (*mcp.
 // --- write_shadow_file ---
 
 // WriteShadowFile writes a file into a shadow workspace.
-type WriteShadowFile struct{ shadowTool }
+//
+// When an observer is attached (T118), each successful write also emits a
+// dispatch.WriteEvent so the AST write-spike monitor + semantic filter (T115/T116) observe
+// live edits. This is the in-process write-event feeder for the spiking AST monitors.
+type WriteShadowFile struct {
+	shadowTool
+	observer dispatch.WriteEventSink
+}
 
-// NewWriteShadowFile constructs the tool.
+// NewWriteShadowFile constructs the tool without a write-event feeder.
 func NewWriteShadowFile(c *shadow.Client) *WriteShadowFile {
-	return &WriteShadowFile{shadowTool{client: c}}
+	return &WriteShadowFile{shadowTool: shadowTool{client: c}}
+}
+
+// NewWriteShadowFileWithObserver constructs the tool wired to a write-event sink so
+// successful writes feed the AST spike monitors.
+func NewWriteShadowFileWithObserver(c *shadow.Client, observer dispatch.WriteEventSink) *WriteShadowFile {
+	return &WriteShadowFile{shadowTool: shadowTool{client: c}, observer: observer}
 }
 
 // Name returns the MCP tool name.
@@ -259,7 +278,51 @@ func (t *WriteShadowFile) Execute(_ context.Context, args json.RawMessage) (*mcp
 	}, &out); err != nil {
 		return mcp.TextError(err.Error()), nil
 	}
+	t.feedWriteEvent(p.WorkspaceUUID, p.Path, p.Content)
 	return mcp.TextResult(fmt.Sprintf("wrote %d bytes (blob %s)", out.Size, out.BlobOID)), nil
+}
+
+// feedWriteEvent notifies the AST spike monitors of a successful write. The symbol surface
+// is approximated by the file path and the signature by a content hash: this gives the
+// volume monitor real write events and lets the semantic filter detect content changes and
+// cross-workspace edits to the same file. AST-symbol-level extraction (via query_ast) is a
+// later refinement; until then "symbol = file path" is a deliberate, documented PoC choice.
+func (t *WriteShadowFile) feedWriteEvent(workspace, filePath, content string) {
+	if t.observer == nil {
+		return
+	}
+	_ = t.observer.ObserveWrite(dispatch.WriteEvent{
+		Workspace:     workspace,
+		Path:          filePath,
+		Language:      languageFromPath(filePath),
+		At:            time.Now().UTC(),
+		Symbol:        filePath,
+		SignatureHash: contentSignature(content),
+	})
+}
+
+// languageFromPath maps a file extension to a tree-sitter language tag (matching the
+// languages query_ast supports). Unknown extensions return "".
+func languageFromPath(p string) string {
+	switch strings.ToLower(path.Ext(p)) {
+	case ".go":
+		return "go"
+	case ".py":
+		return "python"
+	case ".rs":
+		return "rust"
+	case ".ts", ".tsx":
+		return "typescript"
+	case ".js", ".jsx":
+		return "javascript"
+	default:
+		return ""
+	}
+}
+
+func contentSignature(content string) string {
+	sum := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(sum[:])
 }
 
 // --- commit_shadow ---

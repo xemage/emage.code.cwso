@@ -41,6 +41,7 @@ type Server struct {
 	emitter   *dispatch.DecisionEmitter
 	capSyncer *dispatch.CapabilitySyncer
 	spikeSubs *dispatch.SpikeSubscriptionRegistry
+	astSink   dispatch.WriteEventSink
 }
 
 // New constructs and initializes a Server with all Phase 1 tools registered.
@@ -265,10 +266,12 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 		spikeSubs = dispatch.NewSpikeSubscriptionRegistry()
 	}
 
+	astSink := buildASTWriteSink(cfg, publisher, log)
+
 	s := &Server{
 		cfg: cfg, log: log, registry: tools.NewRegistry(), bus: bus, memory: broker,
 		publisher: publisher, jobs: jobMgr, runner: baselineRunner, caps: capRegistry, emitter: telemetryEmitter,
-		spikeSubs: spikeSubs,
+		spikeSubs: spikeSubs, astSink: astSink,
 	}
 	if err := s.registerBaselineTools(); err != nil {
 		jobMgr.Close()
@@ -406,13 +409,51 @@ func (s *Server) registerMergeTools(socket string) error {
 	return nil
 }
 
+// buildASTWriteSink constructs the AST write-spike monitor + semantic filter and fans them
+// into a single sink that the write_shadow_file feeder drives (T118). Returns nil when the
+// monitor is disabled, so no feeder is attached. Both stages publish to the broker spike
+// topics consumed by the T117 cwso://spikes resources.
+func buildASTWriteSink(cfg *config.Config, publisher *memorybroker.TeePublisher, log *logging.Logger) dispatch.WriteEventSink {
+	if !cfg.ASTSpikeMonitorEnabled {
+		return nil
+	}
+	redaction := dispatch.TelemetryRedactionConfig{
+		Enabled:          cfg.HHDTelemetryRedaction,
+		RequestIDMode:    cfg.HHDTelemetryRequestIDMode,
+		AnomalyNotesMode: cfg.HHDTelemetryAnomalyNotes,
+		RequestIDSalt:    cfg.HHDTelemetryRedactionSalt,
+	}
+	monitor := dispatch.NewASTWriteSpikeMonitor(publisher, dispatch.ASTWriteSpikeMonitorConfig{
+		PreferEBPF:  cfg.ASTSpikePreferEBPF,
+		WindowMS:    cfg.ASTSpikeWindowMS,
+		Threshold:   cfg.ASTSpikeThreshold,
+		DebounceMS:  cfg.ASTSpikeDebounceMS,
+		MaxHotPaths: cfg.ASTSpikeMaxHotPaths,
+		Redaction:   redaction,
+	})
+	filter := dispatch.NewASTSpikeFilter(publisher, dispatch.ASTSpikeFilterConfig{
+		PreferEBPF:        cfg.ASTSpikePreferEBPF,
+		SemanticThreshold: dispatch.SpikeKind(cfg.ASTSpikeSemanticThreshold),
+		ConflictWindowMS:  cfg.ASTSpikeConflictWindowMS,
+		SignatureTTLMS:    cfg.ASTSpikeSignatureTTLMS,
+		MaxConflictPeers:  cfg.ASTSpikeMaxConflictPeers,
+		Redaction:         redaction,
+	})
+	log.Info().Msg("ast spike monitor enabled: write_shadow_file feeds volume monitor + semantic filter")
+	return dispatch.NewWriteEventFanout(monitor, filter)
+}
+
 func (s *Server) registerShadowTools(socket string) error {
 	client := shadow.NewClient(socket)
+	writeTool := tools.Tool(tools.NewWriteShadowFile(client))
+	if s.astSink != nil {
+		writeTool = tools.NewWriteShadowFileWithObserver(client, s.astSink)
+	}
 	for _, t := range []tools.Tool{
 		tools.NewCreateShadowWorkspace(client),
 		tools.NewDropShadowWorkspace(client),
 		tools.NewReadShadowFile(client),
-		tools.NewWriteShadowFile(client),
+		writeTool,
 		tools.NewCommitShadow(client),
 		tools.NewQueryAST(client),
 	} {
