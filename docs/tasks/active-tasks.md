@@ -28,7 +28,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T119 | Sparse Wasm micro-agent sandbox tier design + security envelope review | solution-architect | done | P0 | T089 | 2026-06-03 |
 | T120 | Rust `cwso-sparse` sidecar: deterministic ternary GEMM kernel + UDS protocol | backend-developer | done | P0 | T119 | 2026-06-03 |
 | T121 | `.cwsl` pruned-slice container + COW mmap loader + SHA-256 pinning | backend-developer | done | P1 | T120 | 2026-06-03 |
-| T122 | `create_ephemeral_sparse_agent` MCP tool + wasmtime lifecycle + agent telemetry resource | backend-developer | in_review | P0 | T120, T121 | 2026-06-03 |
+| T122 | `create_ephemeral_sparse_agent` MCP tool + wasmtime lifecycle + agent telemetry resource | backend-developer | done | P0 | T120, T121 | 2026-06-04 |
+| T123 | Quality-floor guardrail → dense GPU escalation (reuse `quality_guardrail_autodisable`) | backend-developer | in_review | P0 | T122 | 2026-06-04 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -406,7 +407,7 @@ share one resident copy of a pruned skill slice:
 Next (**T122**): `create_ephemeral_sparse_agent` MCP tool + wasmtime instantiation +
 `cwso://agents/{id}/telemetry`, consuming this loader. Brief: `task-T121.md`.
 
-### T122 (in review) — `create_ephemeral_sparse_agent` + wasmtime lifecycle + agent telemetry
+### T122 (done) — `create_ephemeral_sparse_agent` + wasmtime lifecycle + agent telemetry
 
 > **Phase 7 (Feature B). Active T122 = roadmap placeholder T093.** Depends on T120, T121.
 
@@ -431,5 +432,19 @@ the orchestrator MCP surface through the `cwso-sparse` sidecar:
   `CWSO_SPARSE_AGENTS_ENABLED`, `CWSO_SPARSE_SOCKET`, `CWSO_SPARSE_HOST_RAM_CAP_MB`.
 - 26 Rust + new Go unit tests; full orchestrator suite green.
 
-Next (**T123**): quality-floor guardrail → dense GPU escalation (reuse
-`quality_guardrail_autodisable`). Brief: `task-T122.md`.
+Brief: `task-T122.md`.
+
+### T123 (in review) — Quality-floor guardrail → dense GPU escalation
+
+> **Phase 7 (Feature B). Active T123 = roadmap placeholder T094.** Depends on T122.
+
+Landed on `feature/T123-quality-floor-escalation`. When `CWSO_SPARSE_QUALITY_GUARDRAIL_ENABLED=true`
+and policy/capability registry are configured, `create_ephemeral_sparse_agent` accepts optional
+`quality_floor` (0..1). A breach below `CWSO_HHD_SPARSE_QUANTIZED_QUALITY_GUARDRAIL_MIN_SCORE`
+skips sparse instantiation and returns `escalated: true` with
+`reason_code: quality_guardrail_autodisable`, selecting a dense GPU provider via
+`SelectDenseGPUEscalation` (sparse/quantized assist off). When HAL + jobs are wired, a hardware-aware
+inference job is enqueued on the selected provider. Shared helper `QualityGuardrailBreached` is
+also used by `policy_engine_v2` sparse-quantized autodisable.
+
+Next (**T124**): Phase 7 integration QA (cold start, 0% idle CPU, escalation). Brief: `task-T123.md`.

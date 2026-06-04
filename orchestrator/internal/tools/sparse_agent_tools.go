@@ -15,10 +15,11 @@ import (
 // CreateEphemeralSparseAgent instantiates a wasmtime-backed sparse micro-agent over a pinned
 // skill slice (T122 / ADR-008).
 type CreateEphemeralSparseAgent struct {
-	client   *sparse.Client
-	registry *dispatch.SparseAgentRegistry
-	pub      memorybroker.Publisher
-	hostCap  int
+	client    *sparse.Client
+	registry  *dispatch.SparseAgentRegistry
+	pub       memorybroker.Publisher
+	hostCap   int
+	guardrail *SparseAgentGuardrail
 }
 
 // NewCreateEphemeralSparseAgent wires the tool to the sparse sidecar and telemetry publisher.
@@ -31,6 +32,14 @@ func NewCreateEphemeralSparseAgent(
 	return &CreateEphemeralSparseAgent{
 		client: client, registry: registry, pub: pub, hostCap: hostRAMCapMB,
 	}
+}
+
+// WithSparseQualityGuardrail enables quality-floor breach → dense GPU escalation (T123).
+func (t *CreateEphemeralSparseAgent) WithSparseQualityGuardrail(g *SparseAgentGuardrail) *CreateEphemeralSparseAgent {
+	if t != nil {
+		t.guardrail = g
+	}
+	return t
 }
 
 func (t *CreateEphemeralSparseAgent) Name() string { return "create_ephemeral_sparse_agent" }
@@ -62,6 +71,16 @@ func (t *CreateEphemeralSparseAgent) InputSchema() map[string]any {
 				"minimum":     1,
 				"description": "Hard RAM cap for the agent sandbox (default 512).",
 			},
+			"quality_floor": map[string]any{
+				"type":        "number",
+				"minimum":     0,
+				"maximum":     1,
+				"description": "Optional observed quality score; breach escalates to dense GPU via HAL.",
+			},
+			"task_description": map[string]any{
+				"type":        "string",
+				"description": "Optional prompt for dense GPU escalation when quality_floor breaches.",
+			},
 		},
 		"required": []string{"skill_domain"},
 	}
@@ -74,10 +93,12 @@ func (t *CreateEphemeralSparseAgent) Execute(ctx context.Context, args json.RawM
 		return mcp.TextError("sparse micro-agents are not enabled on this server"), nil
 	}
 	var p struct {
-		TargetASTNode string `json:"target_ast_node"`
-		SkillDomain   string `json:"skill_domain"`
-		Quantization  string `json:"quantization"`
-		MaxRAMMB      int    `json:"max_ram_mb"`
+		TargetASTNode   string   `json:"target_ast_node"`
+		SkillDomain     string   `json:"skill_domain"`
+		Quantization    string   `json:"quantization"`
+		MaxRAMMB        int      `json:"max_ram_mb"`
+		QualityFloor    *float64 `json:"quality_floor,omitempty"`
+		TaskDescription string   `json:"task_description"`
 	}
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &p); err != nil {
@@ -100,6 +121,17 @@ func (t *CreateEphemeralSparseAgent) Execute(ctx context.Context, args json.RawM
 	}
 	if t.hostCap > 0 && maxRAM > t.hostCap {
 		return mcp.TextError(fmt.Sprintf("max_ram_mb %d exceeds host cap %d", maxRAM, t.hostCap)), nil
+	}
+	if p.QualityFloor != nil && (*p.QualityFloor < 0 || *p.QualityFloor > 1) {
+		return mcp.TextError("quality_floor must be between 0 and 1"), nil
+	}
+	if t.guardrail != nil && t.guardrail.breach(p.QualityFloor) {
+		out, escErr := t.guardrail.escalate(ctx, p.QualityFloor, p.TaskDescription)
+		if escErr != nil {
+			return mcp.TextError("quality guardrail escalation failed: " + escErr.Error()), nil
+		}
+		b, _ := json.Marshal(out)
+		return mcp.TextResult(string(b)), nil
 	}
 
 	var targetNode *string

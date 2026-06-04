@@ -21,6 +21,16 @@
       "type": "integer",
       "minimum": 1,
       "description": "Hard RAM cap for the agent sandbox (default 512)"
+    },
+    "quality_floor": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Optional observed quality score; when guardrail is enabled, breach escalates to dense GPU via HAL"
+    },
+    "task_description": {
+      "type": "string",
+      "description": "Optional prompt for dense GPU escalation when quality_floor breaches"
     }
   },
   "required": ["skill_domain"],
