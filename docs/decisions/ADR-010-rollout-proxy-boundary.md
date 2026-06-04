@@ -1,6 +1,6 @@
 # ADR-010 — Rollout proxy boundary and Polar-compatible substrate
 
-- **Status:** accepted (pending merge via T131)
+- **Status:** accepted (merged via T131 MR !40 → `2d40413`)
 - **Date:** 2026-06-04
 - **Decision-maker:** solution-architect
 - **Tasks:** T131 (design), T132–T138 (implementation + gate), T139 (release)

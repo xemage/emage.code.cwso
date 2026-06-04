@@ -11,6 +11,7 @@ COPY services/cwso-git-shadow ./cwso-git-shadow
 COPY services/cwso-merge-engine ./cwso-merge-engine
 COPY services/cwso-hal ./cwso-hal
 COPY services/cwso-sparse ./cwso-sparse
+COPY services/cwso-rollout ./cwso-rollout
 RUN cargo build --release -p cwso-merge-engine
 
 FROM debian:bookworm-slim
