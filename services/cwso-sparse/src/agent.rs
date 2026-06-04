@@ -378,6 +378,45 @@ mod tests {
     }
 
     #[test]
+    fn cold_start_warm_p95_under_budget() {
+        let dir = std::env::temp_dir().join(format!("cwsl-cold-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (manifest_path, _) = write_fixture_manifest(&dir);
+        let cfg = AgentConfig {
+            manifest_path: manifest_path.into(),
+            wasm_module_path: None,
+            wasm_expected_sha256: None,
+            host_ram_cap_mb: 512,
+        };
+        let reg = AgentRegistry::new(cfg).unwrap();
+
+        // Warm the shared engine + mmap'd slice (ADR-008: measure on warm slice).
+        let warm = reg
+            .create_agent("react-hooks", "1.58-bit", 128, None)
+            .unwrap();
+        reg.drop_agent(&warm.agent_id).unwrap();
+
+        const ITERS: usize = 50;
+        const BUDGET_MS: f64 = 10.0;
+        let mut samples = Vec::with_capacity(ITERS);
+        for _ in 0..ITERS {
+            let snap = reg
+                .create_agent("react-hooks", "1.58-bit", 128, None)
+                .unwrap();
+            samples.push(snap.cold_start_ms);
+            reg.drop_agent(&snap.agent_id).unwrap();
+        }
+        samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let p95 = samples[(samples.len() * 95) / 100];
+        assert!(
+            p95 < BUDGET_MS,
+            "cold_start_ms p95 {p95} exceeds {BUDGET_MS} ms budget (samples={samples:?})"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn create_rejects_unknown_domain_and_bad_quantization() {
         let dir = std::env::temp_dir().join(format!("cwsl-agent-bad-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();

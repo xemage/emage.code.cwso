@@ -1,6 +1,6 @@
 # Task T123 — Quality-floor guardrail → dense GPU escalation
 
-**Status:** in_review  
+**Status:** done  
 **Owner:** backend-developer  
 **Priority:** P0  
 **Depends on:** T122  
