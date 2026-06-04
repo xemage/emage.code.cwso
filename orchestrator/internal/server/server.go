@@ -553,12 +553,30 @@ func (s *Server) registerBaselineTools() error {
 		s.log.Info().Msg("ast spike resources enabled: subscribe_ast_spikes tool + cwso://spikes resources")
 	}
 	if s.sparseAgents != nil && s.cfg.SparseSocket != "" {
-		baseTools = append(baseTools, tools.NewCreateEphemeralSparseAgent(
+		sparseTool := tools.NewCreateEphemeralSparseAgent(
 			sparse.NewClient(s.cfg.SparseSocket),
 			s.sparseAgents,
 			s.publisher,
 			s.cfg.SparseHostRAMCapMB,
-		))
+		)
+		if s.cfg.SparseQualityGuardrailEnabled && s.caps != nil && s.cfg.HHDPolicyEngineV2 {
+			guardrail := &tools.SparseAgentGuardrail{
+				Enabled:   true,
+				MinScore:  s.cfg.HHDQualityGuardrailMinScore,
+				Policy:    policyCfg,
+				Snapshots: s.caps,
+				Jobs:      s.jobs,
+				Timeout:   time.Duration(s.cfg.JobTimeoutSeconds) * time.Second,
+			}
+			if s.cfg.HALSocket != "" {
+				guardrail.HAL = hal.NewClient(s.cfg.HALSocket)
+			}
+			sparseTool = sparseTool.WithSparseQualityGuardrail(guardrail)
+			s.log.Info().
+				Str("min_score", fmt.Sprintf("%g", s.cfg.HHDQualityGuardrailMinScore)).
+				Msg("sparse quality guardrail enabled: quality_floor breach escalates to dense GPU")
+		}
+		baseTools = append(baseTools, sparseTool)
 		s.log.Info().Str("socket", s.cfg.SparseSocket).Msg("sparse micro-agents enabled: create_ephemeral_sparse_agent + cwso://agents telemetry")
 	}
 	if s.cfg.HHDHardwareAwareDispatch && s.caps != nil {

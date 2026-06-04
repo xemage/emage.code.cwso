@@ -129,7 +129,7 @@ func (e *PolicyEngineV2) Select(snapshot CapabilitySnapshot, input PolicyInput) 
 
 	if e.shouldAutoDisableSparseQuantized(input) {
 		e.autoDisabled.Store(true)
-		return e.baselineDecision(snapshot.Epoch, e.cfg.PolicyVersion, "quality_guardrail_autodisable")
+		return e.baselineDecision(snapshot.Epoch, e.cfg.PolicyVersion, ReasonQualityGuardrailAutodisable)
 	}
 
 	assistActive := e.isSparseQuantizedActive()
@@ -430,10 +430,7 @@ func (e *PolicyEngineV2) shouldAutoDisableSparseQuantized(input PolicyInput) boo
 	if e == nil || !e.isSparseQuantizedActive() {
 		return false
 	}
-	if input.QualityScore == nil {
-		return false
-	}
-	return *input.QualityScore < e.cfg.SparseQuantized.QualityGuardrailMinScore
+	return QualityGuardrailBreached(input.QualityScore, e.cfg.SparseQuantized.QualityGuardrailMinScore)
 }
 
 func (e *PolicyEngineV2) isSparseQuantizedActive() bool {
