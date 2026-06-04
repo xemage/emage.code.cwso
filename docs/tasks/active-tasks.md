@@ -30,7 +30,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T121 | `.cwsl` pruned-slice container + COW mmap loader + SHA-256 pinning | backend-developer | done | P1 | T120 | 2026-06-03 |
 | T122 | `create_ephemeral_sparse_agent` MCP tool + wasmtime lifecycle + agent telemetry resource | backend-developer | done | P0 | T120, T121 | 2026-06-04 |
 | T123 | Quality-floor guardrail → dense GPU escalation (reuse `quality_guardrail_autodisable`) | backend-developer | done | P0 | T122 | 2026-06-04 |
-| T124 | Phase 7 integration QA (cold start < 10 ms, 0% idle CPU, escalation) | qa-engineer | in_review | P0 | T118, T123 | 2026-06-04 |
+| T124 | Phase 7 integration QA (cold start < 10 ms, 0% idle CPU, escalation) | qa-engineer | done | P0 | T118, T123 | 2026-06-04 |
+| T125 | Phase 7 Tech-Lead + Security gate (Feature B + C) | tech-lead / security-engineer | in_review | P0 | T124 | 2026-06-04 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -450,11 +451,11 @@ also used by `policy_engine_v2` sparse-quantized autodisable.
 
 Brief: `task-T123.md`.
 
-### T124 (in review) — Phase 7 integration QA (Feature B + C)
+### T124 (done) — Phase 7 integration QA (Feature B + C)
 
 > **Phase 7 QA gate input.** Active T124 = roadmap placeholder T098. Depends on T118, T123.
 
-In progress on `feature/T124-phase7-integration-qa`. Guards Phase 7 budgets:
+Landed on `feature/T124-phase7-integration-qa` (MR !33, merge `eb4aa45`). Guards Phase 7 budgets:
 
 - **Cold start `< 10 ms` (p95, warm slice):** `cwso-sparse` `cold_start_warm_p95_under_budget` +
   Go control-plane overhead budget tests.
@@ -463,4 +464,15 @@ In progress on `feature/T124-phase7-integration-qa`. Guards Phase 7 budgets:
 - **Quality-floor escalation:** server integration test exercises guardrail → dense HAL `infer`
   without sparse agent creation.
 
-Next (**T125**): Phase 7 Tech-Lead + Security gate. Brief: `task-T124.md`.
+QA report: `docs/artifacts/qa-phase7-report-v1.md`. CI pipeline #2575895437 green at `e964e1b`.
+
+### T125 (in review) — Phase 7 Tech-Lead + Security gate (Feature B + C)
+
+> **Phase 7 validation gate.** Active T125 = roadmap placeholder T099. Depends on T124.
+
+In review on `feature/T125-phase7-gate`. Gate artifacts:
+
+- **Tech-Lead + Security:** `docs/artifacts/gate-phase7-feature-bc-2026-06-04.md` — both **PASS**
+- **OWASP checklist:** `docs/artifacts/security-phase7-checklist-v1.md`
+
+Brief: `task-T125.md`.

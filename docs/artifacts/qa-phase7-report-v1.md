@@ -30,7 +30,7 @@ The Phase 7 stack meets its integration budgets when wired end-to-end:
 
 ## Verdict
 
-**PASS** (pending CI confirmation on MR).
+**PASS** — CI pipeline #2575895437 green at `e964e1b`; merged via MR !33 (`eb4aa45`).
 
 ## Notes
 
