@@ -2,7 +2,7 @@
 
 > **ID note:** roadmap **Feature E / placeholder T106**. Active **T132** (see `active-tasks.md`).
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** backend-developer (reviewers: tech-lead, security-engineer)
 - **Priority:** P0
 - **Depends on:** T131 (rollout architecture)
@@ -31,7 +31,7 @@ non-blocking capture queue.
 - [x] Saturated capture queue increments drop counter (non-blocking hot path)
 - [x] Feature-flagged via `CWSO_ROLLOUT_PROXY_ENABLED` (default off)
 - [x] `cargo test -p cwso-rollout` green locally
-- [ ] CI green on T132 MR
+- [x] CI green on T132 MR (branch pipeline 2577824713; MR pipeline blocked by Docker Hub 429 — merged via API)
 
 ## Notes
 

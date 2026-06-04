@@ -38,7 +38,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T129 | Sparse↔dense conflict-matrix conformance suite | qa-engineer | done | P0 | T128 | 2026-06-04 |
 | T130 | Phase 8 Tech-Lead gate + large-repo merge benchmark | tech-lead | done | P0 | T129 | 2026-06-04 |
 | T131 | Rollout architecture: proxy boundary + Polar REST API | solution-architect | done | P0 | T130 | 2026-06-04 |
-| T132 | Rust `hyper` reverse proxy + zero-copy capture | backend-developer | in_review | P0 | T131 | 2026-06-04 |
+| T132 | Rust `hyper` reverse proxy + zero-copy capture | backend-developer | done | P0 | T131 | 2026-06-04 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -547,11 +547,16 @@ Merged via MR !40 → `2d40413` on `develop`. Docs/architecture only; gates T132
 Brief: `task-T131.md`. Next (**T132**): Rust `hyper` reverse proxy + zero-copy capture in
 `cwso-rollout`. Brief: `task-T132.md`.
 
-### T132 (in_review) — Rust hyper reverse proxy + capture
+### T132 (done) — Rust hyper reverse proxy + capture
 
-Branch `feature/T132-rollout-hyper-proxy`. Implements `services/cwso-rollout`:
+Merged via MR !41 → `267922c` on `develop` (squash `0896f98`; feature tip `6f04fcd`).
+Implements `services/cwso-rollout`:
 
 - `hyper` reverse proxy for OpenAI/Anthropic/Google routes
 - Four-step capture pipeline (detect → normalize → forward+store → denormalize/synthetic SSE)
 - Framed-JSON UDS control plane + non-blocking `crossbeam-channel` capture queue
 - Unit/integration tests; wired into workspace `Cargo.toml` + CI `rust:test`
+- CI: branch pipeline https://gitlab.com/em-age/emage.code.cwso/-/pipelines/2577824713 green; MR
+  pipelines intermittently failed on Docker Hub 429 / DinD (no code defect).
+
+Brief: `task-T132.md`. Next (**T133**): trajectory builder. Brief: `task-T133.md`.
