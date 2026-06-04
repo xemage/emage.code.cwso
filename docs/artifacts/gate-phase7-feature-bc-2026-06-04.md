@@ -4,8 +4,9 @@
 **Based on:** `docs/artifacts/qa-phase7-report-v1.md`, `wasm-sparse-agent-design-v1.md`,
 `docs/decisions/ADR-008-wasm-sparse-agent-tier.md`, `task-T118`…`task-T124`
 **Date:** 2026-06-04
+**Gate MR:** !34 merged 2026-06-04 → `develop` @ `146f208` (branch tip `70019c3`, pipeline #2575994520)
 
-Scope reviewed (merged to `develop` via MRs !28–!33; T124 merge `eb4aa45`):
+Scope reviewed (merged to `develop` via MRs !28–!34; T124 merge `eb4aa45`, T125 merge `146f208`):
 
 - **Feature C (Go):** `ast_spike_monitor.go`, `ast_spike_filter.go`, `spike_subscriptions.go`,
   `write_event_sink.go`, `write_shadow_file` feeder, `ast_spike_tools.go`, MCP Resources +
@@ -107,3 +108,6 @@ spike pipeline is event-driven with optional redaction and orchestrator-gated MC
 **Phase 7 Features B + C are cleared to proceed** (PoC integration complete). Medium/low
 findings are non-blocking enhancements (AST symbol fidelity, Wasm semantic scorer, audit job
 hardening). No fix tasks required before closing T125.
+
+**Closure:** T125 closed with MR !34 merge to `develop` (`146f208`, 2026-06-04). Phase 8 (Feature D)
+kickoff: active **T126** (roadmap placeholder T100).

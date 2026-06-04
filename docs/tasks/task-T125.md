@@ -1,6 +1,6 @@
 # Task T125 — Phase 7 Tech-Lead + Security gate (Feature B + C)
 
-**Status:** in_review  
+**Status:** done  
 **Owner:** tech-lead / security-engineer  
 **Priority:** P0  
 **Depends on:** T124  
@@ -30,8 +30,8 @@ Review-only: no production code changes unless critical findings require fixes.
 - [x] Implementation gate verdict recorded with evidence-based findings table
 - [x] Security gate verdict recorded; ADR-008 §9 envelope controls verified
 - [x] Combined outcome documents whether Phase 7 Feature B + C may proceed
-- [x] Task board: T125 → `in_review` with MR link (merge deferred until user request)
-- [ ] MR CI pipeline green
+- [x] Task board: T125 → `done` with MR link
+- [x] MR !34 CI pipeline #2575994520 green at `70019c3`; merged to `develop` at `146f208` (2026-06-04)
 
 ## Notes
 

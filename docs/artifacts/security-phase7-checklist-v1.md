@@ -3,6 +3,7 @@
 **Based on:** ADR-008, `wasm-sparse-agent-design-v1.md` §9, `SECURITY.md`, OWASP Top 10  
 **Date:** 2026-06-04  
 **Sign-off:** security-engineer (T125) — complements `gate-phase7-feature-bc-2026-06-04.md`
+**Merged:** MR !34 → `develop` @ `146f208` (2026-06-04)
 
 | Control area | Requirement | Feature B (sparse) | Feature C (AST spikes) | Status |
 |--------------|-------------|--------------------|-------------------------|--------|
