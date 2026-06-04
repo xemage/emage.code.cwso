@@ -31,7 +31,12 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T122 | `create_ephemeral_sparse_agent` MCP tool + wasmtime lifecycle + agent telemetry resource | backend-developer | done | P0 | T120, T121 | 2026-06-04 |
 | T123 | Quality-floor guardrail → dense GPU escalation (reuse `quality_guardrail_autodisable`) | backend-developer | done | P0 | T122 | 2026-06-04 |
 | T124 | Phase 7 integration QA (cold start < 10 ms, 0% idle CPU, escalation) | qa-engineer | done | P0 | T118, T123 | 2026-06-04 |
-| T125 | Phase 7 Tech-Lead + Security gate (Feature B + C) | tech-lead / security-engineer | in_review | P0 | T124 | 2026-06-04 |
+| T125 | Phase 7 Tech-Lead + Security gate (Feature B + C) | tech-lead / security-engineer | done | P0 | T124 | 2026-06-04 |
+| T126 | Sparse AST tensor encoding spec (photonic-ready kernel contract) | solution-architect | in_review | P0 | T125 | 2026-06-04 |
+| T127 | AVX-512 / `std::simd` sparse diff kernel in cwso-merge-engine | backend-developer | pending | P0 | T126 | 2026-06-04 |
+| T128 | Sparse pre-filter integration (skip shared base subtrees) | backend-developer | pending | P0 | T127 | 2026-06-04 |
+| T129 | Sparse↔dense conflict-matrix conformance suite | qa-engineer | pending | P0 | T128 | 2026-06-04 |
+| T130 | Phase 8 Tech-Lead gate + large-repo merge benchmark | tech-lead | pending | P0 | T129 | 2026-06-04 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -60,6 +65,8 @@ already-completed control-plane work. Rule going forward:
     design artifact: roadmap **T091 → active T120**, **T092 → T121**, **T093 → T122**,
     **T094 → T123**, and the Phase 7 QA/gate **T098 → T124**, **T099 → T125**.
   - roadmap **Feature B / placeholder T093 (`create_ephemeral_sparse_agent`)** → **active T122**.
+  - roadmap **Feature D / placeholder T100 (sparse AST tensor encoding spec)** → **active T126**
+    (Phase 8 kickoff; implementation T127–T130 mapped in `sparse-ast-tensor-encoding-v1.md`).
 
 ## Phase 6 execution notes (2026-06-02)
 
@@ -466,13 +473,23 @@ Landed on `feature/T124-phase7-integration-qa` (MR !33, merge `eb4aa45`). Guards
 
 QA report: `docs/artifacts/qa-phase7-report-v1.md`. CI pipeline #2575895437 green at `e964e1b`.
 
-### T125 (in review) — Phase 7 Tech-Lead + Security gate (Feature B + C)
+### T125 (done) — Phase 7 Tech-Lead + Security gate (Feature B + C)
 
 > **Phase 7 validation gate.** Active T125 = roadmap placeholder T099. Depends on T124.
 
-In review on `feature/T125-phase7-gate`. Gate artifacts:
+Landed on `feature/T125-phase7-gate` (MR !34, merge `146f208` on `develop`). Gate artifacts:
 
 - **Tech-Lead + Security:** `docs/artifacts/gate-phase7-feature-bc-2026-06-04.md` — both **PASS**
 - **OWASP checklist:** `docs/artifacts/security-phase7-checklist-v1.md`
+- CI pipeline #2575994520 green at `70019c3`
 
-Brief: `task-T125.md`.
+**Phase 7 Features B + C are complete.** Brief: `task-T125.md`. Checkpoint:
+`docs/checkpoints/checkpoint-009-phase7-complete.md`.
+
+### T126 (in progress) — Sparse AST tensor encoding spec (Feature D kickoff)
+
+> **Phase 8 (Feature D — Semantic Sparse-Merging).** Active T126 = roadmap placeholder T100.
+> Depends on T125. Docs/architecture only; gates T127–T130 implementation.
+
+In review on `feature/T126-sparse-ast-encoding-spec`. Artifacts: ADR-009,
+`sparse-ast-tensor-encoding-v1.md`. Brief: `task-T126.md`. Next: **T127** (SIMD kernel).
