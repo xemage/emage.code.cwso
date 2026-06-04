@@ -2,7 +2,7 @@
 
 > **ID note:** roadmap **Feature D / placeholder T104**. Active **T130** (see `active-tasks.md`).
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** tech-lead / security-engineer
 - **Priority:** P0
 - **Depends on:** T129 (sparse↔dense conformance)
@@ -37,10 +37,11 @@ evidence for sparse pre-filter performance on mostly-unchanged corpora.
 - [x] Security gate verdict; ADR-009 determinism / no-I/O kernel verified
 - [x] Large-repo benchmark documents sparse vs dense median timing
 - [x] Combined outcome states whether Phase 8 Feature D may proceed
-- [ ] CI green on T130 MR
-- [ ] User approval before merge (gate protocol)
+- [x] CI green on T130 MR (pipeline #2577485639 at `d77d08c`)
+- [x] User approval before merge (gate protocol)
 
 ## Notes
 
 - Review-only gate; benchmark harness is test-only (`#[cfg(test)]` / `#[ignore]` manual bench).
 - Follows `validation-gates` skill (mirrors Phase 7 `gate-phase7-feature-bc-2026-06-04.md`).
+- **Merged:** GitLab MR !39 → `develop` (merge `7dc4e7a`, source `d77d08c`).

@@ -36,7 +36,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T127 | AVX-512 / `std::simd` sparse diff kernel in cwso-merge-engine | backend-developer | done | P0 | T126 | 2026-06-04 |
 | T128 | Sparse pre-filter integration (skip shared base subtrees) | backend-developer | done | P0 | T127 | 2026-06-04 |
 | T129 | Sparse↔dense conflict-matrix conformance suite | qa-engineer | done | P0 | T128 | 2026-06-04 |
-| T130 | Phase 8 Tech-Lead gate + large-repo merge benchmark | tech-lead | in_review | P0 | T129 | 2026-06-04 |
+| T130 | Phase 8 Tech-Lead gate + large-repo merge benchmark | tech-lead | done | P0 | T129 | 2026-06-04 |
+| T131 | Rollout architecture: proxy boundary + Polar REST API | solution-architect | in_review | P0 | T130 | 2026-06-04 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -67,6 +68,9 @@ already-completed control-plane work. Rule going forward:
   - roadmap **Feature B / placeholder T093 (`create_ephemeral_sparse_agent`)** → **active T122**.
   - roadmap **Feature D / placeholder T100 (sparse AST tensor encoding spec)** → **active T126**
     (Phase 8 kickoff; implementation T127–T130 mapped in `sparse-ast-tensor-encoding-v1.md`).
+  - roadmap **Feature E+F+G / placeholder T105 (rollout architecture)** → **active T131**
+    (Phase 9 kickoff; implementation T132–T138 mapped in `rollout-architecture-v1.md`;
+    release T113 → **active T139**).
 
 ## Phase 6 execution notes (2026-06-02)
 
@@ -516,3 +520,27 @@ Next: **T129** (sparse↔dense conformance).
 
 Landed via MR !38 → `develop` (`0977483`, squash `787c244`, source `5a94f67`, pipeline #2577297839).
 Brief: `task-T129.md`. Next: **T130** (Phase 8 Tech-Lead gate + benchmark).
+
+### T130 (done) — Phase 8 Tech-Lead gate + large-repo merge benchmark
+
+> **Phase 8 validation gate.** Active T130 = roadmap placeholder T104. Depends on T129.
+
+Landed via MR !39 → `develop` (merge `7dc4e7a`, source `d77d08c`, pipeline #2577485639). Gate artifacts:
+
+- **Tech-Lead + Security:** `docs/artifacts/gate-phase8-feature-d-2026-06-04.md` — both **PASS**
+- **OWASP checklist:** `docs/artifacts/security-phase8-checklist-v1.md`
+- **Benchmark:** `docs/benchmarks/phase8-large-repo-merge-benchmark-v1.md`
+
+**Phase 8 Feature D is complete.** Brief: `task-T130.md`. Checkpoint:
+`docs/checkpoints/checkpoint-010-phase8-complete.md`. Next: **T131** (Phase 9 rollout architecture).
+
+### T131 (in_review) — Rollout architecture (Feature E kickoff)
+
+> **Phase 9 (Rollout-as-a-Service).** Active T131 = roadmap placeholder T105. Depends on T130.
+
+Branch `feature/T131-rollout-architecture`. Docs/architecture only; gates T132–T138:
+
+- **ADR-010** + `rollout-architecture-v1.md` (proxy sidecar, trajectory builder, Polar REST API)
+- Schemas: `rollout_task_submit.json`, `rollout_task_status.json`
+
+Next (**T132**): Rust `hyper` reverse proxy + zero-copy capture in `cwso-rollout`. Brief: `task-T131.md`.
