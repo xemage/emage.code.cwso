@@ -2,7 +2,7 @@
 
 > **ID note:** roadmap **Feature D / placeholder T101**. Active **T127** (see `active-tasks.md`).
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** backend-developer
 - **Priority:** P0
 - **Depends on:** T126 (sparse AST tensor encoding spec)
@@ -28,10 +28,11 @@ with vectorized BLAKE3 digest comparison on x86_64 (AVX2 stable path; `std::simd
 - [x] Mask classes: `BothUnchanged`, `OursOnly`, `TheirsOnly`, `BothModified`, `DisjointInsert`
 - [x] SIMD hot path on x86_64 with scalar fallback
 - [x] `cargo test -p cwso-merge-engine` green
-- [ ] Merge-engine pre-filter hook (T128)
+- [x] Merge-engine pre-filter hook (T128 — follow-up MR)
 - [ ] Sparse↔dense conformance suite (T129)
 
 ## Notes
 
+- **Merged:** GitLab MR !36 → `develop` (`3a45f8a`; branch tips `f4f8392`, conflict resolution `5c76783`).
 - T128 wires the mask into `merge_three_way`; this task is kernel-only.
 - Rust 1.86: `std::simd` still unstable — AVX2 via `std::arch` satisfies the vectorization requirement until portable_simd stabilizes.

@@ -33,8 +33,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T124 | Phase 7 integration QA (cold start < 10 ms, 0% idle CPU, escalation) | qa-engineer | done | P0 | T118, T123 | 2026-06-04 |
 | T125 | Phase 7 Tech-Lead + Security gate (Feature B + C) | tech-lead / security-engineer | done | P0 | T124 | 2026-06-04 |
 | T126 | Sparse AST tensor encoding spec (photonic-ready kernel contract) | solution-architect | done | P0 | T125 | 2026-06-04 |
-| T127 | AVX-512 / `std::simd` sparse diff kernel in cwso-merge-engine | backend-developer | in_review | P0 | T126 | 2026-06-04 |
-| T128 | Sparse pre-filter integration (skip shared base subtrees) | backend-developer | pending | P0 | T127 | 2026-06-04 |
+| T127 | AVX-512 / `std::simd` sparse diff kernel in cwso-merge-engine | backend-developer | done | P0 | T126 | 2026-06-04 |
+| T128 | Sparse pre-filter integration (skip shared base subtrees) | backend-developer | in_review | P0 | T127 | 2026-06-04 |
 | T129 | Sparse↔dense conflict-matrix conformance suite | qa-engineer | pending | P0 | T128 | 2026-06-04 |
 | T130 | Phase 8 Tech-Lead gate + large-repo merge benchmark | tech-lead | pending | P0 | T129 | 2026-06-04 |
 
@@ -494,10 +494,18 @@ Landed on `feature/T125-phase7-gate` (MR !34, merge `146f208` on `develop`). Gat
 Landed via MR !35 (squash merge to `develop`, source `57aa2f4`). Artifacts: ADR-009,
 `sparse-ast-tensor-encoding-v1.md`. Brief: `task-T126.md`. Next: **T127** (SIMD kernel).
 
-### T127 (in review) — AVX2 sparse diff kernel in cwso-merge-engine
+### T127 (done) — AVX2 sparse diff kernel in cwso-merge-engine
 
 > **Phase 8 (Feature D).** Active T127 = roadmap placeholder T101. Depends on T126.
 
-In review on `feature/T127-sparse-diff-kernel`. Adds `sparse_tensor`, `sparse_diff`, and AVX2
-digest comparison in `services/cwso-merge-engine`. Brief: `task-T127.md`. Next: **T128**
-(pre-filter hook).
+Landed via MR !36 → `develop` (`3a45f8a`, source tip `f4f8392` / conflict merge `5c76783`).
+Adds `sparse_tensor`, `sparse_diff`, and AVX2 digest comparison in `services/cwso-merge-engine`.
+Brief: `task-T127.md`. Next: **T128** (pre-filter hook).
+
+### T128 (in review) — Sparse pre-filter in `merge_three_way`
+
+> **Phase 8 (Feature D).** Active T128 = roadmap placeholder T102. Depends on T127.
+
+In review on `feature/T128-sparse-diff-prefilter`. Wires `sparse_diff` before
+`resolve_base_decisions`; `BothUnchanged` rows skip per-side byte compare. Brief: `task-T128.md`.
+Next: **T129** (sparse↔dense conformance).

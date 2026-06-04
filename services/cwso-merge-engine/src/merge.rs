@@ -5,6 +5,8 @@ use tree_sitter::Node;
 
 use crate::parse;
 use crate::proto::MergeLanguage;
+use crate::sparse_diff::{sparse_diff, SparseDiffMask, SparseRowClass};
+use crate::sparse_tensor::encode_sparse_side;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum MergeError {
@@ -66,8 +68,9 @@ pub fn merge_three_way(
     let theirs_units = extract_top_level_units(language, theirs)?;
 
     let base_order: Vec<String> = base_units.iter().map(|u| u.key.clone()).collect();
-    let ours_diff = build_side_diff(&base_units, &ours_units);
-    let theirs_diff = build_side_diff(&base_units, &theirs_units);
+    let mask = sparse_prefilter_mask(&base_units, &ours_units, &theirs_units, &base_order);
+    let ours_diff = build_side_diff(&base_units, &ours_units, &mask, MergeSide::Ours);
+    let theirs_diff = build_side_diff(&base_units, &theirs_units, &mask, MergeSide::Theirs);
     let decisions = resolve_base_decisions(&base_units, &ours_diff.states, &theirs_diff.states)?;
     let merged_insertions = merge_insertions(&ours_diff.insertions, &theirs_diff.insertions)?;
     let merged = assemble_output(&base_order, &decisions, &merged_insertions);
@@ -155,7 +158,39 @@ fn extract_string_literal(text: &str) -> Option<String> {
     None
 }
 
-fn build_side_diff(base_units: &[AstUnit], side_units: &[AstUnit]) -> SideDiff {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MergeSide {
+    Ours,
+    Theirs,
+}
+
+fn units_to_map(units: &[AstUnit]) -> BTreeMap<String, Vec<u8>> {
+    units
+        .iter()
+        .map(|u| (u.key.clone(), u.text.clone()))
+        .collect()
+}
+
+fn sparse_prefilter_mask(
+    base_units: &[AstUnit],
+    ours_units: &[AstUnit],
+    theirs_units: &[AstUnit],
+    base_order: &[String],
+) -> SparseDiffMask {
+    let base_map = units_to_map(base_units);
+    let ours_map = units_to_map(ours_units);
+    let theirs_map = units_to_map(theirs_units);
+    let ours_sparse = encode_sparse_side(&base_map, &ours_map);
+    let theirs_sparse = encode_sparse_side(&base_map, &theirs_map);
+    sparse_diff(base_order, &ours_sparse, &theirs_sparse)
+}
+
+fn build_side_diff(
+    base_units: &[AstUnit],
+    side_units: &[AstUnit],
+    mask: &SparseDiffMask,
+    side: MergeSide,
+) -> SideDiff {
     let mut side_map: HashMap<String, Vec<u8>> = HashMap::new();
     for unit in side_units {
         side_map.insert(unit.key.clone(), unit.text.clone());
@@ -163,17 +198,17 @@ fn build_side_diff(base_units: &[AstUnit], side_units: &[AstUnit]) -> SideDiff {
 
     let mut states = HashMap::new();
     for base in base_units {
-        match side_map.get(&base.key) {
-            None => {
-                states.insert(base.key.clone(), NodeState::Deleted);
+        let state = match mask.get(&base.key) {
+            Some(SparseRowClass::BothUnchanged) => NodeState::Unchanged,
+            Some(SparseRowClass::OursOnly) if side == MergeSide::Theirs => NodeState::Unchanged,
+            Some(SparseRowClass::TheirsOnly) if side == MergeSide::Ours => NodeState::Unchanged,
+            Some(SparseRowClass::OursOnly | SparseRowClass::TheirsOnly | SparseRowClass::BothModified) => {
+                lookup_side_state(base, &side_map)
             }
-            Some(side_text) if *side_text == base.text => {
-                states.insert(base.key.clone(), NodeState::Unchanged);
-            }
-            Some(side_text) => {
-                states.insert(base.key.clone(), NodeState::Modified(side_text.clone()));
-            }
-        }
+            Some(SparseRowClass::DisjointInsert) => lookup_side_state(base, &side_map),
+            None => lookup_side_state(base, &side_map),
+        };
+        states.insert(base.key.clone(), state);
     }
 
     let mut base_key_set: HashMap<&str, usize> = HashMap::new();
@@ -199,6 +234,14 @@ fn build_side_diff(base_units: &[AstUnit], side_units: &[AstUnit]) -> SideDiff {
     }
 
     SideDiff { states, insertions }
+}
+
+fn lookup_side_state(base: &AstUnit, side_map: &HashMap<String, Vec<u8>>) -> NodeState {
+    match side_map.get(&base.key) {
+        None => NodeState::Deleted,
+        Some(side_text) if *side_text == base.text => NodeState::Unchanged,
+        Some(side_text) => NodeState::Modified(side_text.clone()),
+    }
 }
 
 fn find_anchor(
@@ -553,6 +596,85 @@ mod tests {
             )
             .expect_err("overlap must conflict");
             assert_eq!(err, MergeError::SemanticConflict);
+        }
+    }
+
+    #[test]
+    fn sparse_prefilter_seeds_unchanged_without_side_byte_compare() {
+        let base_units = vec![
+            AstUnit {
+                key: "function:left#1".into(),
+                text: b"fn left() {}".to_vec(),
+            },
+            AstUnit {
+                key: "function:middle#1".into(),
+                text: b"fn middle() {}".to_vec(),
+            },
+            AstUnit {
+                key: "function:right#1".into(),
+                text: b"fn right() {}".to_vec(),
+            },
+        ];
+        let ours_units = vec![
+            AstUnit {
+                key: "function:left#1".into(),
+                text: b"fn left() { 10 }".to_vec(),
+            },
+            AstUnit {
+                key: "function:middle#1".into(),
+                text: b"fn middle() {}".to_vec(),
+            },
+            AstUnit {
+                key: "function:right#1".into(),
+                text: b"fn right() {}".to_vec(),
+            },
+        ];
+        let theirs_units = vec![
+            AstUnit {
+                key: "function:left#1".into(),
+                text: b"fn left() {}".to_vec(),
+            },
+            AstUnit {
+                key: "function:middle#1".into(),
+                text: b"fn middle() {}".to_vec(),
+            },
+            AstUnit {
+                key: "function:right#1".into(),
+                text: b"fn right() { 20 }".to_vec(),
+            },
+        ];
+        let base_order: Vec<String> = base_units.iter().map(|u| u.key.clone()).collect();
+        let mask = sparse_prefilter_mask(&base_units, &ours_units, &theirs_units, &base_order);
+        assert_eq!(
+            mask.get("function:middle#1"),
+            Some(&SparseRowClass::BothUnchanged)
+        );
+        assert_eq!(mask.get("function:left#1"), Some(&SparseRowClass::OursOnly));
+        assert_eq!(mask.get("function:right#1"), Some(&SparseRowClass::TheirsOnly));
+
+        let ours_diff = build_side_diff(&base_units, &ours_units, &mask, MergeSide::Ours);
+        let theirs_diff = build_side_diff(&base_units, &theirs_units, &mask, MergeSide::Theirs);
+        assert!(matches!(
+            ours_diff.states.get("function:middle#1"),
+            Some(NodeState::Unchanged)
+        ));
+        assert!(matches!(
+            theirs_diff.states.get("function:middle#1"),
+            Some(NodeState::Unchanged)
+        ));
+    }
+
+    #[test]
+    fn sparse_prefilter_integration_matches_disjoint_semantic_merge() {
+        for fixture in semantic_fixtures() {
+            let merged = merge_three_way(
+                fixture.lang,
+                fixture.base.as_bytes(),
+                fixture.ours.as_bytes(),
+                fixture.theirs.as_bytes(),
+            )
+            .expect("sparse pre-filter path must preserve merge semantics");
+            assert_eq!(merged, fixture.expected.as_bytes());
         }
     }
 }
