@@ -1,6 +1,6 @@
 # Task T124 — Phase 7 integration QA (Feature B + C)
 
-**Status:** in_review  
+**Status:** done  
 **Owner:** qa-engineer  
 **Priority:** P0  
 **Depends on:** T118, T123  
