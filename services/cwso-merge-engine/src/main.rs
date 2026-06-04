@@ -5,6 +5,8 @@ mod ipc;
 mod merge;
 mod parse;
 mod proto;
+mod sparse_diff;
+mod sparse_tensor;
 
 const SOCKET_PATH_DEFAULT: &str = "/run/cwso/merge-engine.sock";
 

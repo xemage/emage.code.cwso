@@ -1,6 +1,6 @@
 # ADR-009: Sparse AST tensor encoding for merge pre-filter
 
-- **Status:** accepted
+- **Status:** accepted (merged to `develop` via MR !35, 2026-06-04)
 - **Date:** 2026-06-04
 - **Decision-maker:** solution-architect
 - **Tasks:** T126 (design), T127–T130 (implementation + gate)

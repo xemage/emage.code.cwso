@@ -32,8 +32,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T123 | Quality-floor guardrail → dense GPU escalation (reuse `quality_guardrail_autodisable`) | backend-developer | done | P0 | T122 | 2026-06-04 |
 | T124 | Phase 7 integration QA (cold start < 10 ms, 0% idle CPU, escalation) | qa-engineer | done | P0 | T118, T123 | 2026-06-04 |
 | T125 | Phase 7 Tech-Lead + Security gate (Feature B + C) | tech-lead / security-engineer | done | P0 | T124 | 2026-06-04 |
-| T126 | Sparse AST tensor encoding spec (photonic-ready kernel contract) | solution-architect | in_review | P0 | T125 | 2026-06-04 |
-| T127 | AVX-512 / `std::simd` sparse diff kernel in cwso-merge-engine | backend-developer | pending | P0 | T126 | 2026-06-04 |
+| T126 | Sparse AST tensor encoding spec (photonic-ready kernel contract) | solution-architect | done | P0 | T125 | 2026-06-04 |
+| T127 | AVX-512 / `std::simd` sparse diff kernel in cwso-merge-engine | backend-developer | in_review | P0 | T126 | 2026-06-04 |
 | T128 | Sparse pre-filter integration (skip shared base subtrees) | backend-developer | pending | P0 | T127 | 2026-06-04 |
 | T129 | Sparse↔dense conflict-matrix conformance suite | qa-engineer | pending | P0 | T128 | 2026-06-04 |
 | T130 | Phase 8 Tech-Lead gate + large-repo merge benchmark | tech-lead | pending | P0 | T129 | 2026-06-04 |
@@ -486,10 +486,18 @@ Landed on `feature/T125-phase7-gate` (MR !34, merge `146f208` on `develop`). Gat
 **Phase 7 Features B + C are complete.** Brief: `task-T125.md`. Checkpoint:
 `docs/checkpoints/checkpoint-009-phase7-complete.md`.
 
-### T126 (in progress) — Sparse AST tensor encoding spec (Feature D kickoff)
+### T126 (done) — Sparse AST tensor encoding spec (Feature D kickoff)
 
 > **Phase 8 (Feature D — Semantic Sparse-Merging).** Active T126 = roadmap placeholder T100.
 > Depends on T125. Docs/architecture only; gates T127–T130 implementation.
 
-In review on `feature/T126-sparse-ast-encoding-spec`. Artifacts: ADR-009,
+Landed via MR !35 (squash merge to `develop`, source `57aa2f4`). Artifacts: ADR-009,
 `sparse-ast-tensor-encoding-v1.md`. Brief: `task-T126.md`. Next: **T127** (SIMD kernel).
+
+### T127 (in review) — AVX2 sparse diff kernel in cwso-merge-engine
+
+> **Phase 8 (Feature D).** Active T127 = roadmap placeholder T101. Depends on T126.
+
+In review on `feature/T127-sparse-diff-kernel`. Adds `sparse_tensor`, `sparse_diff`, and AVX2
+digest comparison in `services/cwso-merge-engine`. Brief: `task-T127.md`. Next: **T128**
+(pre-filter hook).
