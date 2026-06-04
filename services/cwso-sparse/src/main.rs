@@ -9,6 +9,7 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
+mod agent;
 mod gemm;
 mod ipc;
 mod proto;
@@ -29,5 +30,10 @@ fn main() -> Result<()> {
         .unwrap_or_else(|_| SOCKET_PATH_DEFAULT.to_string())
         .into();
 
-    ipc::run(socket_path)
+    let agents = match agent::AgentConfig::from_env()? {
+        Some(cfg) => Some(std::sync::Arc::new(agent::AgentRegistry::new(cfg)?)),
+        None => None,
+    };
+
+    ipc::run(socket_path, agents)
 }

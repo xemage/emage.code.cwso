@@ -7,27 +7,28 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 |----|-------|-------|--------|----------|-----------|-------------|
 | T080 | Phase 6 requirements + hardware benchmark targets | product-owner | done | P0 | — | 2026-06-02 |
 | T081 | HAL design: `InferenceBackend` trait + plugin loading + `dispatch.provider/v2` | solution-architect | done | P0 | T080 | 2026-06-02 |
-| T082 | Rust `cwso-hal` crate + CPU-baseline adapter | backend-developer | in_review | P0 | T081 | 2026-06-02 |
-| T083 | GPU adapter (vLLM/TensorRT-LLM, OpenAI-compatible) | backend-developer | in_review | P0 | T082 | 2026-06-02 |
-| T084 | LPU adapter (Groq-style deterministic low-latency) | backend-developer | in_review | P1 | T082 | 2026-06-02 |
-| T085 | Profiling layer: tensor_tag derivation + workload mapping | backend-developer | in_review | P0 | T082 | 2026-06-02 |
-| T086 | `dispatch_hardware_aware_job` MCP tool + schema | backend-developer | in_review | P0 | T083, T085 | 2026-06-02 |
-| T087 | Wire policy_engine_v2 to live adapters (remove spike stubs) | backend-developer | in_review | P0 | T086 | 2026-06-02 |
-| T088 | Phase 6 integration + reliability QA (fallback ≤ 2.0s, overhead ≤ 10ms) | qa-engineer | in_review | P0 | T087 | 2026-06-02 |
-| T089 | Phase 6 Tech-Lead + Security gate | tech-lead / security-engineer | in_review | P0 | T088 | 2026-06-02 |
-| T090 | Thread job context into `hal.Client.Infer` (cancellation propagation) | backend-developer | in_review | P1 | T089 | 2026-06-02 |
-| T091 | Active HAL health probing → live `health_state`/`queue_depth` | backend-developer | in_review | P1 | T089 | 2026-06-02 |
-| T092 | Hardware-aware job result retrieval (poll/stream completion) | backend-developer | in_review | P2 | T089 | 2026-06-02 |
-| T093 | Enforce/document TLS for non-loopback HAL accelerator endpoints | devops-engineer | in_review | P1 | T089 | 2026-06-02 |
-| T094 | CI dependency audit (`govulncheck` + `cargo audit`) | devops-engineer | in_review | P2 | T089 | 2026-06-02 |
-| T114 | Bump Go toolchain to 1.25 (clear `go:audit` stdlib advisories) | devops-engineer | in_review | P2 | T094 | 2026-06-02 |
+| T082 | Rust `cwso-hal` crate + CPU-baseline adapter | backend-developer | done | P0 | T081 | 2026-06-02 |
+| T083 | GPU adapter (vLLM/TensorRT-LLM, OpenAI-compatible) | backend-developer | done | P0 | T082 | 2026-06-02 |
+| T084 | LPU adapter (Groq-style deterministic low-latency) | backend-developer | done | P1 | T082 | 2026-06-02 |
+| T085 | Profiling layer: tensor_tag derivation + workload mapping | backend-developer | done | P0 | T082 | 2026-06-02 |
+| T086 | `dispatch_hardware_aware_job` MCP tool + schema | backend-developer | done | P0 | T083, T085 | 2026-06-02 |
+| T087 | Wire policy_engine_v2 to live adapters (remove spike stubs) | backend-developer | done | P0 | T086 | 2026-06-02 |
+| T088 | Phase 6 integration + reliability QA (fallback ≤ 2.0s, overhead ≤ 10ms) | qa-engineer | done | P0 | T087 | 2026-06-02 |
+| T089 | Phase 6 Tech-Lead + Security gate | tech-lead / security-engineer | done | P0 | T088 | 2026-06-02 |
+| T090 | Thread job context into `hal.Client.Infer` (cancellation propagation) | backend-developer | done | P1 | T089 | 2026-06-02 |
+| T091 | Active HAL health probing → live `health_state`/`queue_depth` | backend-developer | done | P1 | T089 | 2026-06-02 |
+| T092 | Hardware-aware job result retrieval (poll/stream completion) | backend-developer | done | P2 | T089 | 2026-06-02 |
+| T093 | Enforce/document TLS for non-loopback HAL accelerator endpoints | devops-engineer | done | P1 | T089 | 2026-06-02 |
+| T094 | CI dependency audit (`govulncheck` + `cargo audit`) | devops-engineer | done | P2 | T089 | 2026-06-02 |
+| T114 | Bump Go toolchain to 1.25 (clear `go:audit` stdlib advisories) | devops-engineer | done | P2 | T094 | 2026-06-02 |
 | T115 | AST write-spike monitor (generalize `anomaly_monitor`) + userspace fallback | backend-developer | done | P0 | T089 | 2026-06-03 |
 | T116 | Spike filter (semantic classifier) + semantic-conflict pre-warning | backend-developer | done | P1 | T115 | 2026-06-03 |
-| T117 | `subscribe_ast_spikes` MCP Resources layer (SSE, threshold-gated) | backend-developer | in_review | P1 | T116 | 2026-06-03 |
+| T117 | `subscribe_ast_spikes` MCP Resources layer (SSE, threshold-gated) | backend-developer | done | P1 | T116 | 2026-06-03 |
 | T118 | AST write-event feeder wiring (`write_shadow_file` → monitor/filter) | backend-developer | done | P1 | T117 | 2026-06-03 |
 | T119 | Sparse Wasm micro-agent sandbox tier design + security envelope review | solution-architect | done | P0 | T089 | 2026-06-03 |
 | T120 | Rust `cwso-sparse` sidecar: deterministic ternary GEMM kernel + UDS protocol | backend-developer | done | P0 | T119 | 2026-06-03 |
-| T121 | `.cwsl` pruned-slice container + COW mmap loader + SHA-256 pinning | backend-developer | in_review | P1 | T120 | 2026-06-03 |
+| T121 | `.cwsl` pruned-slice container + COW mmap loader + SHA-256 pinning | backend-developer | done | P1 | T120 | 2026-06-03 |
+| T122 | `create_ephemeral_sparse_agent` MCP tool + wasmtime lifecycle + agent telemetry resource | backend-developer | in_review | P0 | T120, T121 | 2026-06-03 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -55,6 +56,7 @@ already-completed control-plane work. Rule going forward:
     review)** → **active T119**. The Feature B implementation tasks are pre-mapped in the
     design artifact: roadmap **T091 → active T120**, **T092 → T121**, **T093 → T122**,
     **T094 → T123**, and the Phase 7 QA/gate **T098 → T124**, **T099 → T125**.
+  - roadmap **Feature B / placeholder T093 (`create_ephemeral_sparse_agent`)** → **active T122**.
 
 ## Phase 6 execution notes (2026-06-02)
 
@@ -261,7 +263,7 @@ volume monitor: the monitor detects write *volume*, the filter decides whether a
 Next: `subscribe_ast_spikes` MCP SSE resource + concrete write-event feeders (eBPF probe /
 userspace fs watcher) — roadmap T097. Brief: `task-T116.md`.
 
-### T117 (in review) — `subscribe_ast_spikes` MCP Resources layer (SSE, threshold-gated)
+### T117 (done) — `subscribe_ast_spikes` MCP Resources layer (SSE, threshold-gated)
 
 > **Phase 7 (Feature C, step 3).** Roadmap placeholder T097 → active T117. Depends on T116.
 > The runtime write-event **feeder** half of roadmap T097 is split into **T118** (the resource
@@ -298,7 +300,7 @@ Next (**T118**): wire a concrete write-event feeder (`write_shadow_file` → `AS
 `ASTSpikeFilter`, config-gated) so live edits drive the stream end-to-end; eBPF/fs-watch sources
 remain a later option. Brief: `task-T117.md`.
 
-### T118 (in review) — AST write-event feeder (`write_shadow_file` → monitor/filter)
+### T118 (done) — AST write-event feeder (`write_shadow_file` → monitor/filter)
 
 > **Phase 7 (Feature C, runtime feeder half of roadmap T097).** Active T118. Depends on T117.
 
@@ -329,7 +331,7 @@ Feature C is now wired end-to-end (write → spike topics → `cwso://spikes` re
 Phase 7 work: real eBPF/fs-watch write sources and the sparse-model scorer (scorer seam already
 in place). Brief: `task-T118.md`.
 
-### T119 (in review) — Sparse Wasm micro-agent tier design (Feature B kickoff)
+### T119 (done) — Sparse Wasm micro-agent tier design (Feature B kickoff)
 
 > **Phase 7 (Feature B — Ephemeral Wasm Micro-Agents). Active T119 = roadmap placeholder T090.**
 > Docs/architecture only; gates the Feature B implementation tasks T120–T125.
@@ -353,7 +355,7 @@ Landed on `feature/T119-wasm-sparse-agent-design`. Opens the second Phase 7 trac
 Next (**T120**): build the `cwso-sparse` wasmtime sidecar + native ternary GEMM host-call + UDS
 protocol (deterministic kernel, feature-flagged). Brief: `task-T119.md`.
 
-### T120 (in review) — `cwso-sparse` sidecar: deterministic ternary GEMM + UDS protocol
+### T120 (done) — `cwso-sparse` sidecar: deterministic ternary GEMM + UDS protocol
 
 > **Phase 7 (Feature B). Active T120 = roadmap placeholder T091.** Depends on T119.
 
@@ -378,7 +380,7 @@ focused, dependency-light, deterministic core; T120 ships the sidecar + protocol
 host-call contract. Next (**T121**): the `.cwsl` pruned-slice container + COW mmap loader feeding
 this kernel. Brief: `task-T120.md`.
 
-### T121 (in review) — `.cwsl` pruned-slice container + COW mmap loader + SHA-256 pinning
+### T121 (done) — `.cwsl` pruned-slice container + COW mmap loader + SHA-256 pinning
 
 > **Phase 7 (Feature B). Active T121 = roadmap placeholder T092.** Depends on T120.
 
@@ -403,3 +405,31 @@ share one resident copy of a pruned skill slice:
 
 Next (**T122**): `create_ephemeral_sparse_agent` MCP tool + wasmtime instantiation +
 `cwso://agents/{id}/telemetry`, consuming this loader. Brief: `task-T121.md`.
+
+### T122 (in review) — `create_ephemeral_sparse_agent` + wasmtime lifecycle + agent telemetry
+
+> **Phase 7 (Feature B). Active T122 = roadmap placeholder T093.** Depends on T120, T121.
+
+Landed on `feature/T122-sparse-agent-lifecycle`. Wires the sparse micro-agent tier end-to-end from
+the orchestrator MCP surface through the `cwso-sparse` sidecar:
+
+- **Rust (`agent.rs` + IPC v2):** `AgentRegistry` resolves a skill domain via the T121 manifest,
+  mmap-pins the slice, instantiates a **wasmtime** sandbox module with a per-agent memory cap
+  (`StoreLimits`), measures `cold_start_ms`, and tracks agents until `drop_agent`. New IPC ops:
+  `create_agent`, `drop_agent`, `agent_stat` (contract version bumped to 2). Feature-flagged via
+  `CWSO_SPARSE_SLICE_MANIFEST` on the sidecar.
+- **Go sparse client (`internal/sparse`):** framed-JSON UDS client mirroring `hal.Client`.
+- **`create_ephemeral_sparse_agent` tool:** orchestrator-only; validates `skill_domain`,
+  `quantization` (1.58-bit only for PoC), and `max_ram_mb` (host cap from
+  `CWSO_SPARSE_HOST_RAM_CAP_MB`); calls sidecar; registers agent; publishes initial telemetry to
+  `agents/telemetry`; returns `{wasm_agent_id, cold_start_ms, resident_ram_mb, stream_resource}`.
+- **Telemetry resource:** reuses the T117 broker → SSE layer —
+  `cwso://agents/{wasm_agent_id}/telemetry` via `resources/list|read|subscribe` and scoped SSE
+  (`GET /mcp?subscription=<wasm_agent_id>`). Composite subscription resolver covers spike + agent
+  streams.
+- **Schema:** `schemas/create_ephemeral_sparse_agent.json`. Config:
+  `CWSO_SPARSE_AGENTS_ENABLED`, `CWSO_SPARSE_SOCKET`, `CWSO_SPARSE_HOST_RAM_CAP_MB`.
+- 26 Rust + new Go unit tests; full orchestrator suite green.
+
+Next (**T123**): quality-floor guardrail → dense GPU escalation (reuse
+`quality_guardrail_autodisable`). Brief: `task-T122.md`.

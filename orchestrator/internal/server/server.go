@@ -18,6 +18,7 @@ import (
 	"github.com/emage/cwso/orchestrator/internal/mergeengine"
 	"github.com/emage/cwso/orchestrator/internal/sandbox"
 	"github.com/emage/cwso/orchestrator/internal/shadow"
+	"github.com/emage/cwso/orchestrator/internal/sparse"
 	"github.com/emage/cwso/orchestrator/internal/tools"
 	"github.com/emage/cwso/orchestrator/internal/transport"
 )
@@ -29,19 +30,20 @@ const (
 
 // Server is the top-level orchestrator handle.
 type Server struct {
-	cfg       *config.Config
-	log       *logging.Logger
-	registry  *tools.Registry
-	bus       *eventbus.Bus
-	memory    *memorybroker.Broker
-	publisher *memorybroker.TeePublisher
-	jobs      *jobs.Manager
-	runner    sandbox.RunnerInterface
-	caps      *dispatch.CapabilityRegistry
-	emitter   *dispatch.DecisionEmitter
-	capSyncer *dispatch.CapabilitySyncer
-	spikeSubs *dispatch.SpikeSubscriptionRegistry
-	astSink   dispatch.WriteEventSink
+	cfg          *config.Config
+	log          *logging.Logger
+	registry     *tools.Registry
+	bus          *eventbus.Bus
+	memory       *memorybroker.Broker
+	publisher    *memorybroker.TeePublisher
+	jobs         *jobs.Manager
+	runner       sandbox.RunnerInterface
+	caps         *dispatch.CapabilityRegistry
+	emitter      *dispatch.DecisionEmitter
+	capSyncer    *dispatch.CapabilitySyncer
+	spikeSubs    *dispatch.SpikeSubscriptionRegistry
+	sparseAgents *dispatch.SparseAgentRegistry
+	astSink      dispatch.WriteEventSink
 }
 
 // New constructs and initializes a Server with all Phase 1 tools registered.
@@ -266,12 +268,17 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 		spikeSubs = dispatch.NewSpikeSubscriptionRegistry()
 	}
 
+	var sparseAgents *dispatch.SparseAgentRegistry
+	if cfg.SparseAgentsEnabled && cfg.SparseSocket != "" {
+		sparseAgents = dispatch.NewSparseAgentRegistry()
+	}
+
 	astSink := buildASTWriteSink(cfg, publisher, log)
 
 	s := &Server{
 		cfg: cfg, log: log, registry: tools.NewRegistry(), bus: bus, memory: broker,
 		publisher: publisher, jobs: jobMgr, runner: baselineRunner, caps: capRegistry, emitter: telemetryEmitter,
-		spikeSubs: spikeSubs, astSink: astSink,
+		spikeSubs: spikeSubs, sparseAgents: sparseAgents, astSink: astSink,
 	}
 	if err := s.registerBaselineTools(); err != nil {
 		jobMgr.Close()
@@ -545,6 +552,15 @@ func (s *Server) registerBaselineTools() error {
 		baseTools = append(baseTools, tools.NewSubscribeASTSpikes(s.spikeSubs))
 		s.log.Info().Msg("ast spike resources enabled: subscribe_ast_spikes tool + cwso://spikes resources")
 	}
+	if s.sparseAgents != nil && s.cfg.SparseSocket != "" {
+		baseTools = append(baseTools, tools.NewCreateEphemeralSparseAgent(
+			sparse.NewClient(s.cfg.SparseSocket),
+			s.sparseAgents,
+			s.publisher,
+			s.cfg.SparseHostRAMCapMB,
+		))
+		s.log.Info().Str("socket", s.cfg.SparseSocket).Msg("sparse micro-agents enabled: create_ephemeral_sparse_agent + cwso://agents telemetry")
+	}
 	if s.cfg.HHDHardwareAwareDispatch && s.caps != nil {
 		if s.cfg.HALSocket != "" {
 			s.log.Info().Str("socket", s.cfg.HALSocket).Msg("hardware-aware dispatch: live HAL execution enabled")
@@ -592,8 +608,8 @@ func (s *Server) Run(ctx context.Context) error {
 		return transport.RunStdio(ctx, s.log, s.Handle)
 	case "http":
 		var httpOpts []transport.HTTPOption
-		if s.spikeSubs != nil {
-			httpOpts = append(httpOpts, transport.WithSubscriptionResolver(s.spikeResolver()))
+		if resolver := s.subscriptionResolver(); resolver != nil {
+			httpOpts = append(httpOpts, transport.WithSubscriptionResolver(resolver))
 		}
 		return transport.RunHTTP(ctx, s.cfg, s.log, s.bus, s.memory, s.publisher, s.Handle, httpOpts...)
 	default:
@@ -660,7 +676,7 @@ func (s *Server) handleInitialize(req *mcp.Request) *mcp.Response {
 	caps := map[string]any{
 		"tools": map[string]any{"listChanged": false},
 	}
-	if s.spikeSubs != nil {
+	if s.spikeSubs != nil || s.sparseAgents != nil {
 		caps["resources"] = map[string]any{"subscribe": true, "listChanged": true}
 	}
 	result := mcp.InitializeResult{
@@ -713,7 +729,7 @@ func (s *Server) handleToolsCall(ctx context.Context, sess *transport.Session, r
 const defaultSpikeSnapshotLimit = 100
 
 func (s *Server) resourcesEnabled(req *mcp.Request) (*mcp.Response, bool) {
-	if s.spikeSubs == nil {
+	if s.spikeSubs == nil && s.sparseAgents == nil {
 		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrMethodNotFound, "method not found: "+req.Method)), false
 	}
 	return nil, true
@@ -723,15 +739,26 @@ func (s *Server) handleResourcesList(req *mcp.Request) *mcp.Response {
 	if errResp, ok := s.resourcesEnabled(req); !ok {
 		return errResp
 	}
-	subs := s.spikeSubs.List()
-	resources := make([]mcp.Resource, 0, len(subs))
-	for _, sub := range subs {
-		resources = append(resources, mcp.Resource{
-			URI:         sub.URI(),
-			Name:        "AST spike stream " + sub.ID,
-			Description: fmt.Sprintf("Semantic AST spike events (threshold=%s) for path=%q", sub.SemanticThreshold, sub.Path),
-			MimeType:    "application/json",
-		})
+	var resources []mcp.Resource
+	if s.spikeSubs != nil {
+		for _, sub := range s.spikeSubs.List() {
+			resources = append(resources, mcp.Resource{
+				URI:         sub.URI(),
+				Name:        "AST spike stream " + sub.ID,
+				Description: fmt.Sprintf("Semantic AST spike events (threshold=%s) for path=%q", sub.SemanticThreshold, sub.Path),
+				MimeType:    "application/json",
+			})
+		}
+	}
+	if s.sparseAgents != nil {
+		for _, agent := range s.sparseAgents.List() {
+			resources = append(resources, mcp.Resource{
+				URI:         agent.StreamURI,
+				Name:        "Sparse agent telemetry " + agent.ID,
+				Description: fmt.Sprintf("Telemetry stream for sparse agent %s (skill_domain=%q)", agent.ID, agent.SkillDomain),
+				MimeType:    "application/json",
+			})
+		}
 	}
 	return mcp.OK(req.ID, mcp.ResourcesListResult{Resources: resources})
 }
@@ -740,14 +767,24 @@ func (s *Server) handleResourceTemplatesList(req *mcp.Request) *mcp.Response {
 	if errResp, ok := s.resourcesEnabled(req); !ok {
 		return errResp
 	}
-	return mcp.OK(req.ID, mcp.ResourceTemplatesListResult{
-		ResourceTemplates: []mcp.ResourceTemplate{{
+	templates := make([]mcp.ResourceTemplate, 0, 2)
+	if s.spikeSubs != nil {
+		templates = append(templates, mcp.ResourceTemplate{
 			URITemplate: dispatch.SpikeResourcePrefix + "{subscription_id}",
 			Name:        "ast_spike_stream",
 			Description: "Semantic AST write-spike stream created via subscribe_ast_spikes. Read for a recent snapshot or open over SSE (GET /mcp?subscription=<id>) for the live stream.",
 			MimeType:    "application/json",
-		}},
-	})
+		})
+	}
+	if s.sparseAgents != nil {
+		templates = append(templates, mcp.ResourceTemplate{
+			URITemplate: dispatch.AgentResourcePrefix + "{wasm_agent_id}/telemetry",
+			Name:        "sparse_agent_telemetry",
+			Description: "Sparse Wasm micro-agent telemetry created via create_ephemeral_sparse_agent. Read for a snapshot or open over SSE (GET /mcp?subscription=<wasm_agent_id>).",
+			MimeType:    "application/json",
+		})
+	}
+	return mcp.OK(req.ID, mcp.ResourceTemplatesListResult{ResourceTemplates: templates})
 }
 
 func (s *Server) handleResourcesRead(req *mcp.Request) *mcp.Response {
@@ -758,9 +795,19 @@ func (s *Server) handleResourcesRead(req *mcp.Request) *mcp.Response {
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrInvalidParams, err.Error()))
 	}
-	id, ok := dispatch.ParseSpikeResourceID(p.URI)
+	if agentID, ok := dispatch.ParseAgentTelemetryResourceID(p.URI); ok {
+		return s.readAgentTelemetryResource(req, agentID, p.URI)
+	}
+	return s.readSpikeResource(req, p.URI)
+}
+
+func (s *Server) readSpikeResource(req *mcp.Request, uri string) *mcp.Response {
+	if s.spikeSubs == nil {
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown resource uri: "+uri))
+	}
+	id, ok := dispatch.ParseSpikeResourceID(uri)
 	if !ok {
-		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown resource uri: "+p.URI))
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown resource uri: "+uri))
 	}
 	sub, ok := s.spikeSubs.Get(id)
 	if !ok {
@@ -808,6 +855,52 @@ func (s *Server) handleResourcesRead(req *mcp.Request) *mcp.Response {
 	}}})
 }
 
+func (s *Server) readAgentTelemetryResource(req *mcp.Request, agentID, uri string) *mcp.Response {
+	if s.sparseAgents == nil {
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown resource uri: "+uri))
+	}
+	if _, ok := s.sparseAgents.Get(agentID); !ok {
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown agent: "+agentID))
+	}
+	filter := &dispatch.AgentTelemetryFilter{AgentID: agentID}
+	type snapshotItem struct {
+		Topic    string          `json:"topic"`
+		Sequence uint64          `json:"sequence"`
+		At       string          `json:"at"`
+		Event    json.RawMessage `json:"event"`
+	}
+	items := make([]snapshotItem, 0)
+	if s.memory != nil {
+		records := s.memory.Query(memorybroker.QueryOptions{
+			Topics: []string{dispatch.TopicAgentTelemetry},
+			Limit:  defaultSpikeSnapshotLimit,
+		})
+		for _, rec := range records {
+			if !filter.Allow(rec.Topic, rec.Payload) {
+				continue
+			}
+			items = append(items, snapshotItem{
+				Topic:    rec.Topic,
+				Sequence: rec.Sequence,
+				At:       rec.At.UTC().Format(time.RFC3339Nano),
+				Event:    rec.Payload,
+			})
+		}
+	}
+	body, err := json.Marshal(map[string]any{
+		"wasm_agent_id": agentID,
+		"events":        items,
+	})
+	if err != nil {
+		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrInternal, err.Error()))
+	}
+	return mcp.OK(req.ID, mcp.ResourceReadResult{Contents: []mcp.ResourceContents{{
+		URI:      uri,
+		MimeType: "application/json",
+		Text:     string(body),
+	}}})
+}
+
 func (s *Server) handleResourcesSubscribe(req *mcp.Request) *mcp.Response {
 	if errResp, ok := s.resourcesEnabled(req); !ok {
 		return errResp
@@ -816,15 +909,22 @@ func (s *Server) handleResourcesSubscribe(req *mcp.Request) *mcp.Response {
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrInvalidParams, err.Error()))
 	}
+	if agentID, ok := dispatch.ParseAgentTelemetryResourceID(p.URI); ok {
+		if s.sparseAgents == nil {
+			return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown resource uri: "+p.URI))
+		}
+		if _, ok := s.sparseAgents.Get(agentID); !ok {
+			return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown agent: "+agentID))
+		}
+		return mcp.OK(req.ID, map[string]any{})
+	}
 	id, ok := dispatch.ParseSpikeResourceID(p.URI)
-	if !ok {
+	if !ok || s.spikeSubs == nil {
 		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown resource uri: "+p.URI))
 	}
 	if _, ok := s.spikeSubs.Get(id); !ok {
 		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown subscription: "+id))
 	}
-	// Live delivery happens over the SSE transport (GET /mcp?subscription=<id>); the
-	// subscription is already registered by subscribe_ast_spikes, so this acknowledges intent.
 	return mcp.OK(req.ID, map[string]any{})
 }
 
@@ -836,8 +936,17 @@ func (s *Server) handleResourcesUnsubscribe(req *mcp.Request) *mcp.Response {
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrInvalidParams, err.Error()))
 	}
+	if agentID, ok := dispatch.ParseAgentTelemetryResourceID(p.URI); ok {
+		if s.sparseAgents == nil {
+			return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown resource uri: "+p.URI))
+		}
+		if _, ok := s.sparseAgents.Get(agentID); !ok {
+			return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown agent: "+agentID))
+		}
+		return mcp.OK(req.ID, map[string]any{})
+	}
 	id, ok := dispatch.ParseSpikeResourceID(p.URI)
-	if !ok {
+	if !ok || s.spikeSubs == nil {
 		return mcp.ErrorResponse(req.ID, mcp.NewError(mcp.ErrResourceNotFound, "unknown resource uri: "+p.URI))
 	}
 	if !s.spikeSubs.Remove(id) {
@@ -846,15 +955,24 @@ func (s *Server) handleResourcesUnsubscribe(req *mcp.Request) *mcp.Response {
 	return mcp.OK(req.ID, map[string]any{})
 }
 
-// spikeResolver adapts the spike subscription registry to the transport's
-// SubscriptionResolver contract for subscription-scoped SSE streams.
-func (s *Server) spikeResolver() transport.SubscriptionResolver {
+// subscriptionResolver adapts spike subscriptions and sparse-agent telemetry filters to
+// the transport's SubscriptionResolver contract for subscription-scoped SSE streams.
+func (s *Server) subscriptionResolver() transport.SubscriptionResolver {
+	if s.spikeSubs == nil && s.sparseAgents == nil {
+		return nil
+	}
 	return func(id string) (transport.RecordFilter, bool) {
-		sub, ok := s.spikeSubs.Get(id)
-		if !ok {
-			return nil, false
+		if s.spikeSubs != nil {
+			if sub, ok := s.spikeSubs.Get(id); ok {
+				return sub, true
+			}
 		}
-		return sub, true
+		if s.sparseAgents != nil {
+			if _, ok := s.sparseAgents.Get(id); ok {
+				return &dispatch.AgentTelemetryFilter{AgentID: id}, true
+			}
+		}
+		return nil, false
 	}
 }
 
