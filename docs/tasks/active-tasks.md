@@ -29,7 +29,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T120 | Rust `cwso-sparse` sidecar: deterministic ternary GEMM kernel + UDS protocol | backend-developer | done | P0 | T119 | 2026-06-03 |
 | T121 | `.cwsl` pruned-slice container + COW mmap loader + SHA-256 pinning | backend-developer | done | P1 | T120 | 2026-06-03 |
 | T122 | `create_ephemeral_sparse_agent` MCP tool + wasmtime lifecycle + agent telemetry resource | backend-developer | done | P0 | T120, T121 | 2026-06-04 |
-| T123 | Quality-floor guardrail → dense GPU escalation (reuse `quality_guardrail_autodisable`) | backend-developer | in_review | P0 | T122 | 2026-06-04 |
+| T123 | Quality-floor guardrail → dense GPU escalation (reuse `quality_guardrail_autodisable`) | backend-developer | done | P0 | T122 | 2026-06-04 |
+| T124 | Phase 7 integration QA (cold start < 10 ms, 0% idle CPU, escalation) | qa-engineer | in_review | P0 | T118, T123 | 2026-06-04 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -434,7 +435,7 @@ the orchestrator MCP surface through the `cwso-sparse` sidecar:
 
 Brief: `task-T122.md`.
 
-### T123 (in review) — Quality-floor guardrail → dense GPU escalation
+### T123 (done) — Quality-floor guardrail → dense GPU escalation
 
 > **Phase 7 (Feature B). Active T123 = roadmap placeholder T094.** Depends on T122.
 
@@ -447,4 +448,19 @@ skips sparse instantiation and returns `escalated: true` with
 inference job is enqueued on the selected provider. Shared helper `QualityGuardrailBreached` is
 also used by `policy_engine_v2` sparse-quantized autodisable.
 
-Next (**T124**): Phase 7 integration QA (cold start, 0% idle CPU, escalation). Brief: `task-T123.md`.
+Brief: `task-T123.md`.
+
+### T124 (in review) — Phase 7 integration QA (Feature B + C)
+
+> **Phase 7 QA gate input.** Active T124 = roadmap placeholder T098. Depends on T118, T123.
+
+In progress on `feature/T124-phase7-integration-qa`. Guards Phase 7 budgets:
+
+- **Cold start `< 10 ms` (p95, warm slice):** `cwso-sparse` `cold_start_warm_p95_under_budget` +
+  Go control-plane overhead budget tests.
+- **0% idle CPU (event-driven spike pipeline):** `TestASTSpikePipelineZeroIdleEmissions` — idle
+  monitor+filter emits zero broker records (no polling timers).
+- **Quality-floor escalation:** server integration test exercises guardrail → dense HAL `infer`
+  without sparse agent creation.
+
+Next (**T125**): Phase 7 Tech-Lead + Security gate. Brief: `task-T124.md`.
