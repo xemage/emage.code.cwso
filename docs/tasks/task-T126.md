@@ -3,7 +3,7 @@
 > **ID note:** roadmap **Feature D / placeholder T100** ("Sparse AST tensor encoding spec").
 > Active ID **T126** (see numbering reconciliation in `active-tasks.md`).
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** solution-architect (reviewers: tech-lead, backend-developer)
 - **Priority:** P0
 - **Depends on:** T125 (Phase 7 gate)
@@ -36,3 +36,4 @@ ADR-006 conflict semantics.
 
 - Docs/architecture only on this task; kernel + wiring land in T127–T128.
 - Promotion path from T120 native ternary GEMM converges here as the merge-side sparse kernel.
+- **Merged:** GitLab MR !35 → `develop` (squash; source tip `57aa2f4`).

@@ -2,7 +2,7 @@
 
 **Based on:** `docs/decisions/ADR-009-sparse-ast-tensor-encoding.md`, ADR-006,
 `cwso-nextgen-blueprint-v1.md` §Feature D, `services/cwso-merge-engine/src/merge.rs`
-**Status:** accepted — gates implementation tasks T127–T130
+**Status:** accepted (spec merged `develop` via MR !35) — gates T127–T130
 **Phase:** 8 — Semantic Sparse-Merging
 
 ## 1. Problem
