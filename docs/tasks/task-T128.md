@@ -2,7 +2,7 @@
 
 > **ID note:** roadmap **Feature D / placeholder T102**. Active **T128** (see `active-tasks.md`).
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** backend-developer
 - **Priority:** P0
 - **Depends on:** T127 (sparse_diff kernel)
@@ -33,4 +33,5 @@ conflicting rows.
 ## Notes
 
 - Conformance suite (T129) proves sparse pre-filter ⊆ dense outcome across the full merge corpus.
-- Do not merge this MR until review; T130 gate follows T129.
+- **Merged:** GitLab MR !37 → `develop` (`7f489b4`, source `aa509fb`).
+- T130 gate follows T129 conformance.
