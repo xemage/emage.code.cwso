@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cwso.dev/schemas/create_ephemeral_sparse_agent.json",
+  "title": "create_ephemeral_sparse_agent",
+  "type": "object",
+  "properties": {
+    "target_ast_node": {
+      "type": "string",
+      "description": "Optional AST node context (provenance only), e.g. Class: DatabaseConnector"
+    },
+    "skill_domain": {
+      "type": "string",
+      "description": "Skill domain selecting a pinned pruned slice, e.g. react-hooks"
+    },
+    "quantization": {
+      "type": "string",
+      "enum": ["1.58-bit", "int4", "int8"],
+      "description": "Quantization tag (default 1.58-bit; only 1.58-bit is implemented in PoC)"
+    },
+    "max_ram_mb": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Hard RAM cap for the agent sandbox (default 512)"
+    }
+  },
+  "required": ["skill_domain"],
+  "additionalProperties": false
+}

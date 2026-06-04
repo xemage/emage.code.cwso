@@ -27,6 +27,29 @@ pub enum Request {
         packed_b64: String,
         activations: Vec<f32>,
     },
+    /// Instantiate an ephemeral sparse micro-agent over a pinned skill slice (T122).
+    #[serde(rename = "create_agent")]
+    CreateAgent {
+        skill_domain: String,
+        #[serde(default = "default_quantization")]
+        quantization: String,
+        #[serde(default = "default_max_ram_mb")]
+        max_ram_mb: u32,
+        #[serde(default)]
+        target_ast_node: Option<String>,
+    },
+    #[serde(rename = "drop_agent")]
+    DropAgent { agent_id: String },
+    #[serde(rename = "agent_stat")]
+    AgentStat { agent_id: String },
+}
+
+fn default_quantization() -> String {
+    "1.58-bit".to_string()
+}
+
+fn default_max_ram_mb() -> u32 {
+    512
 }
 
 #[derive(Debug, Serialize, Deserialize)]

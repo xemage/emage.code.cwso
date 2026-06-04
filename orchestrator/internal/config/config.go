@@ -66,6 +66,9 @@ type Config struct {
 	ASTSpikeConflictWindowMS    int      // correlation window for cross-workspace semantic-conflict pre-warnings
 	ASTSpikeSignatureTTLMS      int      // TTL for the per-symbol signature memory used by the semantic filter
 	ASTSpikeMaxConflictPeers    int      // max peer workspaces listed in a conflict pre-warning
+	SparseAgentsEnabled         bool     // enable create_ephemeral_sparse_agent + cwso://agents telemetry (Phase 7 / T122)
+	SparseSocket                string   // UDS path for the cwso-sparse sidecar ("" disables sparse agent tools)
+	SparseHostRAMCapMB          int      // host-wide RAM cap enforced on max_ram_mb requests
 	HHDSnapshotTTLSeconds       int      // stale capability threshold for policy-facing snapshots
 	HHDPolicyEngineV2           bool     // enable policy engine v2 backend selection and fallback
 	HHDHardwareAwareDispatch    bool     // enable dispatch_hardware_aware_job tool + shadow provider catalog (Phase 6)
@@ -163,6 +166,9 @@ func Load(_ string) (*Config, error) {
 		ASTSpikeConflictWindowMS:    envInt("CWSO_AST_SPIKE_CONFLICT_WINDOW_MS", 2000),
 		ASTSpikeSignatureTTLMS:      envInt("CWSO_AST_SPIKE_SIGNATURE_TTL_MS", 30000),
 		ASTSpikeMaxConflictPeers:    envInt("CWSO_AST_SPIKE_MAX_CONFLICT_PEERS", 8),
+		SparseAgentsEnabled:         envBool("CWSO_SPARSE_AGENTS_ENABLED", false),
+		SparseSocket:                os.Getenv("CWSO_SPARSE_SOCKET"),
+		SparseHostRAMCapMB:          envInt("CWSO_SPARSE_HOST_RAM_CAP_MB", 4096),
 		HHDSnapshotTTLSeconds:       envInt("CWSO_HHD_CAPABILITY_SNAPSHOT_TTL_SECONDS", 30),
 		HHDPolicyEngineV2:           envBool("CWSO_HHD_POLICY_ENGINE_V2_ENABLED", false),
 		HHDHardwareAwareDispatch:    envBool("CWSO_HHD_HARDWARE_AWARE_DISPATCH_ENABLED", false),
@@ -230,6 +236,14 @@ func Load(_ string) (*Config, error) {
 		}
 		if c.ASTSpikeSignatureTTLMS <= 0 {
 			return nil, fmt.Errorf("CWSO_AST_SPIKE_SIGNATURE_TTL_MS must be > 0")
+		}
+	}
+	if c.SparseAgentsEnabled {
+		if strings.TrimSpace(c.SparseSocket) == "" {
+			return nil, fmt.Errorf("CWSO_SPARSE_SOCKET must be set when CWSO_SPARSE_AGENTS_ENABLED=true")
+		}
+		if c.SparseHostRAMCapMB <= 0 {
+			return nil, fmt.Errorf("CWSO_SPARSE_HOST_RAM_CAP_MB must be > 0")
 		}
 	}
 	if c.HHDTelemetryRequestIDMode != "allow" && c.HHDTelemetryRequestIDMode != "hash" && c.HHDTelemetryRequestIDMode != "drop" {
