@@ -67,10 +67,56 @@ pub fn merge_three_way(
     let ours_units = extract_top_level_units(language, ours)?;
     let theirs_units = extract_top_level_units(language, theirs)?;
 
+    merge_units(language, &base_units, &ours_units, &theirs_units, true)
+}
+
+/// ADR-006 dense path (no sparse pre-filter). Used by the T129 conformance suite.
+#[cfg(test)]
+fn merge_three_way_dense(
+    language: MergeLanguage,
+    base: &[u8],
+    ours: &[u8],
+    theirs: &[u8],
+) -> std::result::Result<Vec<u8>, MergeError> {
+    if ours == theirs {
+        return Ok(ours.to_vec());
+    }
+
+    if base == ours {
+        return Ok(theirs.to_vec());
+    }
+
+    if base == theirs {
+        return Ok(ours.to_vec());
+    }
+
+    let base_units = extract_top_level_units(language, base)?;
+    let ours_units = extract_top_level_units(language, ours)?;
+    let theirs_units = extract_top_level_units(language, theirs)?;
+
+    merge_units(language, &base_units, &ours_units, &theirs_units, false)
+}
+
+fn merge_units(
+    language: MergeLanguage,
+    base_units: &[AstUnit],
+    ours_units: &[AstUnit],
+    theirs_units: &[AstUnit],
+    use_sparse_prefilter: bool,
+) -> std::result::Result<Vec<u8>, MergeError> {
     let base_order: Vec<String> = base_units.iter().map(|u| u.key.clone()).collect();
-    let mask = sparse_prefilter_mask(&base_units, &ours_units, &theirs_units, &base_order);
-    let ours_diff = build_side_diff(&base_units, &ours_units, &mask, MergeSide::Ours);
-    let theirs_diff = build_side_diff(&base_units, &theirs_units, &mask, MergeSide::Theirs);
+    let mask = if use_sparse_prefilter {
+        Some(sparse_prefilter_mask(
+            base_units,
+            ours_units,
+            theirs_units,
+            &base_order,
+        ))
+    } else {
+        None
+    };
+    let ours_diff = build_side_diff(base_units, ours_units, mask.as_ref(), MergeSide::Ours);
+    let theirs_diff = build_side_diff(base_units, theirs_units, mask.as_ref(), MergeSide::Theirs);
     let decisions = resolve_base_decisions(&base_units, &ours_diff.states, &theirs_diff.states)?;
     let merged_insertions = merge_insertions(&ours_diff.insertions, &theirs_diff.insertions)?;
     let merged = assemble_output(&base_order, &decisions, &merged_insertions);
@@ -188,7 +234,7 @@ fn sparse_prefilter_mask(
 fn build_side_diff(
     base_units: &[AstUnit],
     side_units: &[AstUnit],
-    mask: &SparseDiffMask,
+    mask: Option<&SparseDiffMask>,
     side: MergeSide,
 ) -> SideDiff {
     let mut side_map: HashMap<String, Vec<u8>> = HashMap::new();
@@ -198,15 +244,20 @@ fn build_side_diff(
 
     let mut states = HashMap::new();
     for base in base_units {
-        let state = match mask.get(&base.key) {
-            Some(SparseRowClass::BothUnchanged) => NodeState::Unchanged,
-            Some(SparseRowClass::OursOnly) if side == MergeSide::Theirs => NodeState::Unchanged,
-            Some(SparseRowClass::TheirsOnly) if side == MergeSide::Ours => NodeState::Unchanged,
-            Some(SparseRowClass::OursOnly | SparseRowClass::TheirsOnly | SparseRowClass::BothModified) => {
-                lookup_side_state(base, &side_map)
-            }
-            Some(SparseRowClass::DisjointInsert) => lookup_side_state(base, &side_map),
+        let state = match mask {
             None => lookup_side_state(base, &side_map),
+            Some(mask) => match mask.get(&base.key) {
+                Some(SparseRowClass::BothUnchanged) => NodeState::Unchanged,
+                Some(SparseRowClass::OursOnly) if side == MergeSide::Theirs => NodeState::Unchanged,
+                Some(SparseRowClass::TheirsOnly) if side == MergeSide::Ours => NodeState::Unchanged,
+                Some(
+                    SparseRowClass::OursOnly
+                    | SparseRowClass::TheirsOnly
+                    | SparseRowClass::BothModified,
+                ) => lookup_side_state(base, &side_map),
+                Some(SparseRowClass::DisjointInsert) => lookup_side_state(base, &side_map),
+                None => lookup_side_state(base, &side_map),
+            },
         };
         states.insert(base.key.clone(), state);
     }
@@ -650,10 +701,14 @@ mod tests {
             Some(&SparseRowClass::BothUnchanged)
         );
         assert_eq!(mask.get("function:left#1"), Some(&SparseRowClass::OursOnly));
-        assert_eq!(mask.get("function:right#1"), Some(&SparseRowClass::TheirsOnly));
+        assert_eq!(
+            mask.get("function:right#1"),
+            Some(&SparseRowClass::TheirsOnly)
+        );
 
-        let ours_diff = build_side_diff(&base_units, &ours_units, &mask, MergeSide::Ours);
-        let theirs_diff = build_side_diff(&base_units, &theirs_units, &mask, MergeSide::Theirs);
+        let ours_diff = build_side_diff(&base_units, &ours_units, Some(&mask), MergeSide::Ours);
+        let theirs_diff =
+            build_side_diff(&base_units, &theirs_units, Some(&mask), MergeSide::Theirs);
         assert!(matches!(
             ours_diff.states.get("function:middle#1"),
             Some(NodeState::Unchanged)
@@ -675,6 +730,230 @@ mod tests {
             )
             .expect("sparse pre-filter path must preserve merge semantics");
             assert_eq!(merged, fixture.expected.as_bytes());
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    enum SideTag {
+        Unchanged,
+        Deleted,
+        Modified,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    enum DecisionTag {
+        Keep,
+        Delete,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct ConflictMatrixRow {
+        ours: SideTag,
+        theirs: SideTag,
+        decision: DecisionTag,
+    }
+
+    fn side_tag(state: &NodeState) -> SideTag {
+        match state {
+            NodeState::Unchanged => SideTag::Unchanged,
+            NodeState::Deleted => SideTag::Deleted,
+            NodeState::Modified(_) => SideTag::Modified,
+        }
+    }
+
+    fn decision_tag(decision: &MergeDecision) -> DecisionTag {
+        match decision {
+            MergeDecision::Keep(_) => DecisionTag::Keep,
+            MergeDecision::Delete => DecisionTag::Delete,
+        }
+    }
+
+    fn merge_conflict_matrix(
+        language: MergeLanguage,
+        base: &[u8],
+        ours: &[u8],
+        theirs: &[u8],
+        use_sparse_prefilter: bool,
+    ) -> std::result::Result<BTreeMap<String, ConflictMatrixRow>, MergeError> {
+        let base_units = extract_top_level_units(language, base)?;
+        let ours_units = extract_top_level_units(language, ours)?;
+        let theirs_units = extract_top_level_units(language, theirs)?;
+        let base_order: Vec<String> = base_units.iter().map(|u| u.key.clone()).collect();
+        let mask = if use_sparse_prefilter {
+            Some(sparse_prefilter_mask(
+                &base_units,
+                &ours_units,
+                &theirs_units,
+                &base_order,
+            ))
+        } else {
+            None
+        };
+        let ours_diff = build_side_diff(&base_units, &ours_units, mask.as_ref(), MergeSide::Ours);
+        let theirs_diff =
+            build_side_diff(&base_units, &theirs_units, mask.as_ref(), MergeSide::Theirs);
+        let decisions =
+            resolve_base_decisions(&base_units, &ours_diff.states, &theirs_diff.states)?;
+        let mut matrix = BTreeMap::new();
+        for base in &base_units {
+            let ours_state = ours_diff
+                .states
+                .get(&base.key)
+                .ok_or(MergeError::SemanticConflict)?;
+            let theirs_state = theirs_diff
+                .states
+                .get(&base.key)
+                .ok_or(MergeError::SemanticConflict)?;
+            let decision = decisions
+                .get(&base.key)
+                .ok_or(MergeError::SemanticConflict)?;
+            matrix.insert(
+                base.key.clone(),
+                ConflictMatrixRow {
+                    ours: side_tag(ours_state),
+                    theirs: side_tag(theirs_state),
+                    decision: decision_tag(decision),
+                },
+            );
+        }
+        Ok(matrix)
+    }
+
+    struct CorpusCase {
+        label: &'static str,
+        lang: MergeLanguage,
+        base: &'static str,
+        ours: &'static str,
+        theirs: &'static str,
+    }
+
+    fn insertion_corpus() -> Vec<CorpusCase> {
+        vec![
+            CorpusCase {
+                label: "go-disjoint-insertions",
+                lang: MergeLanguage::Go,
+                base: "package main\n\nfunc keep() int {\n\treturn 1\n}\n",
+                ours: "package main\n\nfunc keep() int {\n\treturn 1\n}\n\nfunc oursOnly() int {\n\treturn 2\n}\n",
+                theirs: "package main\n\nfunc keep() int {\n\treturn 1\n}\n\nfunc theirsOnly() int {\n\treturn 3\n}\n",
+            },
+            CorpusCase {
+                label: "rust-disjoint-insertions",
+                lang: MergeLanguage::Rust,
+                base: "fn keep() -> i32 {\n    1\n}\n",
+                ours: "fn keep() -> i32 {\n    1\n}\n\nfn ours_only() -> i32 {\n    2\n}\n",
+                theirs: "fn keep() -> i32 {\n    1\n}\n\nfn theirs_only() -> i32 {\n    3\n}\n",
+            },
+            CorpusCase {
+                label: "python-disjoint-insertions",
+                lang: MergeLanguage::Python,
+                base: "def keep():\n    return 1\n",
+                ours: "def keep():\n    return 1\n\ndef ours_only():\n    return 2\n",
+                theirs: "def keep():\n    return 1\n\ndef theirs_only():\n    return 3\n",
+            },
+            CorpusCase {
+                label: "typescript-disjoint-insertions",
+                lang: MergeLanguage::TypeScript,
+                base: "export function keep(): number {\n  return 1;\n}\n",
+                ours: "export function keep(): number {\n  return 1;\n}\n\nexport function oursOnly(): number {\n  return 2;\n}\n",
+                theirs: "export function keep(): number {\n  return 1;\n}\n\nexport function theirsOnly(): number {\n  return 3;\n}\n",
+            },
+        ]
+    }
+
+    fn full_merge_corpus() -> Vec<CorpusCase> {
+        let mut cases = Vec::new();
+
+        for fixture in trivial_fixtures() {
+            for (label, ours, theirs) in [
+                ("trivial-identical", fixture.base, fixture.base),
+                ("trivial-theirs-only", fixture.base, fixture.theirs_change),
+                ("trivial-ours-only", fixture.ours_change, fixture.base),
+                (
+                    "trivial-both-same-change",
+                    fixture.ours_change,
+                    fixture.ours_change,
+                ),
+                (
+                    "trivial-collision",
+                    fixture.ours_change,
+                    fixture.theirs_change,
+                ),
+                (
+                    "trivial-collision-swapped",
+                    fixture.theirs_change,
+                    fixture.ours_change,
+                ),
+            ] {
+                cases.push(CorpusCase {
+                    label,
+                    lang: fixture.lang,
+                    base: fixture.base,
+                    ours,
+                    theirs,
+                });
+            }
+        }
+
+        for fixture in semantic_fixtures() {
+            for (label, ours, theirs) in [
+                ("semantic-disjoint", fixture.ours, fixture.theirs),
+                (
+                    "semantic-overlap-conflict",
+                    fixture.ours,
+                    fixture.overlap_theirs,
+                ),
+                ("semantic-ours-only", fixture.ours, fixture.base),
+                ("semantic-theirs-only", fixture.base, fixture.theirs),
+                ("semantic-both-expected", fixture.expected, fixture.expected),
+            ] {
+                cases.push(CorpusCase {
+                    label,
+                    lang: fixture.lang,
+                    base: fixture.base,
+                    ours,
+                    theirs,
+                });
+            }
+        }
+
+        cases.extend(insertion_corpus());
+        cases
+    }
+
+    #[test]
+    fn sparse_dense_conformance_full_corpus() {
+        for case in full_merge_corpus() {
+            let base = case.base.as_bytes();
+            let ours = case.ours.as_bytes();
+            let theirs = case.theirs.as_bytes();
+
+            let dense = merge_three_way_dense(case.lang, base, ours, theirs);
+            let sparse = merge_three_way(case.lang, base, ours, theirs);
+
+            assert_eq!(
+                dense, sparse,
+                "corpus case {}: sparse pre-filter must match dense merge output",
+                case.label
+            );
+
+            match (&dense, &sparse) {
+                (Ok(_), Ok(_)) => {
+                    let dense_matrix = merge_conflict_matrix(case.lang, base, ours, theirs, false)
+                        .expect("dense matrix");
+                    let sparse_matrix = merge_conflict_matrix(case.lang, base, ours, theirs, true)
+                        .expect("sparse matrix");
+                    assert_eq!(
+                        dense_matrix, sparse_matrix,
+                        "corpus case {}: conflict matrix must match",
+                        case.label
+                    );
+                }
+                (Err(MergeError::SemanticConflict), Err(MergeError::SemanticConflict)) => {}
+                _ => panic!(
+                    "corpus case {}: dense/sparse error classification diverged",
+                    case.label
+                ),
+            }
         }
     }
 }
