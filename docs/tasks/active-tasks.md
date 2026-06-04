@@ -37,7 +37,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T128 | Sparse pre-filter integration (skip shared base subtrees) | backend-developer | done | P0 | T127 | 2026-06-04 |
 | T129 | Sparse↔dense conflict-matrix conformance suite | qa-engineer | done | P0 | T128 | 2026-06-04 |
 | T130 | Phase 8 Tech-Lead gate + large-repo merge benchmark | tech-lead | done | P0 | T129 | 2026-06-04 |
-| T131 | Rollout architecture: proxy boundary + Polar REST API | solution-architect | in_review | P0 | T130 | 2026-06-04 |
+| T131 | Rollout architecture: proxy boundary + Polar REST API | solution-architect | done | P0 | T130 | 2026-06-04 |
+| T132 | Rust `hyper` reverse proxy + zero-copy capture | backend-developer | in_review | P0 | T131 | 2026-06-04 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -534,13 +535,23 @@ Landed via MR !39 → `develop` (merge `7dc4e7a`, source `d77d08c`, pipeline #25
 **Phase 8 Feature D is complete.** Brief: `task-T130.md`. Checkpoint:
 `docs/checkpoints/checkpoint-010-phase8-complete.md`. Next: **T131** (Phase 9 rollout architecture).
 
-### T131 (in_review) — Rollout architecture (Feature E kickoff)
+### T131 (done) — Rollout architecture (Feature E kickoff)
 
 > **Phase 9 (Rollout-as-a-Service).** Active T131 = roadmap placeholder T105. Depends on T130.
 
-Branch `feature/T131-rollout-architecture`. Docs/architecture only; gates T132–T138:
+Merged via MR !40 → `2d40413` on `develop`. Docs/architecture only; gates T132–T138:
 
 - **ADR-010** + `rollout-architecture-v1.md` (proxy sidecar, trajectory builder, Polar REST API)
 - Schemas: `rollout_task_submit.json`, `rollout_task_status.json`
 
-Next (**T132**): Rust `hyper` reverse proxy + zero-copy capture in `cwso-rollout`. Brief: `task-T131.md`.
+Brief: `task-T131.md`. Next (**T132**): Rust `hyper` reverse proxy + zero-copy capture in
+`cwso-rollout`. Brief: `task-T132.md`.
+
+### T132 (in_review) — Rust hyper reverse proxy + capture
+
+Branch `feature/T132-rollout-hyper-proxy`. Implements `services/cwso-rollout`:
+
+- `hyper` reverse proxy for OpenAI/Anthropic/Google routes
+- Four-step capture pipeline (detect → normalize → forward+store → denormalize/synthetic SSE)
+- Framed-JSON UDS control plane + non-blocking `crossbeam-channel` capture queue
+- Unit/integration tests; wired into workspace `Cargo.toml` + CI `rust:test`

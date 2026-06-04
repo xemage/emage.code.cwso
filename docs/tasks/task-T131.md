@@ -2,12 +2,13 @@
 
 > **ID note:** roadmap **Feature E+F+G / placeholder T105**. Active **T131** (see `active-tasks.md`).
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** solution-architect (reviewers: tech-lead, backend-developer, security-engineer)
 - **Priority:** P0
 - **Depends on:** T130 (Phase 8 gate)
 - **Phase:** 9 — Rollout-as-a-Service (Polar)
 - **Based on:** `docs/artifacts/cwso-nextgen-blueprint-v1.md` §3.7, §5.2–5.4; `gate-phase8-feature-d-2026-06-04.md`
+- **Merged:** MR !40 → `2d40413` on `develop` (2026-06-04)
 
 ## Objective
 
@@ -30,7 +31,7 @@ implementation.
 - [x] Polar REST routes enumerated with schemas.
 - [x] Implementation breakdown T132–T139 with owners, priorities, dependencies.
 - [x] Board + reconciliation mapping updated for Phase 9 kickoff.
-- [ ] CI green on T131 MR
+- [x] CI green on T131 MR (!40, pipeline #2577603519)
 
 ## Notes
 
