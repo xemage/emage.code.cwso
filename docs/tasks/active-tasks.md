@@ -35,8 +35,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T126 | Sparse AST tensor encoding spec (photonic-ready kernel contract) | solution-architect | done | P0 | T125 | 2026-06-04 |
 | T127 | AVX-512 / `std::simd` sparse diff kernel in cwso-merge-engine | backend-developer | done | P0 | T126 | 2026-06-04 |
 | T128 | Sparse pre-filter integration (skip shared base subtrees) | backend-developer | done | P0 | T127 | 2026-06-04 |
-| T129 | Sparse↔dense conflict-matrix conformance suite | qa-engineer | in_review | P0 | T128 | 2026-06-04 |
-| T130 | Phase 8 Tech-Lead gate + large-repo merge benchmark | tech-lead | pending | P0 | T129 | 2026-06-04 |
+| T129 | Sparse↔dense conflict-matrix conformance suite | qa-engineer | done | P0 | T128 | 2026-06-04 |
+| T130 | Phase 8 Tech-Lead gate + large-repo merge benchmark | tech-lead | in_review | P0 | T129 | 2026-06-04 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -509,3 +509,10 @@ Brief: `task-T127.md`. Next: **T128** (pre-filter hook).
 Landed via MR !37 → `develop` (`7f489b4`, source `aa509fb`). Wires `sparse_diff` before
 `resolve_base_decisions`; `BothUnchanged` rows skip per-side byte compare. Brief: `task-T128.md`.
 Next: **T129** (sparse↔dense conformance).
+
+### T129 (done) — Sparse↔dense conflict-matrix conformance
+
+> **Phase 8 (Feature D).** Active T129 = roadmap placeholder T103. Depends on T128.
+
+Landed via MR !38 → `develop` (`0977483`, squash `787c244`, source `5a94f67`, pipeline #2577297839).
+Brief: `task-T129.md`. Next: **T130** (Phase 8 Tech-Lead gate + benchmark).

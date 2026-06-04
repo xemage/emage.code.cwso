@@ -28,7 +28,7 @@ conflicting rows.
 - [x] Insertion anchor logic unchanged
 - [x] `cargo test -p cwso-merge-engine` green (24 tests)
 - [x] `go test ./...` green in orchestrator
-- [ ] Sparse↔dense full corpus conformance (T129)
+- [x] Sparse↔dense full corpus conformance (T129, MR !38)
 
 ## Notes
 

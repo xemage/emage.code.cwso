@@ -920,6 +920,76 @@ mod tests {
         cases
     }
 
+    /// Synthetic Go file with `unit_count` top-level functions; two disjoint edits on ours/theirs.
+    fn synthesize_large_go_three_way(unit_count: usize) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+        let mut base = String::from("package main\n\n");
+        for i in 0..unit_count {
+            base.push_str(&format!("func unit_{i}() int {{\n\treturn {i}\n}}\n\n"));
+        }
+        let mut ours = base.clone();
+        ours = ours.replace(
+            "func unit_0() int {\n\treturn 0\n}",
+            "func unit_0() int {\n\treturn 100\n}",
+        );
+        let mut theirs = base.clone();
+        theirs = theirs.replace(
+            "func unit_1() int {\n\treturn 1\n}",
+            "func unit_1() int {\n\treturn 200\n}",
+        );
+        (base.into_bytes(), ours.into_bytes(), theirs.into_bytes())
+    }
+
+    #[test]
+    fn large_repo_sparse_dense_equivalence() {
+        const UNITS: usize = 2000;
+        let (base, ours, theirs) = synthesize_large_go_three_way(UNITS);
+        let dense = merge_three_way_dense(MergeLanguage::Go, &base, &ours, &theirs);
+        let sparse = merge_three_way(MergeLanguage::Go, &base, &ours, &theirs);
+        assert_eq!(
+            dense, sparse,
+            "large-repo sparse path must match dense merge"
+        );
+    }
+
+    #[test]
+    #[ignore = "manual benchmark; cargo test -p cwso-merge-engine large_repo_merge_prefilter_benchmark --release -- --ignored --nocapture"]
+    fn large_repo_merge_prefilter_benchmark() {
+        use std::time::{Duration, Instant};
+
+        const UNITS: usize = 2000;
+        const ITERS: usize = 15;
+        let (base, ours, theirs) = synthesize_large_go_three_way(UNITS);
+
+        let mut dense_samples = Vec::with_capacity(ITERS);
+        let mut sparse_samples = Vec::with_capacity(ITERS);
+        for _ in 0..ITERS {
+            let t0 = Instant::now();
+            let _ = merge_three_way_dense(MergeLanguage::Go, &base, &ours, &theirs);
+            dense_samples.push(t0.elapsed());
+
+            let t1 = Instant::now();
+            let _ = merge_three_way(MergeLanguage::Go, &base, &ours, &theirs);
+            sparse_samples.push(t1.elapsed());
+        }
+
+        dense_samples.sort();
+        sparse_samples.sort();
+        let median = |v: &[Duration]| v[v.len() / 2];
+        let dense_med = median(&dense_samples);
+        let sparse_med = median(&sparse_samples);
+        let speedup = dense_med.as_secs_f64() / sparse_med.as_secs_f64();
+        eprintln!(
+            "large-repo benchmark ({UNITS} units, {ITERS} iters): dense_median={dense_med:?} sparse_median={sparse_med:?} ratio={speedup:.2}x"
+        );
+        let dense_out =
+            merge_three_way_dense(MergeLanguage::Go, &base, &ours, &theirs).expect("dense");
+        let sparse_out = merge_three_way(MergeLanguage::Go, &base, &ours, &theirs).expect("sparse");
+        assert_eq!(
+            dense_out, sparse_out,
+            "benchmark fixture must stay sparse≡dense"
+        );
+    }
+
     #[test]
     fn sparse_dense_conformance_full_corpus() {
         for case in full_merge_corpus() {

@@ -2,7 +2,7 @@
 
 > **ID note:** roadmap **Feature D / placeholder T103**. Active **T129** (see `active-tasks.md`).
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** qa-engineer
 - **Priority:** P0
 - **Depends on:** T128 (sparse pre-filter integration)
@@ -28,11 +28,11 @@ the ADR-006 dense path (no sparse mask).
 - [x] Successful merges: per-key conflict matrix (`SideTag` × `DecisionTag`) matches
 - [x] `cargo test -p cwso-merge-engine` green (25 tests)
 - [x] `go test ./...` green in orchestrator
-- [ ] CI green on MR !38
-- [ ] MR merged (awaiting user approval per gate protocol)
+- [x] CI green on MR !38 (pipeline #2577297839 @ `5a94f67`)
+- [x] MR !38 merged to `develop` (`0977483`, squash `787c244`)
 
 ## Notes
 
 - **MR:** !38 — https://gitlab.com/em-age/emage.code.cwso/-/merge_requests/38
-- **Branch:** `feature/T129-sparse-conformance` @ `7c2732a`
-- **Pipeline:** #2577175850 (pending at last check)
+- **Merge:** `develop` @ `09774839e7d268d6ab2deecae8711db0b42647a2` (2026-06-04)
+- T130 Phase 8 gate follows.
