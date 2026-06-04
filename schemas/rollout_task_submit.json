@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cwso.dev/schemas/rollout_task_submit.json",
+  "title": "rollout_task_submit",
+  "description": "Submit an async RL rollout task. Non-blocking; may prewarm KV-cache prefix for the workspace. Polar-compatible Phase 9 API (Feature E/G).",
+  "type": "object",
+  "properties": {
+    "task_spec": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Natural-language task description for the agent harness."
+        },
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Shadow workspace UUID; used to resolve base tree OID for prefix caching."
+        },
+        "max_steps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "Maximum agent steps before rollout termination."
+        }
+      },
+      "required": ["description", "workspace_id"],
+      "additionalProperties": false
+    },
+    "trainer_callback_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "Optional URL for session_result callbacks when trajectories are ready."
+    },
+    "prewarm_kv_prefix": {
+      "type": "boolean",
+      "default": true,
+      "description": "When true and KV router enabled, prewarm shared prefix before agent starts."
+    }
+  },
+  "required": ["task_spec"],
+  "additionalProperties": false,
+  "x-result": {
+    "type": "object",
+    "properties": {
+      "task_id": { "type": "string", "format": "uuid" },
+      "status": { "type": "string", "enum": ["queued", "running"] },
+      "prefix_key": { "type": "string", "description": "BLAKE3 prefix key when prewarm requested." }
+    },
+    "required": ["task_id", "status"]
+  }
+}

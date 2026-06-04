@@ -3,7 +3,7 @@
 **Target:** Phase 8 Feature D (T126–T129) integration on `develop`  
 **Based on:** ADR-009, `sparse-ast-tensor-encoding-v1.md`, `docs/benchmarks/phase8-large-repo-merge-benchmark-v1.md`, tasks T126–T129  
 **Date:** 2026-06-04  
-**Gate MR:** T130 branch `feature/T130-phase8-gate` (awaiting CI; **not merged** per user protocol)
+**Gate MR:** T130 — MR !39 merged to `develop` at `7dc4e7a` (source `d77d08c`, pipeline #2577485639)
 
 Scope reviewed on `develop` after T129 merge (`0977483`):
 
@@ -84,6 +84,6 @@ unchanged vs ADR-006 baseline.
 
 **Phase 8 Feature D is cleared to proceed** (PoC sparse pre-filter complete). Medium performance
 finding documents CPU overhead; HAL offload is the planned remediation. No fix tasks required before
-closing T130 pending user merge approval.
+closing T130.
 
-**Closure:** Pending T130 MR merge to `develop`. Phase 9 / next roadmap slice not started.
+**Closure:** T130 merged 2026-06-04 (MR !39, `7dc4e7a`). Phase 9 kickoff (**T131**) in progress.
