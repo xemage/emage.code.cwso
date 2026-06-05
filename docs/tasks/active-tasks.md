@@ -40,7 +40,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T131 | Rollout architecture: proxy boundary + Polar REST API | solution-architect | done | P0 | T130 | 2026-06-04 |
 | T132 | Rust `hyper` reverse proxy + zero-copy capture | backend-developer | done | P0 | T131 | 2026-06-04 |
 | T133 | Trajectory builder + prefix merging | backend-developer | done | P0 | T132 | 2026-06-05 |
-| T134 | Trajectory store (Arrow + LZ4 + Parquet) | backend-developer | in_review | P1 | T133 | 2026-06-05 |
+| T134 | Trajectory store (Arrow + LZ4 + Parquet) | backend-developer | done | P1 | T133 | 2026-06-05 |
+| T136 | Programmatic reward emission (merge SM hook) | backend-developer | in_review | P0 | T133 | 2026-06-05 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -570,11 +571,22 @@ Go `orchestrator/internal/rollout`: prefix merge, loss masks, UDS `drain_capture
 
 Brief: `task-T133.md`. Next (**T134**): Parquet trajectory store in `cwso-rollout`. Brief: `task-T134.md`.
 
-### T134 (in_review) — Trajectory store (Arrow + LZ4 + Parquet)
+### T134 (done) — Trajectory store (Arrow + LZ4 + Parquet)
 
 > **Phase 9 (Feature E).** Active T134 = roadmap placeholder T108. Depends on T133.
 
-MR !43 (`feature/T134-parquet-store` → `develop`, tip `3c90f1e`). Rust `cwso-rollout/src/store.rs`:
-Parquet/LZ4 writer thread, fan-out enqueue, retention sweep.
+Merged via MR !43 → `develop` (`26761ab`; source `374d672`, pipeline #2579771042).
+Rust `cwso-rollout/src/store.rs`: Parquet/LZ4 writer thread, fan-out enqueue, retention sweep.
+CI socket-runner layout landed in same merge (`.gitlab-ci.yml`, `docker-compose.ci.yml`).
 
-Brief: `task-T134.md`.
+Brief: `task-T134.md`. Next (**T136**, P0): programmatic merge rewards. Brief: `task-T136.md`.
+
+### T136 (in_review) — Programmatic reward emission
+
+> **Phase 9 (Feature G).** Active T136 = roadmap placeholder T110. Depends on T133.
+
+MR pending (`feature/T136-programmatic-rewards` → `develop`). Go merge SM hook publishes
+`rollout/reward` events (+1.0 success, −1.0 conflict/syntax fail) when
+`CWSO_ROLLOUT_REWARD_ENABLED=true`.
+
+Brief: `task-T136.md`.

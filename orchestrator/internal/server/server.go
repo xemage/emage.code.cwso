@@ -16,6 +16,7 @@ import (
 	"github.com/emage/cwso/orchestrator/internal/mcp"
 	"github.com/emage/cwso/orchestrator/internal/memorybroker"
 	"github.com/emage/cwso/orchestrator/internal/mergeengine"
+	"github.com/emage/cwso/orchestrator/internal/rollout"
 	"github.com/emage/cwso/orchestrator/internal/sandbox"
 	"github.com/emage/cwso/orchestrator/internal/shadow"
 	"github.com/emage/cwso/orchestrator/internal/sparse"
@@ -294,7 +295,7 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 		log.Info().Str("socket", cfg.ShadowSocket).Msg("shadow tools enabled")
 	}
 	if cfg.MergeEngineSocket != "" {
-		if err := s.registerMergeTools(cfg.MergeEngineSocket); err != nil {
+		if err := s.registerMergeTools(cfg); err != nil {
 			jobMgr.Close()
 			broker.Close()
 			return nil, fmt.Errorf("register merge tools: %w", err)
@@ -408,10 +409,15 @@ func shadowHardwareProviders() []dispatch.ProviderCapability {
 	}
 }
 
-func (s *Server) registerMergeTools(socket string) error {
-	client := mergeengine.NewClient(socket)
-	if err := s.registry.Register(tools.NewMergeConcurrentResults(client)); err != nil {
+func (s *Server) registerMergeTools(cfg *config.Config) error {
+	client := mergeengine.NewClient(cfg.MergeEngineSocket)
+	rewards := rollout.NewRewardEmitter(cfg.RolloutRewardEnabled, s.publisher)
+	tool := tools.NewMergeConcurrentResultsWithRewards(client, rewards)
+	if err := s.registry.Register(tool); err != nil {
 		return err
+	}
+	if cfg.RolloutRewardEnabled {
+		s.log.Info().Msg("merge programmatic rewards enabled (rollout/reward topic)")
 	}
 	return nil
 }

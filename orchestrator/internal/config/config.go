@@ -70,6 +70,7 @@ type Config struct {
 	SparseSocket                  string   // UDS path for the cwso-sparse sidecar ("" disables sparse agent tools)
 	SparseHostRAMCapMB            int      // host-wide RAM cap enforced on max_ram_mb requests
 	SparseQualityGuardrailEnabled bool     // enable quality-floor breach → dense GPU escalation (T123)
+	RolloutRewardEnabled          bool     // enable programmatic merge SM rewards on rollout/reward topic (T136)
 	HHDSnapshotTTLSeconds         int      // stale capability threshold for policy-facing snapshots
 	HHDPolicyEngineV2             bool     // enable policy engine v2 backend selection and fallback
 	HHDHardwareAwareDispatch      bool     // enable dispatch_hardware_aware_job tool + shadow provider catalog (Phase 6)
@@ -171,6 +172,7 @@ func Load(_ string) (*Config, error) {
 		SparseSocket:                  os.Getenv("CWSO_SPARSE_SOCKET"),
 		SparseHostRAMCapMB:            envInt("CWSO_SPARSE_HOST_RAM_CAP_MB", 4096),
 		SparseQualityGuardrailEnabled: envBool("CWSO_SPARSE_QUALITY_GUARDRAIL_ENABLED", false),
+		RolloutRewardEnabled:          envBool("CWSO_ROLLOUT_REWARD_ENABLED", false),
 		HHDSnapshotTTLSeconds:         envInt("CWSO_HHD_CAPABILITY_SNAPSHOT_TTL_SECONDS", 30),
 		HHDPolicyEngineV2:             envBool("CWSO_HHD_POLICY_ENGINE_V2_ENABLED", false),
 		HHDHardwareAwareDispatch:      envBool("CWSO_HHD_HARDWARE_AWARE_DISPATCH_ENABLED", false),
