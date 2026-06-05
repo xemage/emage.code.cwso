@@ -39,6 +39,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T130 | Phase 8 Tech-Lead gate + large-repo merge benchmark | tech-lead | done | P0 | T129 | 2026-06-04 |
 | T131 | Rollout architecture: proxy boundary + Polar REST API | solution-architect | done | P0 | T130 | 2026-06-04 |
 | T132 | Rust `hyper` reverse proxy + zero-copy capture | backend-developer | done | P0 | T131 | 2026-06-04 |
+| T133 | Trajectory builder + prefix merging | backend-developer | in_review | P0 | T132 | 2026-06-04 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -560,3 +561,10 @@ Implements `services/cwso-rollout`:
   pipelines intermittently failed on Docker Hub 429 / DinD (no code defect).
 
 Brief: `task-T132.md`. Next (**T133**): trajectory builder. Brief: `task-T133.md`.
+
+### T133 (in_review) — Trajectory builder + prefix merging
+
+MR !42 (`feature/T133-trajectory-builder` → `develop`, rebased after !41).
+Go `orchestrator/internal/rollout`: prefix merge, loss masks, UDS `drain_capture` client.
+
+Brief: `task-T133.md`.

@@ -32,6 +32,7 @@ non-blocking capture queue.
 - [x] Feature-flagged via `CWSO_ROLLOUT_PROXY_ENABLED` (default off)
 - [x] `cargo test -p cwso-rollout` green locally
 - [x] CI green on T132 MR (branch pipeline 2577824713; MR pipeline blocked by Docker Hub 429 — merged via API)
+- [x] MR !41 merged to `develop` (`267922c`)
 
 ## Notes
 
