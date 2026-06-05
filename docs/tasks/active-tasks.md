@@ -39,7 +39,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T130 | Phase 8 Tech-Lead gate + large-repo merge benchmark | tech-lead | done | P0 | T129 | 2026-06-04 |
 | T131 | Rollout architecture: proxy boundary + Polar REST API | solution-architect | done | P0 | T130 | 2026-06-04 |
 | T132 | Rust `hyper` reverse proxy + zero-copy capture | backend-developer | done | P0 | T131 | 2026-06-04 |
-| T133 | Trajectory builder + prefix merging | backend-developer | in_review | P0 | T132 | 2026-06-04 |
+| T133 | Trajectory builder + prefix merging | backend-developer | done | P0 | T132 | 2026-06-05 |
+| T134 | Trajectory store (Arrow + LZ4 + Parquet) | backend-developer | in_review | P1 | T133 | 2026-06-05 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -562,9 +563,18 @@ Implements `services/cwso-rollout`:
 
 Brief: `task-T132.md`. Next (**T133**): trajectory builder. Brief: `task-T133.md`.
 
-### T133 (in_review) — Trajectory builder + prefix merging
+### T133 (done) — Trajectory builder + prefix merging
 
-MR !42 (`feature/T133-trajectory-builder` → `develop`, rebased after !41).
+Merged via MR !42 → `develop` (`18b5a40`, squash `5bd981b`; source `59026df`, pipeline #2578342413).
 Go `orchestrator/internal/rollout`: prefix merge, loss masks, UDS `drain_capture` client.
 
-Brief: `task-T133.md`.
+Brief: `task-T133.md`. Next (**T134**): Parquet trajectory store in `cwso-rollout`. Brief: `task-T134.md`.
+
+### T134 (in_review) — Trajectory store (Arrow + LZ4 + Parquet)
+
+> **Phase 9 (Feature E).** Active T134 = roadmap placeholder T108. Depends on T133.
+
+MR !43 (`feature/T134-parquet-store` → `develop`, tip `3c90f1e`). Rust `cwso-rollout/src/store.rs`:
+Parquet/LZ4 writer thread, fan-out enqueue, retention sweep.
+
+Brief: `task-T134.md`.

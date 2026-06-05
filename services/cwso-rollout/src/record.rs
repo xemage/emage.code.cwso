@@ -25,6 +25,8 @@ pub struct CaptureStore {
     sender: Sender<CompletionRecord>,
     receiver: Receiver<CompletionRecord>,
     dropped: AtomicU64,
+    store_sender: Option<Sender<CompletionRecord>>,
+    store_dropped: Option<Arc<AtomicU64>>,
 }
 
 impl CaptureStore {
@@ -34,10 +36,32 @@ impl CaptureStore {
             sender,
             receiver,
             dropped: AtomicU64::new(0),
+            store_sender: None,
+            store_dropped: None,
         }
     }
 
+    pub fn with_store_fanout(
+        mut self,
+        store_sender: Sender<CompletionRecord>,
+        store_dropped: Arc<AtomicU64>,
+    ) -> Self {
+        self.store_sender = Some(store_sender);
+        self.store_dropped = Some(store_dropped);
+        self
+    }
+
     pub fn try_enqueue(&self, record: CompletionRecord) -> bool {
+        if let (Some(store_sender), Some(store_dropped)) = (&self.store_sender, &self.store_dropped)
+        {
+            match store_sender.try_send(record.clone()) {
+                Ok(()) => {}
+                Err(TrySendError::Full(_)) => {
+                    store_dropped.fetch_add(1, Ordering::Relaxed);
+                }
+                Err(TrySendError::Disconnected(_)) => {}
+            }
+        }
         match self.sender.try_send(record) {
             Ok(()) => true,
             Err(TrySendError::Full(_)) => {

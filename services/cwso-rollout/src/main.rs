@@ -17,6 +17,7 @@ mod provider;
 mod proxy;
 mod record;
 mod security;
+mod store;
 mod upstream;
 
 use capture::CapturePipeline;
@@ -40,7 +41,22 @@ fn main() -> Result<()> {
         .as_ref()
         .map(|proxy| proxy.capture_queue_capacity)
         .unwrap_or(CAPTURE_QUEUE_DEFAULT);
-    let store = Arc::new(CaptureStore::new(queue_capacity));
+    let mut capture_store = CaptureStore::new(queue_capacity);
+    let store_writer = store::StoreConfig::from_env()?;
+    let mut _store_join = None;
+    if let Some(store_config) = store_writer {
+        let (store_handle, join) = store::spawn_store(store_config)?;
+        capture_store =
+            capture_store.with_store_fanout(store_handle.sender, Arc::clone(&store_handle.dropped));
+        _store_join = Some(join);
+        tracing::info!(
+            written = store_handle
+                .written
+                .load(std::sync::atomic::Ordering::Relaxed),
+            "trajectory Parquet store enabled"
+        );
+    }
+    let store = Arc::new(capture_store);
 
     let socket_path: PathBuf = sidecar.socket_path.into();
     let store_ipc = Arc::clone(&store);

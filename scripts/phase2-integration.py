@@ -29,6 +29,14 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 COMPOSE = REPO / "deploy" / "docker-compose.yml"
+COMPOSE_CI = REPO / "deploy" / "docker-compose.ci.yml"
+
+
+def resolve_compose_files() -> list[Path]:
+    files = [COMPOSE]
+    if os.environ.get("CI"):
+        files.append(COMPOSE_CI)
+    return files
 
 
 def resolve_compose_profiles() -> list[str]:
@@ -124,10 +132,17 @@ def assert_ok(cond: bool, label: str, ctx: object = "") -> None:
         sys.exit(1)
 
 
-def compose(*args: str, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
-    cmd = ["docker", "compose", "-f", str(COMPOSE)]
+def compose_cmd_prefix() -> list[str]:
+    cmd = ["docker", "compose"]
+    for compose_file in resolve_compose_files():
+        cmd.extend(["-f", str(compose_file)])
     for profile in COMPOSE_PROFILES:
         cmd.extend(["--profile", profile])
+    return cmd
+
+
+def compose(*args: str, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
+    cmd = compose_cmd_prefix()
     cmd.extend(args)
     return subprocess.run(cmd, check=check, capture_output=capture, text=True)
 
@@ -156,20 +171,14 @@ def healthz_up() -> bool:
 
 
 def socket_present() -> bool:
-    cp = subprocess.run(
-        ["docker", "compose", "-f", str(COMPOSE), "exec", "-T", "orchestrator",
-         "test", "-S", "/run/cwso/git-shadow.sock"],
-        capture_output=True,
-    )
+    cmd = compose_cmd_prefix() + ["exec", "-T", "orchestrator", "test", "-S", "/run/cwso/git-shadow.sock"]
+    cp = subprocess.run(cmd, capture_output=True)
     return cp.returncode == 0
 
 
 def merge_socket_present() -> bool:
-    cp = subprocess.run(
-        ["docker", "compose", "-f", str(COMPOSE), "exec", "-T", "orchestrator",
-         "test", "-S", "/run/cwso/merge-engine.sock"],
-        capture_output=True,
-    )
+    cmd = compose_cmd_prefix() + ["exec", "-T", "orchestrator", "test", "-S", "/run/cwso/merge-engine.sock"]
+    cp = subprocess.run(cmd, capture_output=True)
     return cp.returncode == 0
 
 
