@@ -11,6 +11,7 @@ import (
 
 	"github.com/emage/cwso/orchestrator/internal/mcp"
 	"github.com/emage/cwso/orchestrator/internal/mergeengine"
+	"github.com/emage/cwso/orchestrator/internal/rollout"
 )
 
 type mergeSidecarRequest struct {
@@ -340,4 +341,59 @@ func decodeMergeResult(t *testing.T, res *mcp.ToolCallResult) mergeConcurrentOut
 		t.Fatalf("unmarshal merge result: %v; text=%s", err, res.Content[0].Text)
 	}
 	return out
+}
+
+func TestMergeConcurrentResultsEmitsRewardOnSuccess(t *testing.T) {
+	socket := startMergeToolSidecar(t, func(req mergeSidecarRequest) mergeSidecarResponse {
+		if req.Op != mergeOpThreeWay {
+			return mergeSidecarResponse{ID: req.ID, OK: false, Error: "bad op"}
+		}
+		merged := base64.StdEncoding.EncodeToString([]byte("merged"))
+		result, _ := json.Marshal(mergeEngineSuccess{MergedB64: merged})
+		return mergeSidecarResponse{ID: req.ID, OK: true, Result: result}
+	})
+
+	rec := &rolloutRewardRecorder{}
+	tool := NewMergeConcurrentResultsWithRewards(
+		mergeengine.NewClient(socket),
+		rollout.NewRewardEmitter(true, rec),
+	)
+	args := `{
+		"source_workspace_uuids": ["11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"],
+		"rollout_session_id": "sess-reward-1",
+		"merge_inputs": [{
+			"path": "a.go", "language": "go",
+			"base_content": "a", "ours_content": "b", "theirs_content": "c"
+		}]
+	}`
+	res, err := tool.Execute(context.Background(), json.RawMessage(args))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	out := decodeMergeResult(t, res)
+	if out.Outcome != "success" || out.MergeReward == nil || *out.MergeReward != 1.0 {
+		t.Fatalf("unexpected outcome/reward: %+v", out)
+	}
+	if out.RewardKind != string(rollout.RewardMergeSuccess) {
+		t.Fatalf("reward kind: %q", out.RewardKind)
+	}
+	if len(rec.events) != 1 || rec.events[0].SessionID != "sess-reward-1" {
+		t.Fatalf("published events: %+v", rec.events)
+	}
+}
+
+type rolloutRewardRecorder struct {
+	events []rollout.RewardEvent
+}
+
+func (r *rolloutRewardRecorder) Publish(topic string, payload any) error {
+	if topic != rollout.TopicReward {
+		return nil
+	}
+	ev, ok := payload.(rollout.RewardEvent)
+	if !ok {
+		return nil
+	}
+	r.events = append(r.events, ev)
+	return nil
 }

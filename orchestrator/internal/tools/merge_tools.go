@@ -9,6 +9,7 @@ import (
 
 	"github.com/emage/cwso/orchestrator/internal/mcp"
 	"github.com/emage/cwso/orchestrator/internal/mergeengine"
+	"github.com/emage/cwso/orchestrator/internal/rollout"
 )
 
 const (
@@ -18,12 +19,18 @@ const (
 // MergeConcurrentResults merges concurrent workspace outputs through the
 // cwso-merge-engine sidecar and returns stable, structured outcomes.
 type MergeConcurrentResults struct {
-	client *mergeengine.Client
+	client  *mergeengine.Client
+	rewards *rollout.RewardEmitter
 }
 
 // NewMergeConcurrentResults constructs the tool.
 func NewMergeConcurrentResults(c *mergeengine.Client) *MergeConcurrentResults {
 	return &MergeConcurrentResults{client: c}
+}
+
+// NewMergeConcurrentResultsWithRewards constructs the tool with optional reward emission (T136).
+func NewMergeConcurrentResultsWithRewards(c *mergeengine.Client, rewards *rollout.RewardEmitter) *MergeConcurrentResults {
+	return &MergeConcurrentResults{client: c, rewards: rewards}
 }
 
 // Name returns the MCP tool name.
@@ -49,6 +56,10 @@ func (t *MergeConcurrentResults) InputSchema() map[string]any {
 				"type":    "string",
 				"enum":    []string{"ast_semantic_only", "prefer_theirs", "prefer_ours", "fail_rapidly_on_conflict"},
 				"default": "ast_semantic_only",
+			},
+			"rollout_session_id": map[string]any{
+				"type":        "string",
+				"description": "Optional rollout session id for programmatic reward attachment (T136)",
 			},
 			"merge_inputs": map[string]any{
 				"type":     "array",
@@ -79,6 +90,7 @@ type mergeConcurrentArgs struct {
 	SourceWorkspaceUUIDs []string     `json:"source_workspace_uuids"`
 	TargetBranchRef      string       `json:"target_branch_ref"`
 	AutoResolveHeuristic string       `json:"auto_resolve_heuristic"`
+	RolloutSessionID     string       `json:"rollout_session_id"`
 	MergeInputs          []mergeInput `json:"merge_inputs"`
 }
 
@@ -109,6 +121,8 @@ type mergeConcurrentOutput struct {
 	MergedCount          int               `json:"merged_count"`
 	ConflictCount        int               `json:"conflict_count"`
 	FailureCount         int               `json:"failure_count"`
+	MergeReward          *float64          `json:"merge_reward,omitempty"`
+	RewardKind           string            `json:"reward_kind,omitempty"`
 	Results              []mergeResultItem `json:"results"`
 }
 
@@ -196,8 +210,33 @@ func (t *MergeConcurrentResults) Execute(_ context.Context, args json.RawMessage
 		out.Outcome = "success"
 	}
 
+	t.emitMergeReward(p.RolloutSessionID, &out)
+
 	b, _ := json.Marshal(out)
 	return mcp.TextResult(string(b)), nil
+}
+
+func (t *MergeConcurrentResults) emitMergeReward(sessionID string, out *mergeConcurrentOutput) {
+	if t.rewards == nil || !t.rewards.Enabled() {
+		return
+	}
+	summaries := make([]rollout.MergeResultSummary, len(out.Results))
+	for i, r := range out.Results {
+		summaries[i] = rollout.MergeResultSummary{Status: r.Status, ReasonCode: r.ReasonCode}
+	}
+	kind, score := rollout.ClassifyMergeOutcome(out.Outcome, summaries)
+	out.RewardKind = string(kind)
+	out.MergeReward = &score
+	_ = t.rewards.Emit(rollout.RewardEvent{
+		Kind:            kind,
+		Reward:          score,
+		SessionID:       sessionID,
+		Outcome:         out.Outcome,
+		MergedCount:     out.MergedCount,
+		ConflictCount:   out.ConflictCount,
+		FailureCount:    out.FailureCount,
+		TargetBranchRef: out.TargetBranchRef,
+	})
 }
 
 func (t *MergeConcurrentResults) mergeThreeWay(input mergeInput) (mergeEngineSuccess, error) {
