@@ -11,8 +11,11 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
+arrow = { version = "53", default-features = false }
 bytes = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 crossbeam-channel = "0.5"
+parquet = { version = "53", default-features = false, features = ["arrow", "lz4"] }
 http-body-util = "0.1"
 hyper = { version = "1", features = ["server", "client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "client-legacy"] }
@@ -26,4 +29,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
+tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "test-util"] }

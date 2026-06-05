@@ -7,7 +7,11 @@
 #   * e2e    — docker-compose-driven Phase-2 integration test
 #   * deploy — placeholder for future container registry pushes
 #
-# All jobs run inside official toolchain images so no host install is required.
+# Runner layout (Option A — Docker socket binding):
+#   * tag `docker` — lint / test / audit (no Docker daemon required)
+#   * tag `dind`   — build / e2e / deploy (runner mounts /var/run/docker.sock)
+#
+# Do NOT set DOCKER_TLS_CERTDIR globally; that forces tcp://docker:2375 (DinD).
 
 stages:
   - lint
@@ -18,8 +22,6 @@ stages:
   - deploy
 
 variables:
-  DOCKER_DRIVER: overlay2
-  DOCKER_TLS_CERTDIR: ""
   GIT_SUBMODULE_STRATEGY: recursive
   # Cache cargo registry across jobs.
   CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
@@ -27,6 +29,13 @@ variables:
 
 default:
   interruptible: true
+  tags: [docker]
+
+# Shared template for jobs that talk to the host Docker daemon via socket.
+.docker-socket:
+  tags: [dind]
+  variables:
+    DOCKER_HOST: unix:///var/run/docker.sock
 
 # -----------------------------------------------------------------------------
 # Lint
@@ -136,7 +145,7 @@ rust:audit:
     key: cargo-$CI_COMMIT_REF_SLUG
     paths: [.cargo, services/target]
   script:
-    - cargo install cargo-audit --locked
+    - cargo install cargo-audit --locked --version 0.22.1
     - cd services
     - cargo audit
   allow_failure: true
@@ -150,10 +159,9 @@ rust:audit:
 # -----------------------------------------------------------------------------
 
 .docker-base:
+  extends: .docker-socket
   stage: build
   image: docker:27
-  services:
-    - docker:27-dind
   before_script:
     - docker info >/dev/null
 
@@ -191,41 +199,36 @@ build:merge-engine:
 # End-to-end integration tests
 # -----------------------------------------------------------------------------
 
-e2e:phase2:
+.e2e-base:
+  extends: .docker-socket
   stage: e2e
   image: docker:27
-  services:
-    - docker:27-dind
-  needs: ["build:orchestrator", "build:git-shadow"]
   variables:
     CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"
-    CWSO_BASE_URL: "http://docker:8080"
   before_script:
-    - apk add --no-cache python3 docker-cli-compose
-    - echo "$CWSO_JWT_SECRET" > .env.jwt.dev
+    - apk add --no-cache python3 docker-cli-compose iproute2
+    # JWT is injected via deploy/docker-compose.ci.yml (avoids host bind-mount path issues).
+    # Compose publishes 8080 on the host; reach it via the container default gateway.
+    - export CWSO_BASE_URL="http://$(ip route | awk '/default/ {print $3}'):8080"
+    - docker info >/dev/null
   script:
     - python3 scripts/phase2-integration.py
+
+e2e:phase2:
+  extends: .e2e-base
+  needs: ["build:orchestrator", "build:git-shadow"]
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "develop"
     - if: $CI_COMMIT_BRANCH == "main"
 
 e2e:phase4-swarm:
-  stage: e2e
-  image: docker:27
-  services:
-    - docker:27-dind
+  extends: .e2e-base
   needs: ["build:orchestrator", "build:git-shadow", "build:merge-engine"]
   variables:
     CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"
-    CWSO_BASE_URL: "http://docker:8080"
     CWSO_COMPOSE_PROFILES: "phase2,phase4"
     CWSO_PHASE4_MATRIX: "1"
-  before_script:
-    - apk add --no-cache python3 docker-cli-compose
-    - echo "$CWSO_JWT_SECRET" > .env.jwt.dev
-  script:
-    - python3 scripts/phase2-integration.py
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "develop"
@@ -236,12 +239,12 @@ e2e:phase4-swarm:
 # -----------------------------------------------------------------------------
 
 deploy:registry:
+  extends: .docker-socket
   stage: deploy
   image: docker:27
-  services:
-    - docker:27-dind
   needs: ["build:orchestrator", "build:git-shadow", "e2e:phase2"]
   before_script:
+    - docker info >/dev/null
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
   script:
     - docker tag $CI_REGISTRY_IMAGE/orchestrator:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE/orchestrator:latest

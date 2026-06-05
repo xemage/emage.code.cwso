@@ -33,6 +33,25 @@ func waitForSpikeRecords(t *testing.T, broker *memorybroker.Broker, expected int
 	}
 }
 
+func waitForCriticalSpike(t *testing.T, broker *memorybroker.Broker, timeout time.Duration) []memorybroker.Record {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		records := broker.Query(memorybroker.QueryOptions{Topics: []string{TopicASTSpike}, Limit: 8})
+		for _, record := range records {
+			var event ASTSpikeEvent
+			if err := decodePayload(record.Payload, &event); err != nil {
+				t.Fatalf("decode spike payload: %v", err)
+			}
+			if event.Severity == "critical" {
+				return records
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return broker.Query(memorybroker.QueryOptions{Topics: []string{TopicASTSpike}, Limit: 8})
+}
+
 func feedWrites(t *testing.T, m *ASTWriteSpikeMonitor, base time.Time, workspace string, n int, stepMS int) {
 	t.Helper()
 	for i := 0; i < n; i++ {
@@ -185,7 +204,7 @@ func TestASTSpikeMonitorEscalatesSeverity(t *testing.T) {
 	base := time.Date(2026, time.June, 3, 0, 0, 0, 0, time.UTC)
 	feedWrites(t, monitor, base, "ws-1", 6, 5)
 
-	records := waitForSpikeRecords(t, broker, 2)
+	records := waitForCriticalSpike(t, broker, 2*time.Second)
 	if len(records) == 0 {
 		t.Fatalf("expected at least one spike, got none")
 	}

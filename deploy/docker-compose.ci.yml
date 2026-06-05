@@ -1,0 +1,11 @@
+# CI-only compose override for GitLab runners using Docker socket binding.
+#
+# The default stack mounts ../.env.jwt.dev as a bind-mounted secret file. With socket
+# binding the host daemon cannot see paths created inside the job container, so CI passes
+# CWSO_JWT_SECRET via environment instead (orchestrator reads env when no secret file).
+
+services:
+  orchestrator:
+    environment:
+      CWSO_JWT_SECRET: ${CWSO_JWT_SECRET}
+    secrets: !reset null

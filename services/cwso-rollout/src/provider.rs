@@ -23,6 +23,15 @@ impl Provider {
             Self::Unknown => "unknown",
         }
     }
+
+    pub fn from_wire_str(value: &str) -> Self {
+        match value {
+            "openai_chat" => Self::OpenAiChat,
+            "anthropic_messages" => Self::AnthropicMessages,
+            "google_generate_content" => Self::GoogleGenerateContent,
+            _ => Self::Unknown,
+        }
+    }
 }
 
 /// DetectProvider classifies an inbound proxy request by path.

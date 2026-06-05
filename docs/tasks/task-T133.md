@@ -2,7 +2,7 @@
 
 > **ID note:** roadmap **Feature E / placeholder T107**. Active **T133** (see `active-tasks.md`).
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** backend-developer
 - **Priority:** P0
 - **Depends on:** T132 (cwso-rollout capture)
@@ -29,7 +29,8 @@ assistant tokens only).
 - [x] Parallel divergent prompts spawn separate chains
 - [x] `loss_mask=1` on all sampled assistant tokens in steps
 - [x] `go test ./internal/rollout/...` green
-- [ ] CI green on T133 MR (do not merge unless user requests)
+- [x] CI green on T133 MR (pipeline #2578342413 at `59026df`)
+- [x] MR !42 merged to `develop` (`18b5a40`)
 
 ## Notes
 
