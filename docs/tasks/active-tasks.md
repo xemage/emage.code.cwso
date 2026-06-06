@@ -48,6 +48,16 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T135 | KV-cache prefix router | backend-developer | done | P1 | T132 | 2026-06-06 |
 | T140 | CI audit hardening (promote go:audit/rust:audit to blocking) | devops-engineer | done | P1 | T094, T139 | 2026-06-06 |
 | T141 | Publish GitLab release v0.3.0-rc1 + GA prep checkpoint | release-manager | done | P0 | T139, T140 | 2026-06-07 |
+| T143 | Root hygiene & PoC debt archive | tech-lead | done | P2 | T141 | 2026-06-07 |
+| T142 | Installation & usage documentation | technical-writer | in_review | P0 | T141 | 2026-06-07 |
+| T147 | OpenAI Responses API + proxy hardening | backend-developer | pending | P1 | T132 | 2026-06-07 |
+| T144 | Polar harness adapters + runtime launcher | backend-developer | pending | P1 | T137, T142 | 2026-06-07 |
+| T145 | Rollout `num_samples` session fan-out | backend-developer | pending | P1 | T137 | 2026-06-07 |
+| T146 | Gateway async staging + partial traces | backend-developer | pending | P1 | T132 | 2026-06-07 |
+| T149 | Trajectory builder Polar parity | backend-developer | pending | P2 | T133 | 2026-06-07 |
+| T148 | Evaluator registry + SWE-bench hook | backend-developer | pending | P2 | T146 | 2026-06-07 |
+| T150 | KV differential prompting | backend-developer | pending | P2 | T135 | 2026-06-07 |
+| T151 | Offline SFT data generation mode | backend-developer | pending | P2 | T134 | 2026-06-07 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -656,3 +666,22 @@ Delivered `checkpoint-012-nextgen-ga-prep.md`; reconciled `release-v0.3.0-rc1.md
 Post-RC `develop` tip: `f5db055`. GA path blocked on stakeholder RC validation.
 
 Brief: `task-T141.md`. Release: https://gitlab.com/em-age/emage.code.cwso/-/releases/v0.3.0-rc1
+
+### T143 (done) — Root hygiene & PoC debt archive
+
+Archived `POC-DEBT-SCORECARD-phase{1,2}.md` → `docs/archive/debt/`; moved original
+`CWSO_ Agentic AI Orchestration Blueprint.md` → `input/`. Kept `TECHNICAL-DEBT.md` at root.
+
+Brief: `task-T143.md`.
+
+### T142 (in_review) — Installation & usage documentation
+
+Delivers `docs/user/installation-v1.md` — Docker quick start, JWT, MCP, Next-Gen flags,
+troubleshooting. Critical for GA adopters.
+
+Brief: `task-T142.md`. **Next:** T147 (OpenAI Responses proxy) per `polar-gap-analysis-v1.md`.
+
+### Polar parity backlog (T144–T151)
+
+Gap analysis: `docs/artifacts/polar-gap-analysis-v1.md`. Pending tasks cover harness adapters,
+session fan-out, gateway staging, evaluators, trajectory parity, differential prompting, offline SFT.

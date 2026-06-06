@@ -1,5 +1,9 @@
 # Technical Debt Register
 
+Active engineering debt tracked for production remediation. Historical PoC-phase scorecards
+(Phase 1–2 hypotheses and inventories) live in `docs/archive/debt/`. PoC `POC-DEBT` tags in
+code should be scanned periodically and promoted here or closed.
+
 This file tracks known technical debt items that are not blocking but must be remediated before production.
 
 | ID | File | Location | Category | Description | Effort | Tracked since |
