@@ -11,13 +11,18 @@ use std::thread;
 use anyhow::{Context, Result};
 use serde_json::json;
 
+use crate::prefix_cache::PrefixCache;
 use crate::proto::{Envelope, Request, Response, CONTRACT_VERSION, SERVICE};
 use crate::record::SharedCaptureStore;
 
 const FRAME_HEADER: usize = 4;
 const FRAME_MAX: usize = 8 * 1024 * 1024;
 
-pub fn run(socket_path: PathBuf, store: SharedCaptureStore) -> Result<()> {
+pub fn run(
+    socket_path: PathBuf,
+    store: SharedCaptureStore,
+    prefix_cache: Arc<PrefixCache>,
+) -> Result<()> {
     if let Some(parent) = socket_path.parent() {
         std::fs::create_dir_all(parent).ok();
     }
@@ -36,8 +41,10 @@ pub fn run(socket_path: PathBuf, store: SharedCaptureStore) -> Result<()> {
             Ok(stream) => {
                 let authz_policy = Arc::clone(&authz_policy);
                 let store = Arc::clone(&store);
+                let prefix_cache = Arc::clone(&prefix_cache);
                 thread::spawn(move || {
-                    if let Err(error) = handle_client(stream, &authz_policy, &store) {
+                    if let Err(error) = handle_client(stream, &authz_policy, &store, &prefix_cache)
+                    {
                         tracing::warn!(error = %error, "cwso-rollout IPC client error");
                     }
                 });
@@ -52,6 +59,7 @@ fn handle_client(
     mut stream: UnixStream,
     authz_policy: &IpcAuthzPolicy,
     store: &SharedCaptureStore,
+    prefix_cache: &PrefixCache,
 ) -> Result<()> {
     if !authorize_stream(&stream, authz_policy)? {
         tracing::warn!("rejected unauthorized cwso-rollout IPC peer");
@@ -77,7 +85,7 @@ fn handle_client(
         };
 
         let id = request.id.clone();
-        let response = dispatch(store, request.payload);
+        let response = dispatch(store, prefix_cache, request.payload);
         let envelope = Envelope::<Response> {
             id,
             payload: response,
@@ -86,7 +94,11 @@ fn handle_client(
     }
 }
 
-pub fn dispatch(store: &SharedCaptureStore, request: Request) -> Response {
+pub fn dispatch(
+    store: &SharedCaptureStore,
+    prefix_cache: &PrefixCache,
+    request: Request,
+) -> Response {
     match request {
         Request::Stat => Response::ok(json!({
             "service": SERVICE,
@@ -106,6 +118,19 @@ pub fn dispatch(store: &SharedCaptureStore, request: Request) -> Response {
                 }
             }
             Response::ok(json!({ "records": records }))
+        }
+        Request::PrefixPrewarm { prefix_key } => {
+            let cache_hit = prefix_cache.prewarm(&prefix_key);
+            Response::ok(json!({ "cache_hit": cache_hit }))
+        }
+        Request::PrefixStats => {
+            let stats = prefix_cache.stats();
+            Response::ok(json!({
+                "entries": stats.entries,
+                "hits": stats.hits,
+                "misses": stats.misses,
+                "hit_rate": stats.hit_rate,
+            }))
         }
     }
 }
@@ -240,18 +265,56 @@ fn peer_cred_linux(stream: &UnixStream) -> Result<PeerCred> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::prefix_cache::PrefixCache;
     use crate::record::CaptureStore;
 
     #[test]
     fn stat_reports_service() {
         let store = Arc::new(CaptureStore::new(4));
-        let response = dispatch(&store, Request::Stat);
+        let prefix_cache = PrefixCache::new(8);
+        let response = dispatch(&store, &prefix_cache, Request::Stat);
         match response {
             Response::Ok { ok, result } => {
                 assert!(ok);
                 assert_eq!(result["service"], SERVICE);
             }
             Response::Err { .. } => panic!("expected ok"),
+        }
+    }
+
+    #[test]
+    fn prefix_prewarm_reports_cache_hit() {
+        let store = Arc::new(CaptureStore::new(4));
+        let prefix_cache = PrefixCache::new(8);
+        let miss = dispatch(
+            &store,
+            &prefix_cache,
+            Request::PrefixPrewarm {
+                prefix_key: "abc".to_string(),
+            },
+        );
+        let hit = dispatch(
+            &store,
+            &prefix_cache,
+            Request::PrefixPrewarm {
+                prefix_key: "abc".to_string(),
+            },
+        );
+        match (miss, hit) {
+            (
+                Response::Ok {
+                    ok: true,
+                    result: miss_result,
+                },
+                Response::Ok {
+                    ok: true,
+                    result: hit_result,
+                },
+            ) => {
+                assert_eq!(miss_result["cache_hit"], false);
+                assert_eq!(hit_result["cache_hit"], true);
+            }
+            _ => panic!("expected ok responses"),
         }
     }
 

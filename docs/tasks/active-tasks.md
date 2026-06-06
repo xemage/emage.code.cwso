@@ -45,6 +45,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T137 | Polar REST API + trainer e2e | backend-developer | done | P0 | T134, T136 | 2026-06-05 |
 | T138 | Phase 9 integration QA + security gate | qa / security | done | P0 | T137 | 2026-06-06 |
 | T139 | v0.3.0 release readiness (Phases 6–9) | release-manager | done | P0 | T138 | 2026-06-06 |
+| T135 | KV-cache prefix router | backend-developer | in_review | P1 | T132 | 2026-06-06 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)

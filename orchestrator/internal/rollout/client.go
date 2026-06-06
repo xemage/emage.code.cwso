@@ -84,6 +84,32 @@ func (c *Client) DrainCapture(ctx context.Context, limit uint32) ([]CompletionRe
 	return out.Records, nil
 }
 
+// PrefixStats is the sidecar KV prefix cache snapshot.
+type PrefixStats struct {
+	Entries int     `json:"entries"`
+	Hits    uint64  `json:"hits"`
+	Misses  uint64  `json:"misses"`
+	HitRate float64 `json:"hit_rate"`
+}
+
+// PrewarmPrefix registers or warms a prefix key in the cwso-rollout LRU cache.
+func (c *Client) PrewarmPrefix(ctx context.Context, prefixKey string) error {
+	if prefixKey == "" {
+		return nil
+	}
+	params := map[string]string{"prefix_key": prefixKey}
+	return c.call(ctx, "prefix_prewarm", params, nil)
+}
+
+// PrefixStats returns cache occupancy and hit rate from the sidecar.
+func (c *Client) PrefixStats(ctx context.Context) (*PrefixStats, error) {
+	var out PrefixStats
+	if err := c.call(ctx, "prefix_stats", nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // BuildFromDrain drains capture records and assembles a trajectory group for sessionID.
 func (c *Client) BuildFromDrain(ctx context.Context, sessionID string, limit uint32) (TrajectoryGroup, error) {
 	records, err := c.DrainCapture(ctx, limit)
@@ -101,6 +127,12 @@ type requestEnvelope struct {
 	ID    string `json:"id"`
 	Op    string `json:"op"`
 	Limit uint32 `json:"limit,omitempty"`
+}
+
+type prefixPrewarmRequest struct {
+	ID        string `json:"id"`
+	Op        string `json:"op"`
+	PrefixKey string `json:"prefix_key"`
 }
 
 type responseEnvelope struct {
@@ -128,6 +160,9 @@ func (c *Client) call(ctx context.Context, op string, params any, out any) error
 	case "drain_capture":
 		limit, _ := params.(map[string]uint32)["limit"]
 		body, err = json.Marshal(requestEnvelope{ID: newID(), Op: op, Limit: limit})
+	case "prefix_prewarm":
+		prefixKey, _ := params.(map[string]string)["prefix_key"]
+		body, err = json.Marshal(prefixPrewarmRequest{ID: newID(), Op: op, PrefixKey: prefixKey})
 	default:
 		body, err = json.Marshal(requestEnvelope{ID: newID(), Op: op})
 	}

@@ -18,8 +18,8 @@ func TestPhase9TrainerE2EFlow(t *testing.T) {
 	broker := memorybroker.New()
 	t.Cleanup(broker.Close)
 
-	svc := NewService(broker, nil)
-	sub, err := svc.SubmitTask(SubmitRequest{
+	svc := NewService(broker, nil, nil)
+	sub, err := svc.SubmitTask(context.Background(), SubmitRequest{
 		TaskSpec: TaskSpec{
 			Description: "integration rollout",
 			WorkspaceID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
@@ -78,7 +78,7 @@ func TestPhase9RESTTrainerE2E(t *testing.T) {
 	broker := memorybroker.New()
 	t.Cleanup(broker.Close)
 
-	h := NewHTTPHandler(NewService(broker, nil))
+	h := NewHTTPHandler(NewService(broker, nil, nil))
 
 	subBody, _ := json.Marshal(SubmitRequest{
 		TaskSpec: TaskSpec{

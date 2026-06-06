@@ -73,6 +73,9 @@ type Config struct {
 	RolloutRewardEnabled          bool     // enable programmatic merge SM rewards on rollout/reward topic (T136)
 	RolloutAPIEnabled             bool     // enable /rollout/* Polar REST API (T137)
 	RolloutSocket                 string   // UDS path for cwso-rollout sidecar (trajectory drain)
+	RolloutKVPrefixRouterEnabled  bool     // enable BLAKE3 KV prefix router on task submit (T135)
+	RolloutSystemPrompt           string   // system prompt bytes hashed into prefix key (T135)
+	RolloutSystemPromptHash       string   // optional precomputed system_prompt_hash override (T135)
 	HHDSnapshotTTLSeconds         int      // stale capability threshold for policy-facing snapshots
 	HHDPolicyEngineV2             bool     // enable policy engine v2 backend selection and fallback
 	HHDHardwareAwareDispatch      bool     // enable dispatch_hardware_aware_job tool + shadow provider catalog (Phase 6)
@@ -177,6 +180,9 @@ func Load(_ string) (*Config, error) {
 		RolloutRewardEnabled:          envBool("CWSO_ROLLOUT_REWARD_ENABLED", false),
 		RolloutAPIEnabled:             envBool("CWSO_ROLLOUT_API_ENABLED", false),
 		RolloutSocket:                 os.Getenv("CWSO_ROLLOUT_SOCKET"),
+		RolloutKVPrefixRouterEnabled:  envBool("CWSO_ROLLOUT_KV_PREFIX_ROUTER_ENABLED", false),
+		RolloutSystemPrompt:           os.Getenv("CWSO_ROLLOUT_SYSTEM_PROMPT"),
+		RolloutSystemPromptHash:       os.Getenv("CWSO_ROLLOUT_SYSTEM_PROMPT_HASH"),
 		HHDSnapshotTTLSeconds:         envInt("CWSO_HHD_CAPABILITY_SNAPSHOT_TTL_SECONDS", 30),
 		HHDPolicyEngineV2:             envBool("CWSO_HHD_POLICY_ENGINE_V2_ENABLED", false),
 		HHDHardwareAwareDispatch:      envBool("CWSO_HHD_HARDWARE_AWARE_DISPATCH_ENABLED", false),

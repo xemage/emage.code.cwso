@@ -32,7 +32,7 @@ func (h *apiHandler) submitTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	resp, err := h.svc.SubmitTask(req)
+	resp, err := h.svc.SubmitTask(r.Context(), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -55,7 +55,7 @@ func (h *apiHandler) getTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *apiHandler) fleetStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.svc.FleetStatus())
+	writeJSON(w, http.StatusOK, h.svc.FleetStatus(r.Context()))
 }
 
 func (h *apiHandler) sessionResult(w http.ResponseWriter, r *http.Request) {
