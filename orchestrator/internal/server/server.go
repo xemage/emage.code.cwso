@@ -283,7 +283,25 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 		if cfg.RolloutSocket != "" {
 			rolloutClient = rollout.NewClient(cfg.RolloutSocket)
 		}
-		rolloutSvc = rollout.NewService(broker, rolloutClient)
+		var prefixRouter *rollout.PrefixRouter
+		if cfg.RolloutKVPrefixRouterEnabled {
+			promptHash := cfg.RolloutSystemPromptHash
+			if promptHash == "" {
+				promptHash = rollout.HashSystemPrompt(cfg.RolloutSystemPrompt)
+			}
+			var resolver rollout.WorkspaceResolver
+			if cfg.ShadowSocket != "" {
+				resolver = rollout.NewShadowWorkspaceResolver(shadow.NewClient(cfg.ShadowSocket))
+			}
+			prefixRouter = rollout.NewPrefixRouter(rollout.PrefixRouterConfig{
+				Enabled:          true,
+				SystemPromptHash: promptHash,
+				Resolver:         resolver,
+				Client:           rolloutClient,
+			})
+			log.Info().Msg("rollout KV prefix router enabled")
+		}
+		rolloutSvc = rollout.NewService(broker, rolloutClient, prefixRouter)
 		log.Info().Msg("rollout Polar REST API enabled (/rollout/*)")
 	}
 

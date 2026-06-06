@@ -26,6 +26,9 @@ pub enum Request {
     #[serde(rename = "list_workspaces")]
     ListWorkspaces,
 
+    #[serde(rename = "get_workspace")]
+    GetWorkspace { workspace_uuid: String },
+
     #[serde(rename = "drop_workspace")]
     DropWorkspace { workspace_uuid: String },
 

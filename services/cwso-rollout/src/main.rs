@@ -12,6 +12,7 @@ use tokio::runtime::Runtime;
 mod capture;
 mod config;
 mod ipc;
+mod prefix_cache;
 mod proto;
 mod provider;
 mod proxy;
@@ -22,6 +23,7 @@ mod upstream;
 
 use capture::CapturePipeline;
 use config::SidecarConfig;
+use prefix_cache::PrefixCache;
 use record::CaptureStore;
 
 const CAPTURE_QUEUE_DEFAULT: usize = 4096;
@@ -57,11 +59,13 @@ fn main() -> Result<()> {
         );
     }
     let store = Arc::new(capture_store);
+    let prefix_cache = Arc::new(PrefixCache::from_env());
 
     let socket_path: PathBuf = sidecar.socket_path.into();
     let store_ipc = Arc::clone(&store);
+    let prefix_ipc = Arc::clone(&prefix_cache);
     std::thread::spawn(move || {
-        if let Err(error) = ipc::run(socket_path, store_ipc) {
+        if let Err(error) = ipc::run(socket_path, store_ipc, prefix_ipc) {
             tracing::error!(error = %error, "cwso-rollout IPC server exited");
         }
     });

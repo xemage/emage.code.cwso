@@ -22,6 +22,10 @@ pub enum Request {
     CaptureStats,
     #[serde(rename = "drain_capture")]
     DrainCapture { limit: u32 },
+    #[serde(rename = "prefix_prewarm")]
+    PrefixPrewarm { prefix_key: String },
+    #[serde(rename = "prefix_stats")]
+    PrefixStats,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

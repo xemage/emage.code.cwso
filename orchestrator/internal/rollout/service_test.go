@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/emage/cwso/orchestrator/internal/memorybroker"
@@ -21,8 +22,8 @@ func (s *stubRewardReader) Query(opts memorybroker.QueryOptions) []memorybroker.
 
 func TestServiceSubmitAndGetTask(t *testing.T) {
 	t.Parallel()
-	svc := NewService(&stubRewardReader{}, nil)
-	sub, err := svc.SubmitTask(SubmitRequest{
+	svc := NewService(&stubRewardReader{}, nil, nil)
+	sub, err := svc.SubmitTask(context.Background(), SubmitRequest{
 		TaskSpec: TaskSpec{Description: "train", WorkspaceID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"},
 	})
 	if err != nil {
@@ -47,8 +48,8 @@ func TestServiceGetTaskIncludesRewards(t *testing.T) {
 	}
 	raw, _ := json.Marshal(ev)
 	reader := &stubRewardReader{records: []memorybroker.Record{{Topic: TopicReward, Payload: raw}}}
-	svc := NewService(reader, nil)
-	sub, _ := svc.SubmitTask(SubmitRequest{
+	svc := NewService(reader, nil, nil)
+	sub, _ := svc.SubmitTask(context.Background(), SubmitRequest{
 		TaskSpec: TaskSpec{Description: "x", WorkspaceID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"},
 	})
 	svc.mu.Lock()
@@ -65,7 +66,7 @@ func TestServiceGetTaskIncludesRewards(t *testing.T) {
 }
 
 func TestHTTPSubmitAndPoll(t *testing.T) {
-	svc := NewService(&stubRewardReader{}, nil)
+	svc := NewService(&stubRewardReader{}, nil, nil)
 	h := NewHTTPHandler(svc)
 
 	body, _ := json.Marshal(SubmitRequest{
@@ -90,8 +91,31 @@ func TestHTTPSubmitAndPoll(t *testing.T) {
 	}
 }
 
+func TestServiceSubmitWithPrefixRouter(t *testing.T) {
+	t.Parallel()
+	oid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	router := NewPrefixRouter(PrefixRouterConfig{
+		Enabled:          true,
+		SystemPromptHash: HashSystemPrompt(""),
+		Resolver: &stubResolver{meta: WorkspaceMeta{
+			BaseTreeOID: &oid,
+			Files:       []WorkspaceFile{{Path: "main.go", BlobOID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}},
+		}},
+	})
+	svc := NewService(&stubRewardReader{}, nil, router)
+	sub, err := svc.SubmitTask(context.Background(), SubmitRequest{
+		TaskSpec: TaskSpec{Description: "train", WorkspaceID: "11111111-1111-1111-1111-111111111111"},
+	})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if sub.PrefixKey == "" || strings.HasPrefix(sub.PrefixKey, "prefix-") {
+		t.Fatalf("expected BLAKE3 prefix key, got %q", sub.PrefixKey)
+	}
+}
+
 func TestHTTPFleetStatus(t *testing.T) {
-	svc := NewService(&stubRewardReader{}, nil)
+	svc := NewService(&stubRewardReader{}, nil, nil)
 	h := NewHTTPHandler(svc)
 	req := httptest.NewRequest(http.MethodGet, "/rollout/status", nil)
 	rec := httptest.NewRecorder()

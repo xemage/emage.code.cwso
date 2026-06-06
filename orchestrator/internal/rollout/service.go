@@ -103,25 +103,27 @@ type RewardReader interface {
 
 // Service implements Polar REST semantics (rollout-architecture-v1 §8).
 type Service struct {
-	mu      sync.RWMutex
-	tasks   map[string]*Task
-	nodes   map[string]*Node
-	rewards RewardReader
-	client  *Client
+	mu           sync.RWMutex
+	tasks        map[string]*Task
+	nodes        map[string]*Node
+	rewards      RewardReader
+	client       *Client
+	prefixRouter *PrefixRouter
 }
 
 // NewService constructs an in-memory rollout API service.
-func NewService(rewards RewardReader, client *Client) *Service {
+func NewService(rewards RewardReader, client *Client, prefixRouter *PrefixRouter) *Service {
 	return &Service{
-		tasks:   make(map[string]*Task),
-		nodes:   make(map[string]*Node),
-		rewards: rewards,
-		client:  client,
+		tasks:        make(map[string]*Task),
+		nodes:        make(map[string]*Node),
+		rewards:      rewards,
+		client:       client,
+		prefixRouter: prefixRouter,
 	}
 }
 
 // SubmitTask enqueues a rollout task.
-func (s *Service) SubmitTask(req SubmitRequest) (SubmitResponse, error) {
+func (s *Service) SubmitTask(ctx context.Context, req SubmitRequest) (SubmitResponse, error) {
 	if req.TaskSpec.Description == "" || req.TaskSpec.WorkspaceID == "" {
 		return SubmitResponse{}, fmt.Errorf("task_spec.description and workspace_id are required")
 	}
@@ -132,9 +134,9 @@ func (s *Service) SubmitTask(req SubmitRequest) (SubmitResponse, error) {
 	now := time.Now().UTC()
 	prefixKey := ""
 	if req.PrewarmKVPrefix == nil || *req.PrewarmKVPrefix {
-		ws := req.TaskSpec.WorkspaceID
-		if len(ws) >= 8 {
-			prefixKey = "prefix-" + ws[:8]
+		prefixKey, err = s.resolvePrefixKey(ctx, req.TaskSpec.WorkspaceID)
+		if err != nil {
+			return SubmitResponse{}, err
 		}
 	}
 	task := &Task{
@@ -172,7 +174,7 @@ func (s *Service) GetTask(ctx context.Context, taskID string) (TaskStatusRespons
 }
 
 // FleetStatus returns aggregate rollout fleet metrics.
-func (s *Service) FleetStatus() FleetStatus {
+func (s *Service) FleetStatus(ctx context.Context) FleetStatus {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var pending, running int
@@ -184,12 +186,24 @@ func (s *Service) FleetStatus() FleetStatus {
 			running++
 		}
 	}
-	return FleetStatus{
+	status := FleetStatus{
 		PendingSessions: pending,
 		RunningSessions: running,
 		RegisteredNodes: len(s.nodes),
-		CacheHitRate:    0,
 	}
+	if s.client != nil {
+		if stats, err := s.client.PrefixStats(ctx); err == nil {
+			status.CacheHitRate = stats.HitRate
+		}
+	}
+	return status
+}
+
+func (s *Service) resolvePrefixKey(ctx context.Context, workspaceID string) (string, error) {
+	if s.prefixRouter == nil || !s.prefixRouter.Enabled() {
+		return "", nil
+	}
+	return s.prefixRouter.Prewarm(ctx, workspaceID)
 }
 
 // RegisterNode records a rollout worker node.
