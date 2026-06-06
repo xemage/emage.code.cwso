@@ -18,16 +18,11 @@ with semantic AST-based merging.
 
 | Phase | Scope | Milestone | State |
 |-------|-------|-----------|-------|
-| 0 | Planning, requirements, architecture, ADRs | M0 | ✅ closed |
-| 1 | MCP core (PoC) — stdio + HTTP, JWT, baseline FS tools | M1 | ✅ closed |
-| 2 | Shadow Workspaces + AST (PoC) — Rust sidecar, libgit2, tree-sitter | M2 | ✅ closed (CONDITIONAL_PASS) |
-| 3 | Async + concurrency — SSE, runner pool, event broker | M3 | ✅ closed |
-| 4 | Sandbox tiers + semantic merge — Docker / gVisor / Firecracker | M4 | ✅ closed |
-| 5 | Release v0.1.x hardening + security closure | M5 | ✅ closed |
+| 0–5 | MCP core → sandbox + merge | M0–M5 | ✅ closed |
+| 6–9 | Next-Gen HAL, sparse, rollout/Polar | M6 | ✅ RC [`v0.3.0-rc1`](https://gitlab.com/em-age/emage.code.cwso/-/releases/v0.3.0-rc1) |
 
-See [docs/plans/plan-cwso-mega.md](docs/plans/plan-cwso-mega.md) for the
-full task graph and [docs/tasks/active-tasks.md](docs/tasks/active-tasks.md)
-for current status.
+See [docs/plans/plan-cwso-nextgen-phase6plus.md](docs/plans/plan-cwso-nextgen-phase6plus.md) and
+[docs/tasks/active-tasks.md](docs/tasks/active-tasks.md) for Phase 6+ status.
 
 ## What CWSO is
 
@@ -45,47 +40,13 @@ At runtime, CWSO provides:
 
 ## How to use CWSO
 
-### 1) Start the stack
+See **[docs/user/installation-v1.md](docs/user/installation-v1.md)** for the full guide (JWT,
+MCP HTTP, Phase 4 / Next-Gen flags, troubleshooting).
 
 ```bash
 make build
-docker compose -f deploy/docker-compose.yml --profile phase2 --profile phase4 up -d
-```
-
-### 2) Verify service health
-
-```bash
+docker compose -f deploy/docker-compose.yml --profile phase2 up -d
 curl -sS http://127.0.0.1:8080/healthz
-```
-
-### 3) Acquire an auth token
-
-CWSO enforces JWT auth for HTTP transport. Use your configured development
-secret from compose (`jwt_secret`) and mint an HS256 token with:
-
-- `iss`: `cwso`
-- `aud`: `cwso-mcp`
-- `role`: `orchestrator` or `worker`
-
-### 4) Call MCP tools
-
-Send JSON-RPC requests to `POST /mcp` with `Content-Type: application/json`
-and `Authorization: Bearer <token>`.
-
-Example (`tools/list`):
-
-```bash
-curl -sS http://127.0.0.1:8080/mcp \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Origin: http://localhost" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-```
-
-### 5) Run validation suites
-
-```bash
-make test
 python3 scripts/phase2-integration.py
 ```
 
@@ -243,15 +204,17 @@ For Wasm-specific operations guidance, see
 [docs/artifacts/wasm-scoring-runtime-ops-v1.md](docs/artifacts/wasm-scoring-runtime-ops-v1.md).
 
 ## Documentation
+- **[Installation & usage](docs/user/installation-v1.md)** — get CWSO running (v0.3.0-rc1+)
 - [Requirements](docs/artifacts/requirements-v1.md)
+- [Next-Gen blueprint](docs/artifacts/cwso-nextgen-blueprint-v1.md)
+- [Rollout / Polar architecture](docs/artifacts/rollout-architecture-v1.md)
+- [Polar gap analysis](docs/artifacts/polar-gap-analysis-v1.md)
+- [Release v0.3.0-rc1](docs/artifacts/release-v0.3.0-rc1.md)
 - [Architecture](docs/artifacts/architecture-v1.md)
 - [Security Baseline](docs/artifacts/security-baseline-v1.md)
-- [Release v0.2.0 Hardware-Aware Readiness](docs/artifacts/release-v0.2.0-hardware-aware-v1.md)
-- [Release v0.2.0 RC1 Readiness](docs/artifacts/release-v0.2.0-rc1.md)
 - [ADR Index](docs/decisions/)
 - [Active Tasks](docs/tasks/active-tasks.md) · [Completed Tasks](docs/tasks/completed-tasks.md)
-- [Phase 1 Checkpoint](docs/checkpoints/checkpoint-001-phase1.md) · [Phase 2 Checkpoint](docs/checkpoints/checkpoint-002-phase2.md) · [T027 Tech Lead Gate](docs/checkpoints/gate-T027-phase2-techlead.md)
-- [PoC Debt — Phase 1](POC-DEBT-SCORECARD-phase1.md) · [PoC Debt — Phase 2](POC-DEBT-SCORECARD-phase2.md)
+- [Technical debt register](TECHNICAL-DEBT.md) · [Archived PoC scorecards](docs/archive/debt/)
 
 ## Security
 

@@ -28,7 +28,7 @@ Refs #
 
 ## PoC Debt
 - [ ] No new shortcuts introduced
-- [ ] New `<!-- POC-DEBT: ... -->` tags are registered in the relevant `POC-DEBT-SCORECARD-phaseN.md`
+- [ ] New `<!-- POC-DEBT: ... -->` tags are registered in [TECHNICAL-DEBT.md](TECHNICAL-DEBT.md) or the relevant [archived scorecard](docs/archive/debt/)
 
 ## Security Checklist (OWASP delta)
 - [ ] No secrets in code
