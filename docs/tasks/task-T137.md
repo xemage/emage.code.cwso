@@ -2,7 +2,8 @@
 
 > **ID note:** roadmap **placeholder T111**. Active **T137** (see `active-tasks.md`).
 
-- **Status:** in_review
+- **Status:** done
+- **Merged:** MR !46 → `develop` @ `c1c56d6` (pipeline #2579885204)
 - **Owner:** backend-developer
 - **Priority:** P0
 - **Depends on:** T134 (trajectory store), T136 (programmatic rewards)
@@ -41,7 +42,7 @@ submission, status polling, fleet status, node registration, and trainer callbac
 - [x] Optional trajectory drain when `CWSO_ROLLOUT_SOCKET` set
 - [x] JWT auth on rollout routes (same as `/mcp`)
 - [x] `go test ./...` green locally
-- [ ] CI green on T137 MR
+- [x] CI green on MR !46
 
 ## Notes
 

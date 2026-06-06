@@ -42,7 +42,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T133 | Trajectory builder + prefix merging | backend-developer | done | P0 | T132 | 2026-06-05 |
 | T134 | Trajectory store (Arrow + LZ4 + Parquet) | backend-developer | done | P1 | T133 | 2026-06-05 |
 | T136 | Programmatic reward emission (merge SM hook) | backend-developer | done | P0 | T133 | 2026-06-05 |
-| T137 | Polar REST API + trainer e2e | backend-developer | in_review | P0 | T134, T136 | 2026-06-05 |
+| T137 | Polar REST API + trainer e2e | backend-developer | done | P0 | T134, T136 | 2026-06-05 |
+| T138 | Phase 9 integration QA + security gate | qa / security | in_review | P0 | T137 | 2026-06-05 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -591,11 +592,19 @@ Go merge SM hook publishes `rollout/reward` when `CWSO_ROLLOUT_REWARD_ENABLED=tr
 
 Brief: `task-T136.md`. Next (**T137**, P0): Polar REST API. Brief: `task-T137.md`.
 
-### T137 (in_review) — Polar REST API + trainer e2e
+### T137 (done) — Polar REST API + trainer e2e
 
 > **Phase 9.** Active T137 = roadmap placeholder T111. Depends on T134 + T136.
 
-MR pending (`feature/T137-polar-rest-api` → `develop`). `/rollout/*`, `/callbacks/*`, `/nodes/*`
-on orchestrator HTTP when `CWSO_ROLLOUT_API_ENABLED=true`.
+Merged via MR !46 → `develop` (`c1c56d6`; source `3a72ad7`, pipeline #2579885204).
+`/rollout/*`, `/callbacks/*`, `/nodes/*` when `CWSO_ROLLOUT_API_ENABLED=true`.
 
-Brief: `task-T137.md`.
+Brief: `task-T137.md`. Next (**T138**, P0): Phase 9 QA + security gate. Brief: `task-T138.md`.
+
+### T138 (in_review) — Phase 9 integration QA + security gate
+
+> **Phase 9.** Active T138 = roadmap placeholder T112. Depends on T137.
+
+MR pending (`feature/T138-phase9-gate` → `develop`). Gate PASS/PASS; trainer e2e integration tests.
+
+Brief: `task-T138.md`. Next (**T139**): v0.3.0 release readiness.

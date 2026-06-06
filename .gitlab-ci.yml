@@ -224,7 +224,7 @@ e2e:phase2:
 
 e2e:phase4-swarm:
   extends: .e2e-base
-  needs: ["build:orchestrator", "build:git-shadow", "build:merge-engine"]
+  needs: ["build:orchestrator", "build:git-shadow", "build:merge-engine", "e2e:phase2"]
   variables:
     CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"
     CWSO_COMPOSE_PROFILES: "phase2,phase4"

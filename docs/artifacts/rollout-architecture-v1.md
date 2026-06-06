@@ -2,7 +2,7 @@
 
 **Based on:** `docs/decisions/ADR-010-rollout-proxy-boundary.md`, `cwso-nextgen-blueprint-v1.md`
 §3.7, §5.2–5.4, Phase 8 gate (`gate-phase8-feature-d-2026-06-04.md`)
-**Status:** accepted (spec via T131 MR !40 → `2d40413`) — T132–T134 landed; gates T136–T138
+**Status:** accepted (spec via T131 MR !40 → `2d40413`) — T132–T137 landed; gate T138; release T139
 **Phase:** 9 — Rollout-as-a-Service (Polar)
 
 ## 1. Problem
