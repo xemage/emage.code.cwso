@@ -1,7 +1,7 @@
 # Plan — CWSO Next-Gen (Phase 6+) "Holy Grail of Agentic Development"
 
-> Owner: orchestrator · Status: **executing — Phases 6–9 complete** (v0.3.0-rc1 packaging via T139)
-> Based on: `docs/artifacts/cwso-nextgen-blueprint-v1.md`, `input/*.pdf`, current `develop` @ `5d2cfca`
+> Owner: orchestrator · Status: **executing — Phases 6–9 complete** (v0.3.0-rc1 tagged @ `2032b33`)
+> Based on: `docs/artifacts/cwso-nextgen-blueprint-v1.md`, `input/*.pdf`, current `develop` @ `2032b33`
 > Protocol: `plan-approve-execute`. Task IDs continue the sequence after `T079`.
 
 ## Goal
@@ -117,7 +117,7 @@ of LPUs → Rust hyper + zero-copy + binary trajectory storage.
 | 8 | D — Sparse merge | **complete** | `checkpoint-010-phase8-complete.md` |
 | 9 | E + F + G — Rollout | **complete** | `checkpoint-011-phase9-complete.md` |
 
-Release packaging: **T139** → `v0.3.0-rc1` (`release-v0.3.0-rc1.md`). Deferred: T135 (KV prefix router).
+Release packaging: **T139** → `v0.3.0-rc1` tagged on `develop` (`2032b33`). **Next:** T135 (KV prefix router, P1).
 
 ## Approval
 
