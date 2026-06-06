@@ -49,7 +49,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T140 | CI audit hardening (promote go:audit/rust:audit to blocking) | devops-engineer | done | P1 | T094, T139 | 2026-06-06 |
 | T141 | Publish GitLab release v0.3.0-rc1 + GA prep checkpoint | release-manager | done | P0 | T139, T140 | 2026-06-07 |
 | T143 | Root hygiene & PoC debt archive | tech-lead | done | P2 | T141 | 2026-06-07 |
-| T142 | Installation & usage documentation | technical-writer | in_review | P0 | T141 | 2026-06-07 |
+| T142 | Installation & usage documentation | technical-writer | done | P0 | T141 | 2026-06-07 |
 | T147 | OpenAI Responses API + proxy hardening | backend-developer | pending | P1 | T132 | 2026-06-07 |
 | T144 | Polar harness adapters + runtime launcher | backend-developer | pending | P1 | T137, T142 | 2026-06-07 |
 | T145 | Rollout `num_samples` session fan-out | backend-developer | pending | P1 | T137 | 2026-06-07 |
@@ -674,7 +674,7 @@ Archived `POC-DEBT-SCORECARD-phase{1,2}.md` → `docs/archive/debt/`; moved orig
 
 Brief: `task-T143.md`.
 
-### T142 (in_review) — Installation & usage documentation
+### T142 (done) — Installation & usage documentation
 
 Delivers `docs/user/installation-v1.md` — Docker quick start, JWT, MCP, Next-Gen flags,
 troubleshooting. Critical for GA adopters.

@@ -1,6 +1,6 @@
 # Task T142 — Installation & usage documentation
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** technical-writer / devops-engineer
 - **Priority:** P0
 - **Depends on:** T141 (RC published)
@@ -23,7 +23,7 @@ Ship operator-facing installation and usage documentation so adopters can run CW
 - [x] Documents JWT claims and MCP HTTP invocation
 - [x] Lists Next-Gen feature flags with safe defaults
 - [x] Troubleshooting section for common failures
-- [ ] Reviewed and merged; linked from README release section
+- [x] Reviewed and merged; linked from README release section
 
 ## Notes
 
