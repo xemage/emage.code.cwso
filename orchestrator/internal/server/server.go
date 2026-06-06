@@ -45,6 +45,7 @@ type Server struct {
 	spikeSubs    *dispatch.SpikeSubscriptionRegistry
 	sparseAgents *dispatch.SparseAgentRegistry
 	astSink      dispatch.WriteEventSink
+	rolloutSvc   *rollout.Service
 }
 
 // New constructs and initializes a Server with all Phase 1 tools registered.
@@ -276,10 +277,20 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 
 	astSink := buildASTWriteSink(cfg, publisher, log)
 
+	var rolloutSvc *rollout.Service
+	if cfg.RolloutAPIEnabled {
+		var rolloutClient *rollout.Client
+		if cfg.RolloutSocket != "" {
+			rolloutClient = rollout.NewClient(cfg.RolloutSocket)
+		}
+		rolloutSvc = rollout.NewService(broker, rolloutClient)
+		log.Info().Msg("rollout Polar REST API enabled (/rollout/*)")
+	}
+
 	s := &Server{
 		cfg: cfg, log: log, registry: tools.NewRegistry(), bus: bus, memory: broker,
 		publisher: publisher, jobs: jobMgr, runner: baselineRunner, caps: capRegistry, emitter: telemetryEmitter,
-		spikeSubs: spikeSubs, sparseAgents: sparseAgents, astSink: astSink,
+		spikeSubs: spikeSubs, sparseAgents: sparseAgents, astSink: astSink, rolloutSvc: rolloutSvc,
 	}
 	if err := s.registerBaselineTools(); err != nil {
 		jobMgr.Close()
@@ -634,6 +645,9 @@ func (s *Server) Run(ctx context.Context) error {
 		var httpOpts []transport.HTTPOption
 		if resolver := s.subscriptionResolver(); resolver != nil {
 			httpOpts = append(httpOpts, transport.WithSubscriptionResolver(resolver))
+		}
+		if s.rolloutSvc != nil {
+			httpOpts = append(httpOpts, transport.WithRolloutAPI(rollout.NewHTTPHandler(s.rolloutSvc)))
 		}
 		return transport.RunHTTP(ctx, s.cfg, s.log, s.bus, s.memory, s.publisher, s.Handle, httpOpts...)
 	default:

@@ -2,7 +2,7 @@
 
 > **ID note:** roadmap **Feature G / placeholder T110**. Active **T136** (see `active-tasks.md`).
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** backend-developer
 - **Priority:** P0
 - **Depends on:** T133 (trajectory builder)
@@ -37,9 +37,11 @@ to trajectory groups).
 - [x] Tool response includes reward fields for downstream REST (T137)
 - [x] Disabled by default; no-op when flag off
 - [x] `go test ./...` green
-- [ ] CI green on T136 MR
+- [x] CI green on MR !45
 
 ## Notes
 
 - `test_pass` bonus deferred to v2 per architecture doc.
 - T137 depends on T134 + T136 for Polar REST + trainer e2e.
+
+- **Merged:** MR !45 → `develop` @ `892142f` (source `faf40c7`, pipeline #2579820940)
