@@ -43,7 +43,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T134 | Trajectory store (Arrow + LZ4 + Parquet) | backend-developer | done | P1 | T133 | 2026-06-05 |
 | T136 | Programmatic reward emission (merge SM hook) | backend-developer | done | P0 | T133 | 2026-06-05 |
 | T137 | Polar REST API + trainer e2e | backend-developer | done | P0 | T134, T136 | 2026-06-05 |
-| T138 | Phase 9 integration QA + security gate | qa / security | in_review | P0 | T137 | 2026-06-05 |
+| T138 | Phase 9 integration QA + security gate | qa / security | done | P0 | T137 | 2026-06-06 |
+| T139 | v0.3.0 release readiness (Phases 6–9) | release-manager | in_review | P0 | T138 | 2026-06-06 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -601,10 +602,23 @@ Merged via MR !46 → `develop` (`c1c56d6`; source `3a72ad7`, pipeline #25798852
 
 Brief: `task-T137.md`. Next (**T138**, P0): Phase 9 QA + security gate. Brief: `task-T138.md`.
 
-### T138 (in_review) — Phase 9 integration QA + security gate
+### T138 (done) — Phase 9 integration QA + security gate
 
 > **Phase 9.** Active T138 = roadmap placeholder T112. Depends on T137.
 
-MR pending (`feature/T138-phase9-gate` → `develop`). Gate PASS/PASS; trainer e2e integration tests.
+Merged via MR !47 → `develop` (`5d2cfca`, squash `011d8c8`; pipeline green on feature branch
+pre-merge). Gate PASS/PASS; trainer e2e integration tests in `orchestrator/internal/rollout/integration_test.go`.
 
-Brief: `task-T138.md`. Next (**T139**): v0.3.0 release readiness.
+Artifacts: `qa-phase9-report-v1.md`, `gate-phase9-feature-efg-2026-06-05.md`,
+`security-phase9-checklist-v1.md`, `checkpoint-011-phase9-complete.md`.
+
+Brief: `task-T138.md`. **Phase 9 Features E+F+G are complete.**
+
+### T139 (in_review) — v0.3.0 release readiness (Phases 6–9)
+
+> **Release packaging.** Active T139 = roadmap placeholder T113. Depends on T138.
+
+MR pending (`feature/T139-v0.3.0-release` → `develop`). Delivers `release-v0.3.0-rc1.md`,
+CHANGELOG `v0.3.0-rc1`, plan status update (Phases 6–9 complete).
+
+Brief: `task-T139.md`. Next: tag `v0.3.0-rc1` after MR merge + CI green.

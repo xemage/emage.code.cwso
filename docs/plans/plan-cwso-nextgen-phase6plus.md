@@ -1,7 +1,7 @@
 # Plan — CWSO Next-Gen (Phase 6+) "Holy Grail of Agentic Development"
 
-> Owner: orchestrator · Status: proposed (awaiting approval before EXECUTE)
-> Based on: `docs/artifacts/cwso-nextgen-blueprint-v1.md`, `input/*.pdf`, current `develop` @ `v0.2.0-rc1`
+> Owner: orchestrator · Status: **executing — Phases 6–9 complete** (v0.3.0-rc1 packaging via T139)
+> Based on: `docs/artifacts/cwso-nextgen-blueprint-v1.md`, `input/*.pdf`, current `develop` @ `5d2cfca`
 > Protocol: `plan-approve-execute`. Task IDs continue the sequence after `T079`.
 
 ## Goal
@@ -108,7 +108,17 @@ Top three: (1) hardware API fragmentation → Rust HAL plugin + CPU fallback; (2
 regression → deterministic-task restriction + quality-floor escalation; (3) proxy overhead in front
 of LPUs → Rust hyper + zero-copy + binary trajectory storage.
 
+## Execution status (2026-06-06)
+
+| Phase | Feature(s) | Status | Checkpoint |
+|-------|------------|--------|------------|
+| 6 | A — HAL | **complete** | `checkpoint-007-phase6-complete.md` |
+| 7 | B + C — Sparse + Spikes | **complete** | `checkpoint-009-phase7-complete.md` |
+| 8 | D — Sparse merge | **complete** | `checkpoint-010-phase8-complete.md` |
+| 9 | E + F + G — Rollout | **complete** | `checkpoint-011-phase9-complete.md` |
+
+Release packaging: **T139** → `v0.3.0-rc1` (`release-v0.3.0-rc1.md`). Deferred: T135 (KV prefix router).
+
 ## Approval
 
-This plan is **proposed**. Per `plan-approve-execute`, no execution/task creation in
-`active-tasks.md` until the user approves, modifies, or rejects.
+Approved and executed. Phases 6–9 landed on `develop`; RC release readiness tracked as **T139**.
