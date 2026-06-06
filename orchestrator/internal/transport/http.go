@@ -39,6 +39,7 @@ type SubscriptionResolver func(id string) (RecordFilter, bool)
 
 type httpOptions struct {
 	resolveSub SubscriptionResolver
+	rollout    http.Handler
 }
 
 // HTTPOption configures optional HTTP transport behaviour without growing the
@@ -49,6 +50,11 @@ type HTTPOption func(*httpOptions)
 // streams only the records the resolved filter allows.
 func WithSubscriptionResolver(r SubscriptionResolver) HTTPOption {
 	return func(o *httpOptions) { o.resolveSub = r }
+}
+
+// WithRolloutAPI mounts Polar REST routes (/rollout/*, /callbacks/*, /nodes/*) when set.
+func WithRolloutAPI(h http.Handler) HTTPOption {
+	return func(o *httpOptions) { o.rollout = h }
 }
 
 // RunHTTP starts the Streamable HTTP transport per MCP spec 2025-03-26.
@@ -158,6 +164,10 @@ func newHTTPHandler(ctx context.Context, cfg *config.Config, log *logging.Logger
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	}))))
+
+	if o.rollout != nil {
+		mux.Handle("/", mw(authMiddleware(cfg, log)(o.rollout)))
+	}
 
 	return mux
 }

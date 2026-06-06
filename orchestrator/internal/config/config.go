@@ -71,6 +71,8 @@ type Config struct {
 	SparseHostRAMCapMB            int      // host-wide RAM cap enforced on max_ram_mb requests
 	SparseQualityGuardrailEnabled bool     // enable quality-floor breach → dense GPU escalation (T123)
 	RolloutRewardEnabled          bool     // enable programmatic merge SM rewards on rollout/reward topic (T136)
+	RolloutAPIEnabled             bool     // enable /rollout/* Polar REST API (T137)
+	RolloutSocket                 string   // UDS path for cwso-rollout sidecar (trajectory drain)
 	HHDSnapshotTTLSeconds         int      // stale capability threshold for policy-facing snapshots
 	HHDPolicyEngineV2             bool     // enable policy engine v2 backend selection and fallback
 	HHDHardwareAwareDispatch      bool     // enable dispatch_hardware_aware_job tool + shadow provider catalog (Phase 6)
@@ -173,6 +175,8 @@ func Load(_ string) (*Config, error) {
 		SparseHostRAMCapMB:            envInt("CWSO_SPARSE_HOST_RAM_CAP_MB", 4096),
 		SparseQualityGuardrailEnabled: envBool("CWSO_SPARSE_QUALITY_GUARDRAIL_ENABLED", false),
 		RolloutRewardEnabled:          envBool("CWSO_ROLLOUT_REWARD_ENABLED", false),
+		RolloutAPIEnabled:             envBool("CWSO_ROLLOUT_API_ENABLED", false),
+		RolloutSocket:                 os.Getenv("CWSO_ROLLOUT_SOCKET"),
 		HHDSnapshotTTLSeconds:         envInt("CWSO_HHD_CAPABILITY_SNAPSHOT_TTL_SECONDS", 30),
 		HHDPolicyEngineV2:             envBool("CWSO_HHD_POLICY_ENGINE_V2_ENABLED", false),
 		HHDHardwareAwareDispatch:      envBool("CWSO_HHD_HARDWARE_AWARE_DISPATCH_ENABLED", false),

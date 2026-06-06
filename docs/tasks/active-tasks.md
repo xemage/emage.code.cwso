@@ -41,7 +41,8 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T132 | Rust `hyper` reverse proxy + zero-copy capture | backend-developer | done | P0 | T131 | 2026-06-04 |
 | T133 | Trajectory builder + prefix merging | backend-developer | done | P0 | T132 | 2026-06-05 |
 | T134 | Trajectory store (Arrow + LZ4 + Parquet) | backend-developer | done | P1 | T133 | 2026-06-05 |
-| T136 | Programmatic reward emission (merge SM hook) | backend-developer | in_review | P0 | T133 | 2026-06-05 |
+| T136 | Programmatic reward emission (merge SM hook) | backend-developer | done | P0 | T133 | 2026-06-05 |
+| T137 | Polar REST API + trainer e2e | backend-developer | in_review | P0 | T134, T136 | 2026-06-05 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -581,12 +582,20 @@ CI socket-runner layout landed in same merge (`.gitlab-ci.yml`, `docker-compose.
 
 Brief: `task-T134.md`. Next (**T136**, P0): programmatic merge rewards. Brief: `task-T136.md`.
 
-### T136 (in_review) — Programmatic reward emission
+### T136 (done) — Programmatic reward emission
 
 > **Phase 9 (Feature G).** Active T136 = roadmap placeholder T110. Depends on T133.
 
-MR pending (`feature/T136-programmatic-rewards` → `develop`). Go merge SM hook publishes
-`rollout/reward` events (+1.0 success, −1.0 conflict/syntax fail) when
-`CWSO_ROLLOUT_REWARD_ENABLED=true`.
+Merged via MR !45 → `develop` (`892142f`; source `faf40c7`, pipeline #2579820940).
+Go merge SM hook publishes `rollout/reward` when `CWSO_ROLLOUT_REWARD_ENABLED=true`.
 
-Brief: `task-T136.md`.
+Brief: `task-T136.md`. Next (**T137**, P0): Polar REST API. Brief: `task-T137.md`.
+
+### T137 (in_review) — Polar REST API + trainer e2e
+
+> **Phase 9.** Active T137 = roadmap placeholder T111. Depends on T134 + T136.
+
+MR pending (`feature/T137-polar-rest-api` → `develop`). `/rollout/*`, `/callbacks/*`, `/nodes/*`
+on orchestrator HTTP when `CWSO_ROLLOUT_API_ENABLED=true`.
+
+Brief: `task-T137.md`.
