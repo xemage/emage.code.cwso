@@ -46,7 +46,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T138 | Phase 9 integration QA + security gate | qa / security | done | P0 | T137 | 2026-06-06 |
 | T139 | v0.3.0 release readiness (Phases 6–9) | release-manager | done | P0 | T138 | 2026-06-06 |
 | T135 | KV-cache prefix router | backend-developer | done | P1 | T132 | 2026-06-06 |
-| T140 | CI audit hardening (promote go:audit/rust:audit to blocking) | devops-engineer | in_review | P1 | T094, T139 | 2026-06-06 |
+| T140 | CI audit hardening (promote go:audit/rust:audit to blocking) | devops-engineer | done | P1 | T094, T139 | 2026-06-06 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -636,3 +636,12 @@ BLAKE3 prefix keying, git-shadow `get_workspace`, cwso-rollout LRU prewarm IPC. 
 `CWSO_ROLLOUT_KV_PREFIX_ROUTER_ENABLED` (default false).
 
 Brief: `task-T135.md`.
+
+### T140 (done) — CI audit hardening
+
+> **GA hardening.** T094 follow-up. Depends on T094, T139.
+
+Merged via MR !50 → `develop` (`130a254`; squash `1f4364e`, pipeline #2581717294 all 11 jobs green).
+Removed `allow_failure: true` from `go:audit` and `rust:audit`; `rust:lint` remains advisory.
+
+Brief: `task-T140.md`.

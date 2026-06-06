@@ -55,7 +55,7 @@ Polar-style rollout substrate (proxy capture, trajectory store, merge rewards, t
 |------|------|--------------|
 | KV prefix router | T135 (done) | BLAKE3 prefix keying + LRU prewarm; flag default-off |
 | Orchestrator `/v1/chat/completions` stub | — | Trainers point at `cwso-rollout` proxy |
-| CI dependency audits `allow_failure` | T140 (in progress) | Promote to blocking gate before GA |
+| CI dependency audits `allow_failure` | T140 (done) | Blocking gates active on `develop`/`main` |
 | Trainer fleet proxy p95 benchmark | ops | Unit-tested; fleet validation deferred |
 | Trajectory chain columns | store v2 | Raw completion records sufficient for RC |
 
@@ -94,11 +94,11 @@ All new capabilities default **off** with deterministic CPU/shadow fallback per 
 Rationale:
 - All four phase gates report Implementation **PASS** and Security **PASS**.
 - T138 integration QA and trainer e2e tests merged to develop.
-- Deferred items are documented, non-critical for PoC RC, and tracked (T140 audit hardening in progress).
+- Deferred items are documented, non-critical for PoC RC; T140 audit hardening complete.
 
 ### Conditions for GA (`v0.3.0`)
 - Stakeholder RC validation on published artifacts.
-- Complete T140: promote CI `govulncheck` / `cargo audit` to blocking gates.
+- ~~Complete T140: promote CI `govulncheck` / `cargo audit` to blocking gates.~~ Done (!50).
 - T135 KV prefix router complete; trainer fleet proxy benchmark still deferred.
 
 ## Next release actions

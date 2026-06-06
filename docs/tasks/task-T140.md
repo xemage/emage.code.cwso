@@ -1,6 +1,6 @@
 # Task T140 — CI audit hardening (promote audits to blocking gate)
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** devops-engineer
 - **Priority:** P1
 - **Depends on:** T094 (done), T139 (done)
@@ -25,8 +25,8 @@ to `develop` or `main` during the v0.3.0 GA hardening window.
 - [x] `go:audit` and `rust:audit` are blocking (no `allow_failure`).
 - [x] `rust:lint` remains non-blocking.
 - [x] Latest CI on develop showed both audit jobs green (`8670f04`, pipeline #2581299657).
-- [ ] MR !50 CI all green; merge to `develop`.
-- [ ] Task board marks T140 `done` after merge.
+- [x] MR !50 CI all green (pipeline #2581717294, 11/11 jobs); merge to `develop` (`130a254`).
+- [x] Task board marks T140 `done` after merge.
 
 ## Notes
 
