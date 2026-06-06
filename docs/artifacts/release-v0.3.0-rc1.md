@@ -6,7 +6,7 @@
 - Based on: `docs/tasks/task-T139.md`, `plan-cwso-nextgen-phase6plus.md`, checkpoints 007–011,
   `gate-phase6-feature-a-2026-06-02.md`, `gate-phase7-feature-bc-2026-06-04.md`,
   `gate-phase8-feature-d-2026-06-04.md`, `gate-phase9-feature-efg-2026-06-05.md`, CHANGELOG.md
-- **develop tip:** `5d2cfca` (T138 merged via MR !47, squash `011d8c8`)
+- **develop tip:** `8670f04` (T135 merged via MR !49; T139 tagged `v0.3.0-rc1` @ `2032b33`)
 
 ## Release intent
 
@@ -53,18 +53,19 @@ Polar-style rollout substrate (proxy capture, trajectory store, merge rewards, t
 
 | Item | Task | Impact on RC |
 |------|------|--------------|
-| KV prefix router | T135 (pending) | Synthetic `prefix_key` on submit; PoC-acceptable |
+| KV prefix router | T135 (done) | BLAKE3 prefix keying + LRU prewarm; flag default-off |
 | Orchestrator `/v1/chat/completions` stub | — | Trainers point at `cwso-rollout` proxy |
-| CI dependency audits `allow_failure` | T094 | Advisory only; harden before GA |
+| CI dependency audits `allow_failure` | T140 (in progress) | Promote to blocking gate before GA |
 | Trainer fleet proxy p95 benchmark | ops | Unit-tested; fleet validation deferred |
 | Trajectory chain columns | store v2 | Raw completion records sufficient for RC |
 
 ## Validation and CI evidence
 
-- **T138 pre-merge:** pipeline green on `feature/T138-phase9-gate` branch.
-- **develop tip:** `5d2cfca` — T138 squash merge `011d8c8` via MR !47.
-- **Local suites:** `go test ./... -race`, `cargo test -p cwso-hal -p cwso-sparse -p cwso-merge-engine -p cwso-rollout` expected green on develop.
-- **T139 MR:** !48 — CI pending at publish time.
+- **T139 merged:** MR !48 → `d693c3f`; tagged **`v0.3.0-rc1`** on `develop` (`2032b33`).
+- **T135 merged:** MR !49 → `0685893` (squash `f9f0199`); pipeline #2581257390 all 11 jobs green.
+- **develop tip:** `8670f04` — T135 board reconciliation after !49 merge.
+- **Local suites:** `go test ./... -race`, `cargo test -p cwso-hal -p cwso-sparse -p cwso-merge-engine -p cwso-rollout` green on develop.
+- **T140 MR:** !50 — audit hardening (promote `go:audit` / `rust:audit` to blocking).
 
 ## Operator flags (new since v0.2.0-rc1)
 
@@ -93,12 +94,12 @@ All new capabilities default **off** with deterministic CPU/shadow fallback per 
 Rationale:
 - All four phase gates report Implementation **PASS** and Security **PASS**.
 - T138 integration QA and trainer e2e tests merged to develop.
-- Deferred items are documented, non-critical for PoC RC, and tracked (T135, audit hardening).
+- Deferred items are documented, non-critical for PoC RC, and tracked (T140 audit hardening in progress).
 
 ### Conditions for GA (`v0.3.0`)
 - Stakeholder RC validation on published artifacts.
-- Promote CI `govulncheck` / `cargo audit` from `allow_failure` (T094 follow-up).
-- Risk acceptance or completion of T135 before production trainer fleet.
+- Complete T140: promote CI `govulncheck` / `cargo audit` to blocking gates.
+- T135 KV prefix router complete; trainer fleet proxy benchmark still deferred.
 
 ## Next release actions
 
