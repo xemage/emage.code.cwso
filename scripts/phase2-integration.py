@@ -303,6 +303,10 @@ def run_phase4_conflict_matrix() -> None:
 
 
 def main() -> None:
+    if os.environ.get("CI"):
+        print("--- cleaning stale compose stack (if any) ---")
+        compose("down", "-v", check=False)
+
     print("--- building images ---")
     compose("build")
 
