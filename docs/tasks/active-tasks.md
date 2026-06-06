@@ -44,7 +44,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T136 | Programmatic reward emission (merge SM hook) | backend-developer | done | P0 | T133 | 2026-06-05 |
 | T137 | Polar REST API + trainer e2e | backend-developer | done | P0 | T134, T136 | 2026-06-05 |
 | T138 | Phase 9 integration QA + security gate | qa / security | done | P0 | T137 | 2026-06-06 |
-| T139 | v0.3.0 release readiness (Phases 6–9) | release-manager | in_review | P0 | T138 | 2026-06-06 |
+| T139 | v0.3.0 release readiness (Phases 6–9) | release-manager | done | P0 | T138 | 2026-06-06 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -614,11 +614,13 @@ Artifacts: `qa-phase9-report-v1.md`, `gate-phase9-feature-efg-2026-06-05.md`,
 
 Brief: `task-T138.md`. **Phase 9 Features E+F+G are complete.**
 
-### T139 (in_review) — v0.3.0 release readiness (Phases 6–9)
+### T139 (done) — v0.3.0 release readiness (Phases 6–9)
 
 > **Release packaging.** Active T139 = roadmap placeholder T113. Depends on T138.
 
-MR pending (`feature/T139-v0.3.0-release` → `develop`). Delivers `release-v0.3.0-rc1.md`,
-CHANGELOG `v0.3.0-rc1`, plan status update (Phases 6–9 complete).
+Merged via MR !48 → `develop` (`d693c3f`; squash `804d5df`, pipeline #2581160040 all 11 jobs green).
+Tagged **`v0.3.0-rc1`** on `develop`. Delivers `release-v0.3.0-rc1.md`, CHANGELOG
+`v0.3.0-rc1`, plan status (Phases 6–9 complete).
 
-Brief: `task-T139.md`. Next: tag `v0.3.0-rc1` after MR merge + CI green.
+Brief: `task-T139.md`. **Next-Gen Phases 6–9 RC is published.** GA (`v0.3.0`) deferred on
+stakeholder validation + audit hardening (T094).

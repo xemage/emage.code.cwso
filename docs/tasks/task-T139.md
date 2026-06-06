@@ -2,7 +2,7 @@
 
 > **ID note:** roadmap **placeholder T113**. Active **T139** (see `active-tasks.md`).
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** release-manager / technical-writer
 - **Priority:** P0
 - **Depends on:** T138 (Phase 9 QA + security gate)
@@ -28,7 +28,8 @@ artifact, plan status update, and task-board reconciliation after T138 merge.
 - [x] Release artifact references gate PASS/PASS for Phases 6–9
 - [x] Changelog covers Features A–G at RC level
 - [x] Plan status reflects Phase 9 complete
-- [ ] CI green on T139 MR !48
+- [x] CI green on T139 MR !48 (pipeline #2581160040)
+- [x] Merged !48 → `d693c3f`; tagged `v0.3.0-rc1`
 
 ## Notes
 
