@@ -1,7 +1,7 @@
 # Plan — CWSO Next-Gen (Phase 6+) "Holy Grail of Agentic Development"
 
-> Owner: orchestrator · Status: **GA hardening** — Phases 6–9 complete, v0.3.0-rc1 tagged @ `2032b33`
-> Based on: `docs/artifacts/cwso-nextgen-blueprint-v1.md`, `input/*.pdf`, current `develop` @ `8670f04`
+> Owner: orchestrator · Status: **GA prep** — Phases 6–9 complete, v0.3.0-rc1 published
+> Based on: `docs/artifacts/cwso-nextgen-blueprint-v1.md`, `input/*.pdf`, current `develop` @ `f5db055`
 > Protocol: `plan-approve-execute`. Task IDs continue the sequence after `T079`.
 
 ## Goal
@@ -117,7 +117,7 @@ of LPUs → Rust hyper + zero-copy + binary trajectory storage.
 | 8 | D — Sparse merge | **complete** | `checkpoint-010-phase8-complete.md` |
 | 9 | E + F + G — Rollout | **complete** | `checkpoint-011-phase9-complete.md` |
 
-Release packaging: **T139** → `v0.3.0-rc1` tagged on `develop` (`2032b33`). **T135** KV prefix router landed (!49 → `0685893`). **T140** CI audit hardening complete (!50 → `130a254`) — `go:audit` / `rust:audit` now blocking before GA.
+Release packaging: **T139** → `v0.3.0-rc1` tagged @ `2032b33`; **T141** GitLab release published (https://gitlab.com/em-age/emage.code.cwso/-/releases/v0.3.0-rc1). **T135** KV prefix router (!49 → `0685893`). **T140** CI audit hardening (!50 → `130a254`) — `go:audit` / `rust:audit` blocking. GA blocked on stakeholder RC validation (`checkpoint-012-nextgen-ga-prep.md`).
 
 ## Approval
 

@@ -47,6 +47,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T139 | v0.3.0 release readiness (Phases 6–9) | release-manager | done | P0 | T138 | 2026-06-06 |
 | T135 | KV-cache prefix router | backend-developer | done | P1 | T132 | 2026-06-06 |
 | T140 | CI audit hardening (promote go:audit/rust:audit to blocking) | devops-engineer | done | P1 | T094, T139 | 2026-06-06 |
+| T141 | Publish GitLab release v0.3.0-rc1 + GA prep checkpoint | release-manager | done | P0 | T139, T140 | 2026-06-07 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -645,3 +646,13 @@ Merged via MR !50 → `develop` (`130a254`; squash `1f4364e`, pipeline #25817172
 Removed `allow_failure: true` from `go:audit` and `rust:audit`; `rust:lint` remains advisory.
 
 Brief: `task-T140.md`.
+
+### T141 (done) — Publish GitLab release v0.3.0-rc1 + GA prep checkpoint
+
+> **RC publication.** Depends on T139 (tag), T140 (post-RC hardening).
+
+Published GitLab release for existing tag `v0.3.0-rc1` @ `2032b33` via `glab release create`.
+Delivered `checkpoint-012-nextgen-ga-prep.md`; reconciled `release-v0.3.0-rc1.md`, plan, and task board.
+Post-RC `develop` tip: `f5db055`. GA path blocked on stakeholder RC validation.
+
+Brief: `task-T141.md`. Release: https://gitlab.com/em-age/emage.code.cwso/-/releases/v0.3.0-rc1
