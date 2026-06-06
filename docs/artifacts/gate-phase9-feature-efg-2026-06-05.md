@@ -3,7 +3,7 @@
 **Target:** Phase 9 rollout stack (T132–T137) on `develop`  
 **Based on:** ADR-010, `rollout-architecture-v1.md`, `qa-phase9-report-v1.md`, tasks T132–T137  
 **Date:** 2026-06-05  
-**Gate MR:** T138 — pending merge to `develop`
+**Gate MR:** T138 — merged !47 → `5d2cfca` (squash `011d8c8`)
 
 Scope reviewed on `develop` after T137 merge (`c1c56d6`):
 

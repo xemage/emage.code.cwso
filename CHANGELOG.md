@@ -2,6 +2,51 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.3.0-rc1 - 2026-06-06
+
+### Phase 6 — Heterogeneous Hardware Dispatcher (Feature A)
+- Rust `cwso-hal` sidecar with `InferenceBackend` trait, CPU baseline, and optional GPU/LPU
+  OpenAI-compatible adapters (`T082`–`T084`).
+- Workload profiler and `dispatch_hardware_aware_job` MCP tool with live HAL execution,
+  capability sync, and deterministic fallback chain (`T085`–`T087`).
+- Context propagation, active health probing, TLS endpoint validation, and CI dependency
+  audits (`T090`–`T094`, `T114`).
+- Phase 6 gate **PASS/PASS** per `gate-phase6-feature-a-2026-06-02.md`.
+
+### Phase 7 — Sparse Micro-Agents & Spiking Monitors (Features B + C)
+- `cwso-sparse` sidecar: deterministic 1.58-bit ternary GEMM, `.cwsl` mmap loader,
+  wasmtime agent lifecycle (`T119`–`T122`).
+- `create_ephemeral_sparse_agent` MCP tool and quality-floor → dense GPU escalation (`T123`).
+- AST write-spike monitor, semantic filter, conflict pre-warning, and `subscribe_ast_spikes`
+  MCP resources with write-event feeder (`T115`–`T118`).
+- Phase 7 gate **PASS/PASS** per `gate-phase7-feature-bc-2026-06-04.md`.
+
+### Phase 8 — Semantic Sparse-Merging (Feature D)
+- Sparse AST tensor encoding spec (ADR-009) and AVX2 sparse diff kernel (`T126`–`T127`).
+- Sparse pre-filter in `merge_three_way` and sparse↔dense conformance suite (`T128`–`T129`).
+- Large-repo merge benchmark and Phase 8 gate **PASS/PASS**
+  (`gate-phase8-feature-d-2026-06-04.md`, `T130`).
+
+### Phase 9 — Rollout-as-a-Service (Features E + F + G)
+- `cwso-rollout` hyper reverse proxy with zero-copy capture (`T132`).
+- Trajectory builder with prefix merging and Parquet/LZ4 trajectory store (`T133`–`T134`).
+- Programmatic merge rewards (+1/−1) and Polar REST API for trainer e2e (`T136`–`T137`).
+- Phase 9 integration QA and gate **PASS/PASS** (`qa-phase9-report-v1.md`,
+  `gate-phase9-feature-efg-2026-06-05.md`, `T138`).
+
+### Operations and Documentation
+- Release readiness artifact: `docs/artifacts/release-v0.3.0-rc1.md`.
+- Checkpoints 007–011 cover Phases 6–9 completion on `develop` @ `5d2cfca`.
+
+### CI / Gates
+- T138 merged via MR !47 (squash `011d8c8`); pipeline green on feature branch pre-merge.
+- All new capabilities ship default-off behind `CWSO_*` flags.
+
+### Known residual risk (RC)
+- KV prefix router (T135) and trainer fleet proxy benchmark deferred.
+- CI `govulncheck` / `cargo audit` remain `allow_failure: true` (T094 PoC posture).
+- Orchestrator `/v1/chat/completions` is a 501 stub; transparent proxy on `cwso-rollout`.
+
 ## v0.2.0-rc1 - 2026-05-24
 
 ### Phase 5 Hardening Closure

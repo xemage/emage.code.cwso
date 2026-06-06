@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-05  
 **Phase:** 9 — Features E + F + G (Rollout / Polar substrate)  
-**develop tip:** `c1c56d6` (post T137 MR !46)
+**develop tip:** `5d2cfca` (post T138 MR !47)
 
 ## Completed tasks
 
@@ -14,7 +14,7 @@
 | T134 | Parquet trajectory store | !43 `26761ab` |
 | T136 | Programmatic merge rewards | !45 `892142f` |
 | T137 | Polar REST API | !46 `c1c56d6` |
-| T138 | Phase 9 QA + security gate | pending (!47) |
+| T138 | Phase 9 QA + security gate | !47 `5d2cfca` |
 
 ## Key decisions
 
@@ -34,8 +34,8 @@ None.
 
 ## Next steps
 
-1. Merge T138 gate MR !47.
-2. **T139** — v0.3.0 release readiness + docs.
+1. **T139** — v0.3.0-rc1 release packaging (MR !48).
+2. Tag and publish `v0.3.0-rc1` after T139 merge + CI green.
 
 ## Token metrics
 

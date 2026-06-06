@@ -2,7 +2,7 @@
 
 > **ID note:** roadmap **placeholder T112**. Active **T138** (see `active-tasks.md`).
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** qa-engineer / security-engineer / tech-lead
 - **Priority:** P0
 - **Depends on:** T137 (Polar REST API)
@@ -27,7 +27,7 @@ Close Phase 9 with structured QA evidence and Tech-Lead + Security validation ga
 - [x] Trainer e2e flow tested (submit → reward → poll → callback)
 - [x] Gate artifacts: Implementation **PASS**, Security **PASS**
 - [x] `go test ./... -race` green
-- [ ] CI green on T138 MR
+- [x] CI green on T138 MR (!47 → `5d2cfca`, squash `011d8c8`)
 
 ## Notes
 
