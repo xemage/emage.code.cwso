@@ -117,7 +117,7 @@ of LPUs → Rust hyper + zero-copy + binary trajectory storage.
 | 8 | D — Sparse merge | **complete** | `checkpoint-010-phase8-complete.md` |
 | 9 | E + F + G — Rollout | **complete** | `checkpoint-011-phase9-complete.md` |
 
-Release packaging: **T139** → `v0.3.0-rc1` tagged on `develop` (`2032b33`). **Next:** T135 (KV prefix router, P1).
+Release packaging: **T139** → `v0.3.0-rc1` tagged on `develop` (`2032b33`). **T135** KV prefix router landed (!49 → `0685893`).
 
 ## Approval
 

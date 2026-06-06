@@ -45,7 +45,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T137 | Polar REST API + trainer e2e | backend-developer | done | P0 | T134, T136 | 2026-06-05 |
 | T138 | Phase 9 integration QA + security gate | qa / security | done | P0 | T137 | 2026-06-06 |
 | T139 | v0.3.0 release readiness (Phases 6–9) | release-manager | done | P0 | T138 | 2026-06-06 |
-| T135 | KV-cache prefix router | backend-developer | in_review | P1 | T132 | 2026-06-06 |
+| T135 | KV-cache prefix router | backend-developer | done | P1 | T132 | 2026-06-06 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -625,3 +625,13 @@ Tagged **`v0.3.0-rc1`** on `develop`. Delivers `release-v0.3.0-rc1.md`, CHANGELO
 
 Brief: `task-T139.md`. **Next-Gen Phases 6–9 RC is published.** GA (`v0.3.0`) deferred on
 stakeholder validation + audit hardening (T094).
+
+### T135 (done) — KV-cache prefix router
+
+> **Phase 9 (Feature F).** Active T135 = roadmap placeholder T109. Depends on T132.
+
+Merged via MR !49 → `develop` (`0685893`; squash `f9f0199`, pipeline #2581257390 all 11 jobs green).
+BLAKE3 prefix keying, git-shadow `get_workspace`, cwso-rollout LRU prewarm IPC. Flag:
+`CWSO_ROLLOUT_KV_PREFIX_ROUTER_ENABLED` (default false).
+
+Brief: `task-T135.md`.

@@ -2,7 +2,7 @@
 
 > **ID note:** roadmap **placeholder T109**. Active **T135** (see `active-tasks.md`).
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** backend-developer
 - **Priority:** P1
 - **Depends on:** T132 (cwso-rollout sidecar)
@@ -32,7 +32,7 @@ and shared read-files manifest hash. Optionally prewarm the cwso-rollout LRU cac
 - [x] Optional prewarm via cwso-rollout `prefix_prewarm` when socket configured
 - [x] Feature flag off by default; no synthetic prefix when disabled
 - [x] `go test ./... -race` green locally
-- [ ] CI green on MR
+- [x] CI green on MR !49 (pipeline #2581257390)
 
 ## Notes
 
