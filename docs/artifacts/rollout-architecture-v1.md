@@ -54,8 +54,8 @@ Phase 9 delivers the rollout substrate; trainers remain external.
 
 Four steps per Polar §3.2, implemented in `cwso-rollout`:
 
-1. **Detect provider** — route by path + headers (`/v1/chat/completions`, `/v1/messages`,
-   `/v1/models/:model:generateContent`).
+1. **Detect provider** — route by path + headers (`/v1/chat/completions`, `/v1/responses`,
+   `/v1/messages`, `/v1/models/:model:generateContent`).
 2. **Normalize** — transform request to OpenAI Chat Completions shape; force `logprobs=true` when
    supported; strip provider-specific fields not needed upstream.
 3. **Forward + store** — call upstream (HAL `gpu-accelerated` / `lpu-realtime` / configured URL);
@@ -77,6 +77,22 @@ Four steps per Polar §3.2, implemented in `cwso-rollout`:
   sub-agents.
 - Request/response bodies logged at `trace` only; redact `Authorization` headers.
 - TLS required for non-loopback upstream (reuse `cwso-hal` `validate_endpoint` pattern).
+
+### 3.3 Provider matrix (T147)
+
+All client-facing provider families normalize to **OpenAI Chat Completions** for upstream
+forwarding and logprob capture. Denormalization restores the client's native response shape;
+streaming clients receive **synthetic SSE** in provider-specific event formats.
+
+| Provider | Detect path | Normalize | Upstream path | Denormalize (JSON) | Synthetic SSE |
+|----------|-------------|-----------|---------------|--------------------|---------------|
+| OpenAI Chat | `/v1/chat/completions` | passthrough + `logprobs=true`, `stream=false` | `/v1/chat/completions` | passthrough | `chat.completion.chunk` + `[DONE]` |
+| OpenAI Responses | `/v1/responses` | `input`/`instructions` → `messages` | `/v1/chat/completions` | `output[]` message items | `response.output_text.delta`, `response.completed` |
+| Anthropic Messages | `/v1/messages` | `system` + `messages` → chat `messages` | `/v1/chat/completions` | Anthropic `message` | `content_block_delta`, `message_stop` |
+| Google GenerateContent | `*:generateContent` | `contents` → chat `messages` | `/v1/chat/completions` | `candidates[]` | `data:` JSON chunks + `[DONE]` |
+
+Capture fields (`prompt_token_ids`, `sampled_token_ids`, `logprobs`, `finish_reason`) are always
+extracted from the upstream Chat Completions body regardless of client provider.
 
 ## 4. Trajectory builder (T133)
 

@@ -87,6 +87,21 @@ impl ProxyConfig {
     pub fn upstream_chat_path(&self) -> String {
         format!("{}/v1/chat/completions", self.upstream_url)
     }
+
+    pub fn upstream_responses_path(&self) -> String {
+        format!("{}/v1/responses", self.upstream_url)
+    }
+
+    /// All client providers normalize to OpenAI Chat Completions for upstream capture.
+    pub fn upstream_path_for(&self, provider: crate::provider::Provider) -> String {
+        match provider {
+            crate::provider::Provider::OpenAiChat
+            | crate::provider::Provider::OpenAiResponses
+            | crate::provider::Provider::AnthropicMessages
+            | crate::provider::Provider::GoogleGenerateContent => self.upstream_chat_path(),
+            crate::provider::Provider::Unknown => self.upstream_chat_path(),
+        }
+    }
 }
 
 fn trim_trailing_slash(url: String) -> String {
@@ -139,6 +154,24 @@ mod tests {
         assert_eq!(
             cfg.upstream_chat_path(),
             "http://127.0.0.1:8000/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn upstream_path_for_responses_uses_chat_after_normalize() {
+        use crate::provider::Provider;
+        let cfg = ProxyConfig {
+            http_bind: HTTP_BIND_DEFAULT.to_string(),
+            upstream_url: "http://127.0.0.1:8000".to_string(),
+            upstream_api_key: None,
+            capture_enabled: true,
+            capture_queue_capacity: 8,
+            http_timeout_ms: 1_000,
+            allow_insecure_endpoints: false,
+        };
+        assert_eq!(
+            cfg.upstream_path_for(Provider::OpenAiResponses),
+            cfg.upstream_chat_path()
         );
     }
 }
