@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -57,7 +58,7 @@ func TestPhase9TrainerE2EFlow(t *testing.T) {
 		}},
 		Rewards: []float64{1.0},
 	}
-	if err := svc.CompleteSession(sub.TaskID, &group); err != nil {
+	if err := svc.CompleteSession(sub.TaskID, "", &group); err != nil {
 		t.Fatalf("complete: %v", err)
 	}
 
@@ -128,6 +129,55 @@ func TestPhase9RESTTrainerE2E(t *testing.T) {
 	h.ServeHTTP(cbRec, cbReq)
 	if cbRec.Code != http.StatusOK {
 		t.Fatalf("callback: %d", cbRec.Code)
+	}
+}
+
+func TestNumSamplesSessionFanOut(t *testing.T) {
+	t.Parallel()
+	broker := memorybroker.New()
+	t.Cleanup(broker.Close)
+	svc := NewService(broker, nil, nil)
+
+	sub, err := svc.SubmitTask(context.Background(), SubmitRequest{
+		NumSamples: 3,
+		TaskSpec: TaskSpec{
+			Description: "fan-out",
+			WorkspaceID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+		},
+	})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if sub.NumSamples != 3 || len(sub.SessionIDs) != 3 {
+		t.Fatalf("submit resp: %+v", sub)
+	}
+
+	for i, sid := range sub.SessionIDs {
+		_ = broker.Ingest(TopicReward, RewardEvent{
+			Kind: RewardMergeSuccess, Reward: 1.0, SessionID: sid, Outcome: "success",
+		})
+		group := TrajectoryGroup{
+			SessionID: sid,
+			Chains:    []Chain{{ChainID: fmt.Sprintf("chain-%d", i), Steps: []Step{{LossMask: []uint8{1}}}}},
+		}
+		if err := svc.CompleteSession(sub.TaskID, sid, &group); err != nil {
+			t.Fatalf("complete session %d: %v", i, err)
+		}
+	}
+	waitBrokerRecords(t, broker, 3)
+
+	status, err := svc.GetTask(context.Background(), sub.TaskID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if status.Status != TaskCompleted {
+		t.Fatalf("status: %q", status.Status)
+	}
+	if status.SessionsCompleted != 3 || len(status.PartialResults) != 3 {
+		t.Fatalf("status: %+v", status)
+	}
+	if len(status.Trajectories) != 3 {
+		t.Fatalf("trajectories: %+v", status.Trajectories)
 	}
 }
 
