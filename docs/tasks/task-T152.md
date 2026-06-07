@@ -1,6 +1,6 @@
 # Task T152 — v0.3.0 GA release readiness
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** release-manager
 - **Priority:** P0
 - **Depends on:** T142, T147, T141
@@ -16,10 +16,10 @@ CHANGELOG, GitLab release, and checkpoint.
 - [x] `develop` CI green on release commit
 - [x] `docs/artifacts/release-v0.3.0.md` with scope vs RC delta
 - [x] CHANGELOG section for v0.3.0
-- [ ] Annotated tag `v0.3.0` on `develop`
-- [ ] GitLab release published
+- [x] Annotated tag `v0.3.0` on `develop`
+- [x] GitLab release published
 - [x] `checkpoint-013-v0.3.0-ga.md` written
-- [ ] Task board marks T152 done; plan updated
+- [x] Task board marks T152 done; plan updated
 
 ## Notes
 

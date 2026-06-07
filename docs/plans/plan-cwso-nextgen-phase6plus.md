@@ -119,7 +119,7 @@ of LPUs → Rust hyper + zero-copy + binary trajectory storage.
 
 Release packaging: **T139** → `v0.3.0-rc1` tagged @ `2032b33`; **T141** GitLab release published. Post-RC: T135, T140 on `develop`. GA blocked on stakeholder RC validation (`checkpoint-012-nextgen-ga-prep.md`).
 
-**Post-RC track (2026-06-07):** T142/T143/T147/T144 done on `develop` @ `50f3406`. **T152** GA packaging in review (`release-v0.3.0.md`). Polar **T145–T151** post-GA.
+**Post-RC track:** complete — **v0.3.0 GA** tagged @ `de071c0` (T152). Polar **T145–T151** post-GA backlog.
 
 ## Approval
 

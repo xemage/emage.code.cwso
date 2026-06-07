@@ -51,7 +51,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T143 | Root hygiene & PoC debt archive | tech-lead | done | P2 | T141 | 2026-06-07 |
 | T142 | Installation & usage documentation | technical-writer | done | P0 | T141 | 2026-06-07 |
 | T147 | OpenAI Responses API + proxy hardening | backend-developer | done | P1 | T132 | 2026-06-07 |
-| T152 | v0.3.0 GA release readiness | release-manager | in_review | P0 | T142, T147 | 2026-06-07 |
+| T152 | v0.3.0 GA release readiness | release-manager | done | P0 | T142, T147 | 2026-06-07 |
 | T144 | Polar harness adapters + runtime launcher | backend-developer | done | P1 | T137, T142 | 2026-06-07 |
 | T145 | Rollout `num_samples` session fan-out | backend-developer | pending | P1 | T137 | 2026-06-07 |
 | T146 | Gateway async staging + partial traces | backend-developer | pending | P1 | T132 | 2026-06-07 |
@@ -690,9 +690,11 @@ Merged @ `2c2b873` (MR !53). `/v1/responses` route, provider-specific SSE, rollo
 
 Merged @ `50f3406` (MR !56). Registry, Docker runtime, shell-command reference harness + e2e.
 
-### T152 (in_review) — v0.3.0 GA release
+### T152 (done) — v0.3.0 GA release
 
-Artifact: `release-v0.3.0.md`, checkpoint-013. Tag + GitLab release pending merge.
+Tagged **`v0.3.0`** @ `de071c0`. Release: https://gitlab.com/em-age/emage.code.cwso/-/releases/v0.3.0
+
+Brief: `task-T152.md`. **Next:** T145 (Polar session fan-out).
 
 ### Polar parity backlog (T145–T151)
 
