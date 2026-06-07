@@ -90,30 +90,37 @@ def rpc(role: str, method: str, params: dict) -> dict:
     global LAST_RPC_AT
     # T029 adds a 60 req/min per-IP limiter with burst=1 on POST /mcp.
     # Pace calls to avoid intentional 429s during integration flow.
-    now = time.monotonic()
-    min_interval = 1.05
-    wait = min_interval - (now - LAST_RPC_AT)
-    if wait > 0:
-        time.sleep(wait)
-
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
-    req = urllib.request.Request(
-        BASE_URL + "/mcp",
-        data=body,
-        method="POST",
-        headers={
-            "Authorization": "Bearer " + mint_jwt(role),
-            "Content-Type": "application/json",
-            "Origin": "http://localhost",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
+    max_attempts = 5
+    for attempt in range(max_attempts):
+        now = time.monotonic()
+        min_interval = 1.05
+        wait = min_interval - (now - LAST_RPC_AT)
+        if wait > 0:
+            time.sleep(wait)
+
+        req = urllib.request.Request(
+            BASE_URL + "/mcp",
+            data=body,
+            method="POST",
+            headers={
+                "Authorization": "Bearer " + mint_jwt(role),
+                "Content-Type": "application/json",
+                "Origin": "http://localhost",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                LAST_RPC_AT = time.monotonic()
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
             LAST_RPC_AT = time.monotonic()
-            return json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        LAST_RPC_AT = time.monotonic()
-        return {"_http_status": e.code, "_body": e.read().decode("utf-8", "replace")}
+            return {"_http_status": e.code, "_body": e.read().decode("utf-8", "replace")}
+        except urllib.error.URLError as e:
+            if attempt + 1 >= max_attempts:
+                raise
+            print(f"  WARN rpc {method} transient error (attempt {attempt + 1}): {e}")
+            wait_for(healthz_up, f"/healthz after rpc failure ({method})", timeout=20.0)
 
 
 def call_tool(role: str, name: str, args: dict) -> dict:
