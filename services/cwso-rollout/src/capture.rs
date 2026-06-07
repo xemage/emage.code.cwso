@@ -56,7 +56,7 @@ impl CapturePipeline {
 
         let (normalized, client_wants_stream) = normalize_request(provider, body)?;
         let request_id = Uuid::new_v4().to_string();
-        let upstream_path = self.config.upstream_chat_path();
+        let upstream_path = self.config.upstream_path_for(provider);
         let upstream_body = self.upstream.post_json(&upstream_path, &normalized).await?;
 
         if self.config.capture_enabled {
@@ -140,6 +140,36 @@ mod tests {
         assert!(String::from_utf8_lossy(&response).contains("ok"));
 
         let record = store.try_drain_one().expect("captured");
+        assert_eq!(record.sampled_token_ids, vec![1]);
+    }
+
+    #[tokio::test]
+    async fn pipeline_routes_responses_path() {
+        let upstream = spawn_mock_upstream().await;
+        let store = Arc::new(CaptureStore::new(16));
+        let config = ProxyConfig {
+            http_bind: "127.0.0.1:0".to_string(),
+            upstream_url: upstream,
+            upstream_api_key: None,
+            capture_enabled: true,
+            capture_queue_capacity: 16,
+            http_timeout_ms: 5_000,
+            allow_insecure_endpoints: false,
+        };
+        let pipeline = CapturePipeline::new(config, Arc::clone(&store));
+        let body = br#"{"model":"gpt-4o","input":"hi","stream":false}"#;
+        let (status, response, content_type) = pipeline
+            .handle("/v1/responses", body)
+            .await
+            .expect("handle");
+        assert_eq!(status, 200);
+        assert_eq!(content_type, "application/json");
+        let text = String::from_utf8(response).expect("utf8");
+        assert!(text.contains("\"object\":\"response\""));
+        assert!(text.contains("ok"));
+
+        let record = store.try_drain_one().expect("captured");
+        assert_eq!(record.provider, Provider::OpenAiResponses);
         assert_eq!(record.sampled_token_ids, vec![1]);
     }
 }

@@ -1,6 +1,6 @@
 # Task T147 — OpenAI Responses API + proxy hardening
 
-- **Status:** pending
+- **Status:** in_review
 - **Owner:** backend-developer
 - **Priority:** P1
 - **Depends on:** T132
@@ -13,6 +13,6 @@ harden synthetic SSE and logprob capture for all four provider families.
 
 ## Acceptance Criteria
 
-- [ ] `/v1/responses` (or equivalent) routed and captured
-- [ ] Unit tests for normalize + capture fields
-- [ ] Documented provider matrix in rollout architecture v2
+- [x] `/v1/responses` (or equivalent) routed and captured
+- [x] Unit tests for normalize + capture fields
+- [x] Documented provider matrix in rollout architecture v2

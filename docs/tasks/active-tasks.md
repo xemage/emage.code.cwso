@@ -50,7 +50,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T141 | Publish GitLab release v0.3.0-rc1 + GA prep checkpoint | release-manager | done | P0 | T139, T140 | 2026-06-07 |
 | T143 | Root hygiene & PoC debt archive | tech-lead | done | P2 | T141 | 2026-06-07 |
 | T142 | Installation & usage documentation | technical-writer | done | P0 | T141 | 2026-06-07 |
-| T147 | OpenAI Responses API + proxy hardening | backend-developer | pending | P1 | T132 | 2026-06-07 |
+| T147 | OpenAI Responses API + proxy hardening | backend-developer | in_review | P1 | T132 | 2026-06-07 |
 | T144 | Polar harness adapters + runtime launcher | backend-developer | pending | P1 | T137, T142 | 2026-06-07 |
 | T145 | Rollout `num_samples` session fan-out | backend-developer | pending | P1 | T137 | 2026-06-07 |
 | T146 | Gateway async staging + partial traces | backend-developer | pending | P1 | T132 | 2026-06-07 |
