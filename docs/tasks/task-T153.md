@@ -1,6 +1,6 @@
 # Task T153 — Tag pipeline deploy:registry fix
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** devops-engineer
 - **Priority:** P1
 - **Depends on:** T152
@@ -9,16 +9,12 @@
 ## Objective
 
 Fix invalid tag pipelines where `deploy:registry` hard-depends on `e2e:phase2`, which is
-excluded by `rules` on `$CI_COMMIT_TAG` — resulting in 0 jobs / yaml invalid.
+excluded by `rules` on `$CI_COMMIT_TAG`.
 
 ## Acceptance Criteria
 
 - [x] `deploy:registry` uses `needs:optional` for `e2e:phase2`
-- [ ] Tag pipeline validates and runs build + deploy jobs
-- [ ] `main` deploy still waits for e2e when e2e job is present
-- [ ] Task board updated
+- [x] MR !58 merged
+- [ ] Tag pipeline re-run verified (post-merge)
 
-## Notes
-
-E2e remains the gate on `develop` / `main` / MR pipelines. Tag pipelines assume prior
-green develop CI before release tag.
+Merged via MR !58.

@@ -21,6 +21,9 @@ const (
 	TaskCompleted TaskStatus = "completed"
 	TaskFailed    TaskStatus = "failed"
 	TaskCancelled TaskStatus = "cancelled"
+
+	defaultNumSamples = 1
+	maxNumSamples     = 32
 )
 
 // TaskSpec is the inner task_spec from POST /rollout/task/submit.
@@ -35,13 +38,16 @@ type SubmitRequest struct {
 	TaskSpec           TaskSpec `json:"task_spec"`
 	TrainerCallbackURL string   `json:"trainer_callback_url,omitempty"`
 	PrewarmKVPrefix    *bool    `json:"prewarm_kv_prefix,omitempty"`
+	NumSamples         int      `json:"num_samples,omitempty"`
 }
 
 // SubmitResponse is returned when a rollout task is accepted.
 type SubmitResponse struct {
-	TaskID    string     `json:"task_id"`
-	Status    TaskStatus `json:"status"`
-	PrefixKey string     `json:"prefix_key,omitempty"`
+	TaskID     string     `json:"task_id"`
+	Status     TaskStatus `json:"status"`
+	PrefixKey  string     `json:"prefix_key,omitempty"`
+	NumSamples int        `json:"num_samples,omitempty"`
+	SessionIDs []string   `json:"session_ids,omitempty"`
 }
 
 // PartialResult mirrors rollout_task_status partial_results items.
@@ -60,11 +66,14 @@ type TrajectorySummary struct {
 
 // TaskStatusResponse is GET /rollout/task/{task_id}.
 type TaskStatusResponse struct {
-	TaskID         string              `json:"task_id"`
-	Status         TaskStatus          `json:"status"`
-	PartialResults []PartialResult     `json:"partial_results,omitempty"`
-	Trajectories   []TrajectorySummary `json:"trajectories,omitempty"`
-	Error          string              `json:"error,omitempty"`
+	TaskID            string              `json:"task_id"`
+	Status            TaskStatus          `json:"status"`
+	PartialResults    []PartialResult     `json:"partial_results,omitempty"`
+	Trajectories      []TrajectorySummary `json:"trajectories,omitempty"`
+	Error             string              `json:"error,omitempty"`
+	NumSamples        int                 `json:"num_samples,omitempty"`
+	SessionIDs        []string            `json:"session_ids,omitempty"`
+	SessionsCompleted int                 `json:"sessions_completed,omitempty"`
 }
 
 // FleetStatus is GET /rollout/status.
@@ -80,7 +89,10 @@ type Task struct {
 	ID              string
 	Status          TaskStatus
 	Spec            TaskSpec
+	NumSamples      int
 	SessionID       string
+	SessionIDs      []string
+	SessionGroups   map[string]*TrajectoryGroup
 	CallbackURL     string
 	PrefixKey       string
 	CreatedAt       time.Time
@@ -122,10 +134,17 @@ func NewService(rewards RewardReader, client *Client, prefixRouter *PrefixRouter
 	}
 }
 
-// SubmitTask enqueues a rollout task.
+// SubmitTask enqueues a rollout task (optionally fanning out num_samples sessions).
 func (s *Service) SubmitTask(ctx context.Context, req SubmitRequest) (SubmitResponse, error) {
 	if req.TaskSpec.Description == "" || req.TaskSpec.WorkspaceID == "" {
 		return SubmitResponse{}, fmt.Errorf("task_spec.description and workspace_id are required")
+	}
+	num := req.NumSamples
+	if num <= 0 {
+		num = defaultNumSamples
+	}
+	if num > maxNumSamples {
+		return SubmitResponse{}, fmt.Errorf("num_samples must be <= %d", maxNumSamples)
 	}
 	id, err := newUUID()
 	if err != nil {
@@ -143,16 +162,33 @@ func (s *Service) SubmitTask(ctx context.Context, req SubmitRequest) (SubmitResp
 		ID:          id,
 		Status:      TaskRunning,
 		Spec:        req.TaskSpec,
-		SessionID:   id,
+		NumSamples:  num,
 		CallbackURL: req.TrainerCallbackURL,
 		PrefixKey:   prefixKey,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
+	if num == 1 {
+		task.SessionID = id
+	} else {
+		task.SessionIDs = make([]string, num)
+		task.SessionGroups = make(map[string]*TrajectoryGroup, num)
+		for i := range task.SessionIDs {
+			task.SessionIDs[i], err = newUUID()
+			if err != nil {
+				return SubmitResponse{}, err
+			}
+		}
+	}
 	s.mu.Lock()
 	s.tasks[id] = task
 	s.mu.Unlock()
-	return SubmitResponse{TaskID: id, Status: TaskRunning, PrefixKey: prefixKey}, nil
+	resp := SubmitResponse{TaskID: id, Status: TaskRunning, PrefixKey: prefixKey}
+	if num > 1 {
+		resp.NumSamples = num
+		resp.SessionIDs = append([]string(nil), task.SessionIDs...)
+	}
+	return resp, nil
 }
 
 // GetTask returns task status with rewards and optional trajectories.
@@ -168,7 +204,13 @@ func (s *Service) GetTask(ctx context.Context, taskID string) (TaskStatusRespons
 		Status: task.Status,
 		Error:  task.LastError,
 	}
-	resp.PartialResults = s.mergePartialResults(task, s.collectRewards(task.SessionID))
+	if task.NumSamples > 1 {
+		resp.NumSamples = task.NumSamples
+		resp.SessionIDs = append([]string(nil), task.SessionIDs...)
+		resp.SessionsCompleted = len(task.SessionGroups)
+	}
+	rewards := s.collectRewardsForTask(task)
+	resp.PartialResults = s.mergePartialResults(task, rewards)
 	resp.Trajectories = s.trajectorySummaries(ctx, task)
 	return resp, nil
 }
@@ -179,11 +221,16 @@ func (s *Service) FleetStatus(ctx context.Context) FleetStatus {
 	defer s.mu.RUnlock()
 	var pending, running int
 	for _, t := range s.tasks {
+		sessions := taskSessionCount(t)
 		switch t.Status {
 		case TaskQueued:
-			pending++
+			pending += sessions
 		case TaskRunning:
-			running++
+			if t.NumSamples > 1 && len(t.SessionGroups) > 0 {
+				running += t.NumSamples - len(t.SessionGroups)
+			} else {
+				running += sessions
+			}
 		}
 	}
 	status := FleetStatus{
@@ -229,20 +276,75 @@ func (s *Service) HeartbeatNode(nodeID string) error {
 	return nil
 }
 
-// CompleteSession marks a task completed from trainer callback.
-func (s *Service) CompleteSession(taskID string, group *TrajectoryGroup) error {
+// CompleteSession marks a task or individual session completed from trainer callback.
+func (s *Service) CompleteSession(taskID, sessionID string, group *TrajectoryGroup) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	task, ok := s.tasks[taskID]
 	if !ok {
 		return errNotFound
 	}
-	task.Status = TaskCompleted
+	if task.NumSamples <= 1 {
+		task.Status = TaskCompleted
+		task.UpdatedAt = time.Now().UTC()
+		if group != nil {
+			task.TrajectoryGroup = group
+		}
+		return nil
+	}
+	if sessionID == "" {
+		return fmt.Errorf("session_id required when num_samples > 1")
+	}
+	if !containsString(task.SessionIDs, sessionID) {
+		return fmt.Errorf("unknown session_id for task")
+	}
+	if task.SessionGroups == nil {
+		task.SessionGroups = make(map[string]*TrajectoryGroup, task.NumSamples)
+	}
+	task.SessionGroups[sessionID] = group
+	if len(task.SessionGroups) >= task.NumSamples {
+		task.Status = TaskCompleted
+	}
 	task.UpdatedAt = time.Now().UTC()
-	if group != nil {
-		task.TrajectoryGroup = group
+	return nil
+}
+
+func (s *Service) collectRewardsForTask(task *Task) []RewardEvent {
+	ids := sessionIDsForTask(task)
+	if len(ids) == 0 {
+		return nil
+	}
+	var out []RewardEvent
+	for _, sid := range ids {
+		out = append(out, s.collectRewards(sid)...)
+	}
+	return out
+}
+
+func sessionIDsForTask(task *Task) []string {
+	if len(task.SessionIDs) > 0 {
+		return task.SessionIDs
+	}
+	if task.SessionID != "" {
+		return []string{task.SessionID}
 	}
 	return nil
+}
+
+func taskSessionCount(task *Task) int {
+	if task.NumSamples > 0 {
+		return task.NumSamples
+	}
+	return 1
+}
+
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) collectRewards(sessionID string) []RewardEvent {
@@ -291,6 +393,15 @@ func mergeOutcomeFromReward(ev RewardEvent) string {
 }
 
 func (s *Service) trajectorySummaries(ctx context.Context, task *Task) []TrajectorySummary {
+	if task.NumSamples > 1 {
+		var out []TrajectorySummary
+		for _, sid := range task.SessionIDs {
+			if g, ok := task.SessionGroups[sid]; ok && g != nil {
+				out = append(out, summariesFromGroup(*g)...)
+			}
+		}
+		return out
+	}
 	if task.TrajectoryGroup != nil {
 		return summariesFromGroup(*task.TrajectoryGroup)
 	}

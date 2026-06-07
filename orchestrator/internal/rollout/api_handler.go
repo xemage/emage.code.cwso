@@ -61,6 +61,7 @@ func (h *apiHandler) fleetStatus(w http.ResponseWriter, r *http.Request) {
 func (h *apiHandler) sessionResult(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		TaskID       string            `json:"task_id"`
+		SessionID    string            `json:"session_id,omitempty"`
 		Trajectories []TrajectoryGroup `json:"trajectories"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
@@ -71,7 +72,7 @@ func (h *apiHandler) sessionResult(w http.ResponseWriter, r *http.Request) {
 	if len(body.Trajectories) > 0 {
 		group = &body.Trajectories[0]
 	}
-	if err := h.svc.CompleteSession(body.TaskID, group); err != nil {
+	if err := h.svc.CompleteSession(body.TaskID, body.SessionID, group); err != nil {
 		if errors.Is(err, errNotFound) {
 			writeError(w, http.StatusNotFound, "task not found")
 			return

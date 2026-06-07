@@ -37,6 +37,13 @@
       "type": "boolean",
       "default": true,
       "description": "When true and KV router enabled, prewarm shared prefix before agent starts."
+    },
+    "num_samples": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 32,
+      "default": 1,
+      "description": "Number of independent rollout sessions to fan out from the same task_spec (Polar TaskRequest)."
     }
   },
   "required": ["task_spec"],
@@ -46,7 +53,13 @@
     "properties": {
       "task_id": { "type": "string", "format": "uuid" },
       "status": { "type": "string", "enum": ["queued", "running"] },
-      "prefix_key": { "type": "string", "description": "BLAKE3 prefix key when prewarm requested." }
+      "prefix_key": { "type": "string", "description": "BLAKE3 prefix key when prewarm requested." },
+      "num_samples": { "type": "integer", "minimum": 1 },
+      "session_ids": {
+        "type": "array",
+        "items": { "type": "string", "format": "uuid" },
+        "description": "Distinct session IDs when num_samples > 1."
+      }
     },
     "required": ["task_id", "status"]
   }
