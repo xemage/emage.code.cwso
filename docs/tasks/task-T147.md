@@ -1,6 +1,6 @@
 # Task T147 — OpenAI Responses API + proxy hardening
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** backend-developer
 - **Priority:** P1
 - **Depends on:** T132
