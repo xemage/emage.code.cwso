@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.3.0 - 2026-06-07
+
+### Post-RC hardening and operator readiness
+- Installation and usage guide (`docs/user/installation-v1.md`) for Docker quick start,
+  JWT, MCP HTTP, Phase 4/Next-Gen flags, and troubleshooting (T142).
+- OpenAI **Responses API** route (`/v1/responses`) with provider-specific synthetic SSE
+  and capture pipeline hardening (T147).
+- Polar **harness adapter registry** and Docker runtime (start/stop/exec/upload/download)
+  with shell-command reference harness and proxy-capture e2e (T144).
+- CI e2e hardening: MCP RPC retry on transient connection errors in phase2 integration.
+
+### Operations (carried from RC)
+- KV prefix router (T135, default-off), blocking `go:audit` / `rust:audit` (T140).
+- Phases 6–9 feature set unchanged from `v0.3.0-rc1`; see RC CHANGELOG for full scope.
+
+### Deferred post-GA
+- Polar parity T145–T151 (session fan-out, gateway staging, evaluators, trajectory parity,
+  differential prompting, offline SFT).
+
 ## v0.3.0-rc1 - 2026-06-06
 
 ### Phase 6 — Heterogeneous Hardware Dispatcher (Feature A)

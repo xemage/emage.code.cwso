@@ -8,16 +8,14 @@
 
 ## Objective
 
-Launch external coding harnesses (codex, claude_code, qwen_code, shell-command) unchanged
-by pointing their model `base_url` at cwso-rollout and providing runtime start/stop/exec
-via a Polar-style runtime interface (Docker first).
+Launch external coding harnesses unchanged via cwso-rollout proxy and Docker runtime interface.
 
 ## Acceptance Criteria
 
 - [x] Harness adapter registry with config + launch commands
 - [x] Runtime interface: start, stop, exec, upload, download
 - [x] At least one reference harness (shell-command) e2e against proxy capture
-- [x] Documented in installation guide v2 section
+- [x] Documented in installation guide section
 
 ## Notes
 
