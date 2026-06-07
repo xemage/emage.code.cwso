@@ -239,7 +239,11 @@ deploy:registry:
   extends: .docker-socket
   stage: deploy
   image: docker:27
-  needs: ["build:orchestrator", "build:git-shadow", "e2e:phase2"]
+  needs:
+    - job: build:orchestrator
+    - job: build:git-shadow
+    - job: e2e:phase2
+      optional: true   # T153: e2e excluded on tag pipelines; develop/main still gate deploy
   before_script:
     - docker info >/dev/null
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"

@@ -52,6 +52,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T142 | Installation & usage documentation | technical-writer | done | P0 | T141 | 2026-06-07 |
 | T147 | OpenAI Responses API + proxy hardening | backend-developer | done | P1 | T132 | 2026-06-07 |
 | T152 | v0.3.0 GA release readiness | release-manager | done | P0 | T142, T147 | 2026-06-07 |
+| T153 | Tag pipeline deploy fix (`needs:optional` e2e) | devops-engineer | in_review | P1 | T152 | 2026-06-07 |
 | T144 | Polar harness adapters + runtime launcher | backend-developer | done | P1 | T137, T142 | 2026-06-07 |
 | T145 | Rollout `num_samples` session fan-out | backend-developer | pending | P1 | T137 | 2026-06-07 |
 | T146 | Gateway async staging + partial traces | backend-developer | pending | P1 | T132 | 2026-06-07 |
@@ -695,6 +696,12 @@ Merged @ `50f3406` (MR !56). Registry, Docker runtime, shell-command reference h
 Tagged **`v0.3.0`** @ `de071c0`. Release: https://gitlab.com/em-age/emage.code.cwso/-/releases/v0.3.0
 
 Brief: `task-T152.md`. **Next:** T145 (Polar session fan-out).
+
+### T153 (in_review) — Tag pipeline deploy fix
+
+`deploy:registry` → `needs:optional` on `e2e:phase2` so tag pipelines validate (fixes #2583110609).
+
+Brief: `task-T153.md`.
 
 ### Polar parity backlog (T145–T151)
 
