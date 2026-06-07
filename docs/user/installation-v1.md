@@ -138,6 +138,54 @@ Trainer REST endpoints (when `CWSO_ROLLOUT_API_ENABLED=true`):
 Point external coding harnesses at the **cwso-rollout proxy** URL for model traffic capture;
 the orchestrator `/v1/chat/completions` stub returns 501 — use the sidecar proxy.
 
+### Polar harness adapters (T144)
+
+CWSO ships a harness adapter registry and Docker runtime launcher so external coding
+harnesses (Codex, Claude Code, Qwen Code, shell-command) run unchanged with `base_url`
+pointed at cwso-rollout.
+
+Default proxy URL when the sidecar is enabled: `http://127.0.0.1:8787` (`CWSO_ROLLOUT_HTTP_BIND`).
+
+| Harness ID | Model env var | Notes |
+|------------|---------------|-------|
+| `shell-command` | `OPENAI_BASE_URL` | Reference PoC — `scripts/shell-command-harness.sh` |
+| `codex` | `OPENAI_BASE_URL` | Stub launch command (wire real CLI image in production) |
+| `claude_code` | `ANTHROPIC_BASE_URL` | Stub launch command |
+| `qwen_code` | `OPENAI_BASE_URL` | Stub launch command |
+
+**Runtime interface** (Polar §3.2.2): `start`, `stop`, `exec`, `upload`, `download` — implemented
+via Docker HTTP API in `orchestrator/internal/harness` (`DockerRuntime`). Use
+`CWSO_DOCKER_HOST` (same socket as sandbox runners).
+
+Example: run the reference shell-command harness against a live proxy:
+
+```bash
+export CWSO_ROLLOUT_PROXY_ENABLED=true
+export CWSO_ROLLOUT_UPSTREAM_URL=http://your-inference:8000
+export OPENAI_BASE_URL=http://127.0.0.1:8787
+
+# From repo root — posts one chat completion through the proxy for capture
+./scripts/shell-command-harness.sh
+```
+
+Go launcher API (trainer/orchestrator integration):
+
+```go
+launcher, _ := harness.NewLauncher(harness.LauncherConfig{
+    Registry: harness.DefaultRegistry(),
+    Runtime:  dockerRuntime, // harness.NewDockerRuntime(...)
+    ProxyURL: "http://127.0.0.1:8787",
+})
+result, _ := launcher.RunOnce(ctx, harness.LaunchRequest{
+    HarnessID: harness.IDShellCommand,
+    SessionID: "rollout-session-1",
+    Prompt:    "fix the failing test",
+})
+```
+
+Captured completions are drained from the sidecar UDS (`CWSO_ROLLOUT_SOCKET`) via
+`rollout.Client.DrainCapture` and assembled into trajectories (T133).
+
 ## 7. CI parity
 
 GitLab CI uses socket-mounted Docker runners (`.docker-socket` template). E2E jobs run
