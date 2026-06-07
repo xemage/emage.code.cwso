@@ -50,8 +50,9 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T141 | Publish GitLab release v0.3.0-rc1 + GA prep checkpoint | release-manager | done | P0 | T139, T140 | 2026-06-07 |
 | T143 | Root hygiene & PoC debt archive | tech-lead | done | P2 | T141 | 2026-06-07 |
 | T142 | Installation & usage documentation | technical-writer | done | P0 | T141 | 2026-06-07 |
-| T147 | OpenAI Responses API + proxy hardening | backend-developer | in_review | P1 | T132 | 2026-06-07 |
-| T144 | Polar harness adapters + runtime launcher | backend-developer | pending | P1 | T137, T142 | 2026-06-07 |
+| T147 | OpenAI Responses API + proxy hardening | backend-developer | done | P1 | T132 | 2026-06-07 |
+| T152 | v0.3.0 GA release readiness | release-manager | pending | P0 | T142, T147 | 2026-06-07 |
+| T144 | Polar harness adapters + runtime launcher | backend-developer | done | P1 | T137, T142 | 2026-06-07 |
 | T145 | Rollout `num_samples` session fan-out | backend-developer | pending | P1 | T137 | 2026-06-07 |
 | T146 | Gateway async staging + partial traces | backend-developer | pending | P1 | T132 | 2026-06-07 |
 | T149 | Trajectory builder Polar parity | backend-developer | pending | P2 | T133 | 2026-06-07 |
@@ -679,9 +680,21 @@ Brief: `task-T143.md`.
 Delivers `docs/user/installation-v1.md` — Docker quick start, JWT, MCP, Next-Gen flags,
 troubleshooting. Critical for GA adopters.
 
-Brief: `task-T142.md`. **Next:** T147 (OpenAI Responses proxy) per `polar-gap-analysis-v1.md`.
+Brief: `task-T142.md`. **Next:** T144 (Polar harness adapters) per `polar-gap-analysis-v1.md`.
 
-### Polar parity backlog (T144–T151)
+### T147 (done) — OpenAI Responses API + proxy hardening
 
-Gap analysis: `docs/artifacts/polar-gap-analysis-v1.md`. Pending tasks cover harness adapters,
-session fan-out, gateway staging, evaluators, trajectory parity, differential prompting, offline SFT.
+Merged @ `2c2b873` (MR !53). `/v1/responses` route, provider-specific SSE, rollout architecture §3.3.
+
+Brief: `task-T147.md`. **Next:** T152 (GA release).
+
+### T144 (done) — Polar harness adapters + runtime launcher
+
+Merged @ `50f3406` (MR !56). Registry, Docker runtime, shell-command reference harness + e2e.
+
+Brief: `task-T144.md`. **Next:** T152 (GA) then T145.
+
+### Polar parity backlog (T145–T151)
+
+Gap analysis: `docs/artifacts/polar-gap-analysis-v1.md`. T144 done; pending: session fan-out,
+gateway staging, evaluators, trajectory parity, differential prompting, offline SFT.

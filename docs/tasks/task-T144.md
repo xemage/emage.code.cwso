@@ -1,6 +1,6 @@
 # Task T144 — Polar harness adapters + runtime launcher
 
-- **Status:** pending
+- **Status:** done
 - **Owner:** backend-developer / integration-agent
 - **Priority:** P1
 - **Depends on:** T137, T142
@@ -14,7 +14,11 @@ via a Polar-style runtime interface (Docker first).
 
 ## Acceptance Criteria
 
-- [ ] Harness adapter registry with config + launch commands
-- [ ] Runtime interface: start, stop, exec, upload, download
-- [ ] At least one reference harness (shell-command) e2e against proxy capture
-- [ ] Documented in installation guide v2 section
+- [x] Harness adapter registry with config + launch commands
+- [x] Runtime interface: start, stop, exec, upload, download
+- [x] At least one reference harness (shell-command) e2e against proxy capture
+- [x] Documented in installation guide v2 section
+
+## Notes
+
+Merged @ `50f3406` (MR !56). Stub adapters for codex/claude_code/qwen_code; shell-command is reference.
