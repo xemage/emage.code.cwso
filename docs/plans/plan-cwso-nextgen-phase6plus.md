@@ -1,6 +1,6 @@
 # Plan — CWSO Next-Gen (Phase 6+) "Holy Grail of Agentic Development"
 
-> Owner: orchestrator · Status: **GA prep** — RC published; docs + Polar parity track (T142–T151)
+> Owner: orchestrator · Status: **v0.3.0 GA shipped** — Polar parity + adopter docs (T145–T155)
 > Based on: `docs/artifacts/cwso-nextgen-blueprint-v1.md`, `input/*.pdf`, current `develop` @ `62f8075`
 > Protocol: `plan-approve-execute`. Task IDs continue the sequence after `T079`.
 
@@ -119,7 +119,7 @@ of LPUs → Rust hyper + zero-copy + binary trajectory storage.
 
 Release packaging: **T139** → `v0.3.0-rc1` tagged @ `2032b33`; **T141** GitLab release published. Post-RC: T135, T140 on `develop`. GA blocked on stakeholder RC validation (`checkpoint-012-nextgen-ga-prep.md`).
 
-**Post-RC track:** complete — **v0.3.0 GA** tagged @ `de071c0` (T152). Polar **T145–T151** post-GA backlog.
+**Post-RC track:** complete — **v0.3.0 GA** tagged @ `de071c0` (T152). **v0.4.0 path:** Polar **T145–T151** + adopter docs **T154/T155**; tag pipeline fix **T153** merged.
 
 ## Approval
 

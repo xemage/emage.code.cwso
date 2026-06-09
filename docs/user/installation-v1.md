@@ -1,6 +1,6 @@
 # CWSO Installation & Usage Guide — v1
 
-> **Based on:** `develop` @ `v0.3.0-rc1` + post-RC hardening (T135, T140)  
+> **Based on:** `develop` @ `v0.3.0` GA + post-GA docs (T154, T155)  
 > **Audience:** operators and integrators getting CWSO running locally or in CI
 
 ## 1. Prerequisites
@@ -90,6 +90,13 @@ CWSO_COMPOSE_PROFILES=phase2,phase4 CWSO_PHASE4_MATRIX=1 \
 ## 6. Next-Gen features (default-off)
 
 All Phase 6–9 capabilities ship behind environment flags. Enable only what you need.
+
+**Quick enable (local PoC):** `source scripts/cwso-enable-all-features.sh` loads
+`deploy/cwso-all-features.env` with all orchestrator flags on (see
+`scripts/cwso-enable-all-features.env.example`).
+
+**IDE integration:** see [ide-integration-v1.md](ide-integration-v1.md) for Cursor / VS Code MCP
+setup alongside CWSO.
 
 ### Hardware dispatch (Phase 6)
 
@@ -205,6 +212,7 @@ See `.gitlab-ci.yml` stages: lint → build → test → audit → e2e.
 ## 9. Further reading
 
 - [README.md](../../README.md) — project overview
-- [release-v0.3.0-rc1.md](../artifacts/release-v0.3.0-rc1.md) — RC scope and flags
+- [ide-integration-v1.md](ide-integration-v1.md) — Cursor / VS Code + CWSO MCP
+- [release-v0.3.0.md](../artifacts/release-v0.3.0.md) — GA scope and flags
 - [rollout-architecture-v1.md](../artifacts/rollout-architecture-v1.md) — Polar substrate design
 - [SECURITY.md](../../SECURITY.md) — auth and sandbox guidance
