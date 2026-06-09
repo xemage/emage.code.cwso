@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.4.0 - 2026-06-09
+
+### Polar parity and operator readiness
+- Polar **harness adapter registry** and Docker runtime launcher with shell-command reference
+  harness (T144, carried from v0.3.0 scope).
+- Rollout **`num_samples`** session fan-out (1–32) with per-session callbacks (T145).
+- **Gateway async staging** — INIT/READY/RUNNING/POSTRUN worker pools, evaluator prewarm stub,
+  and partial trace recovery on session timeout (T146).
+- **Evaluator registry** with merge-SM session reward and SWE-bench stub hook (T148).
+- **Trajectory builder v2** — `per_request` and `prefix_merge` strategies, EOT interstitial
+  masking, partition-key chain splitting; per-task `trajectory_builder_strategy` on submit (T149).
+- Comprehensive **installation guide v2** (`docs/user/installation-v2.md`) — architecture, full
+  `CWSO_*` flag reference, MCP/rollout/gateway/evaluator workflows (T156).
+- **IDE integration guide** for VS Code / Cursor MCP + rollout proxy routing (T154).
+- **`scripts/cwso-enable-all-features.sh`** and env example for local PoC demos (T155).
+- CI **tag pipeline deploy fix** — `deploy:registry` uses `needs:optional` on `e2e:phase2` (T153).
+
+### Documentation
+- Primary adoption doc for v0.4.0: [`docs/user/installation-v2.md`](docs/user/installation-v2.md).
+- Release artifact: [`docs/artifacts/release-v0.4.0.md`](docs/artifacts/release-v0.4.0.md).
+
+### Deferred post-GA
+- T150 — KV differential prompting.
+- T151 — Offline SFT data generation mode.
+
 ## v0.3.0 - 2026-06-07
 
 ### Post-RC hardening and operator readiness
