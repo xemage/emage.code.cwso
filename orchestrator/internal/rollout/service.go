@@ -122,6 +122,7 @@ type Service struct {
 	client       *Client
 	prefixRouter *PrefixRouter
 	gateway      *Gateway
+	evaluators   *Registry
 }
 
 // NewService constructs an in-memory rollout API service.
@@ -153,6 +154,26 @@ func (s *Service) Gateway() *Gateway {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.gateway
+}
+
+// SetEvaluatorRegistry wires post-run evaluator plugins (T148).
+func (s *Service) SetEvaluatorRegistry(registry *Registry) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.evaluators = registry
+	s.mu.Unlock()
+}
+
+// EvaluatorRegistry returns the attached registry, if any.
+func (s *Service) EvaluatorRegistry() *Registry {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.evaluators
 }
 
 // SubmitTask enqueues a rollout task (optionally fanning out num_samples sessions).
@@ -332,9 +353,22 @@ func (s *Service) HeartbeatNode(nodeID string) error {
 
 // CompleteSession marks a task or individual session completed from trainer callback.
 func (s *Service) CompleteSession(taskID, sessionID string, group *TrajectoryGroup) error {
+	s.mu.RLock()
+	task, ok := s.tasks[taskID]
+	evaluators := s.evaluators
+	s.mu.RUnlock()
+	if !ok {
+		return errNotFound
+	}
+	if evaluators != nil && evaluators.Enabled() && group != nil {
+		spec := task.Spec
+		_, _ = evaluators.ApplyEvaluations(context.Background(), EvalRequest{
+			TaskID: taskID, SessionID: sessionIDForComplete(task, sessionID), Spec: spec, Group: group,
+		})
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	task, ok := s.tasks[taskID]
+	task, ok = s.tasks[taskID]
 	if !ok {
 		return errNotFound
 	}
@@ -489,6 +523,13 @@ func summariesFromGroup(group TrajectoryGroup) []TrajectorySummary {
 }
 
 var errNotFound = errors.New("not found")
+
+func sessionIDForComplete(task *Task, sessionID string) string {
+	if sessionID != "" {
+		return sessionID
+	}
+	return task.SessionID
+}
 
 func newUUID() (string, error) {
 	var b [16]byte
