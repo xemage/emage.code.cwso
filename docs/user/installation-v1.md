@@ -1,7 +1,8 @@
 # CWSO Installation & Usage Guide — v1
 
-> **Based on:** `develop` @ `v0.3.0` GA + post-GA docs (T154, T155)  
-> **Audience:** operators and integrators getting CWSO running locally or in CI
+> **Based on:** `develop` @ `v0.3.0` GA  
+> **Audience:** operators and integrators getting CWSO running locally or in CI  
+> **v0.4.0 adopters:** see **[installation-v2.md](installation-v2.md)** for the comprehensive guide.
 
 ## 1. Prerequisites
 
@@ -212,6 +213,7 @@ See `.gitlab-ci.yml` stages: lint → build → test → audit → e2e.
 ## 9. Further reading
 
 - [README.md](../../README.md) — project overview
+- [installation-v2.md](installation-v2.md) — comprehensive v0.4.0 guide (architecture, Polar workflows)
 - [ide-integration-v1.md](ide-integration-v1.md) — Cursor / VS Code + CWSO MCP
 - [release-v0.3.0.md](../artifacts/release-v0.3.0.md) — GA scope and flags
 - [rollout-architecture-v1.md](../artifacts/rollout-architecture-v1.md) — Polar substrate design

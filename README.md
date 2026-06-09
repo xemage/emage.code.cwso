@@ -40,7 +40,8 @@ At runtime, CWSO provides:
 
 ## How to use CWSO
 
-See **[docs/user/installation-v1.md](docs/user/installation-v1.md)** for the full guide (JWT,
+See **[docs/user/installation-v2.md](docs/user/installation-v2.md)** for the comprehensive v0.4.0 guide, or
+**[installation-v1.md](docs/user/installation-v1.md)** for v0.3.0 quick reference (JWT,
 MCP HTTP, Phase 4 / Next-Gen flags, troubleshooting). For **Cursor / VS Code** MCP wiring see
 **[docs/user/ide-integration-v1.md](docs/user/ide-integration-v1.md)**.
 
@@ -205,7 +206,8 @@ For Wasm-specific operations guidance, see
 [docs/artifacts/wasm-scoring-runtime-ops-v1.md](docs/artifacts/wasm-scoring-runtime-ops-v1.md).
 
 ## Documentation
-- **[Installation & usage](docs/user/installation-v1.md)** — get CWSO running (v0.3.0+)
+- **[Installation & usage (v2)](docs/user/installation-v2.md)** — comprehensive v0.4.0 guide
+- **[Installation & usage (v1)](docs/user/installation-v1.md)** — v0.3.0 quick reference
 - **[IDE integration](docs/user/ide-integration-v1.md)** — Cursor / VS Code + CWSO MCP
 - [Requirements](docs/artifacts/requirements-v1.md)
 - [Next-Gen blueprint](docs/artifacts/cwso-nextgen-blueprint-v1.md)
