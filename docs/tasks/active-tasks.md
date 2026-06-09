@@ -61,7 +61,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T149 | Trajectory builder Polar parity | backend-developer | done | P2 | T133 | 2026-06-09 |
 | T148 | Evaluator registry + SWE-bench hook | backend-developer | done | P2 | T146 | 2026-06-09 |
 | T156 | Comprehensive installation guide v2 (v0.4.0) | technical-writer | done | P0 | T148, T154 | 2026-06-09 |
-| T157 | v0.4.0 release readiness | release-manager | pending | P0 | T156, T149 | 2026-06-09 |
+| T157 | v0.4.0 release readiness | release-manager | in_review | P0 | T156, T149 | 2026-06-09 |
 | T150 | KV differential prompting | backend-developer | pending | P2 | T135 | 2026-06-07 |
 | T151 | Offline SFT data generation mode | backend-developer | pending | P2 | T134 | 2026-06-07 |
 
@@ -753,10 +753,11 @@ doc (architecture, flags, workflows). Trajectory builder env vars documented in 
 
 Brief: `task-T156.md`.
 
-### T157 (pending) — v0.4.0 release readiness
+### T157 (in_review) — v0.4.0 release readiness
 
-**Dependencies satisfied** (T149 + T156 merged). Release artifact, CHANGELOG, checkpoint, tag
-`v0.4.0`; tag pipeline verification (T153). Optional scope: T150/T151 can defer post-GA.
+MR open on `feature/T157-v0.4.0-release`. Release artifact (`release-v0.4.0.md`), CHANGELOG
+v0.4.0 section, checkpoint-014 delivered. **Pending post-merge:** tag `v0.4.0`, GitLab release,
+tag pipeline verification (T153 fix in place). T150/T151 deferred post-GA.
 
 Brief: `task-T157.md`.
 
