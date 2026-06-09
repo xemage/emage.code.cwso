@@ -1,6 +1,6 @@
 # Task T157 — v0.4.0 release readiness
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** release-manager
 - **Priority:** P0
 - **Depends on:** T149, T156 (minimum); T150/T151 optional for GA scope
@@ -16,5 +16,5 @@ Includes CHANGELOG, release artifact, checkpoint, GitLab release, and tag pipeli
 - [x] `docs/artifacts/release-v0.4.0.md` scope and flag matrix
 - [x] CHANGELOG section for v0.4.0
 - [x] Checkpoint `checkpoint-014-v0.4.0-ga.md`
-- [ ] Tag `v0.4.0` + GitLab release; tag pipeline green
+- [x] Tag `v0.4.0` + GitLab release; tag pipeline green (pipeline #2589219848 @ `ddc4c92`)
 - [x] `installation-v2.md` linked as primary user doc in release notes

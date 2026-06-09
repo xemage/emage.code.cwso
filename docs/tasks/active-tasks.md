@@ -61,7 +61,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T149 | Trajectory builder Polar parity | backend-developer | done | P2 | T133 | 2026-06-09 |
 | T148 | Evaluator registry + SWE-bench hook | backend-developer | done | P2 | T146 | 2026-06-09 |
 | T156 | Comprehensive installation guide v2 (v0.4.0) | technical-writer | done | P0 | T148, T154 | 2026-06-09 |
-| T157 | v0.4.0 release readiness | release-manager | in_review | P0 | T156, T149 | 2026-06-09 |
+| T157 | v0.4.0 release readiness | release-manager | done | P0 | T156, T149 | 2026-06-09 |
 | T150 | KV differential prompting | backend-developer | pending | P2 | T135 | 2026-06-07 |
 | T151 | Offline SFT data generation mode | backend-developer | pending | P2 | T134 | 2026-06-07 |
 
@@ -699,7 +699,7 @@ Merged @ `50f3406` (MR !56). Registry, Docker runtime, shell-command reference h
 
 Tagged **`v0.3.0`** @ `de071c0`. Release: https://gitlab.com/em-age/emage.code.cwso/-/releases/v0.3.0
 
-Brief: `task-T152.md`. **Next:** v0.4.0 — **T157** release readiness (T149/T156 done); optional T150/T151 post-GA.
+Brief: `task-T152.md`. **Next:** v0.4.0 GA shipped (T157 done); optional T150/T151 post-GA.
 
 ### T153 (done) — Tag pipeline deploy fix
 
@@ -753,11 +753,11 @@ doc (architecture, flags, workflows). Trajectory builder env vars documented in 
 
 Brief: `task-T156.md`.
 
-### T157 (in_review) — v0.4.0 release readiness
+### T157 (done) — v0.4.0 release readiness
 
-MR open on `feature/T157-v0.4.0-release`. Release artifact (`release-v0.4.0.md`), CHANGELOG
-v0.4.0 section, checkpoint-014 delivered. **Pending post-merge:** tag `v0.4.0`, GitLab release,
-tag pipeline verification (T153 fix in place). T150/T151 deferred post-GA.
+Merged @ MR !67 → `develop` (`27acbd1`). Tag `v0.4.0` moved to `ddc4c92` after CI fix
+(MR !68, `ensure_local_image` in `deploy:registry`). Tag pipeline #2589219848 green
+(includes `deploy:registry`). GitLab release published. T150/T151 deferred post-GA.
 
 Brief: `task-T157.md`.
 
