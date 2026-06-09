@@ -105,9 +105,9 @@ func ValidateTrajectoryGroup(group TrajectoryGroup) error {
 			if len(step.LossMask) != len(step.TokenIDs) {
 				return fmt.Errorf("chain[%d] step[%d]: loss_mask length mismatch", ci, si)
 			}
-			for _, m := range step.LossMask {
-				if m != 1 {
-					return fmt.Errorf("chain[%d] step[%d]: assistant tokens require loss_mask=1", ci, si)
+			for mi, m := range step.LossMask {
+				if m != 0 && m != 1 {
+					return fmt.Errorf("chain[%d] step[%d]: invalid loss_mask[%d]=%d", ci, si, mi, m)
 				}
 			}
 			if si > 0 && !tokenIDsEqual(cursor, chainSuffixPrefix(&chain, si)) {

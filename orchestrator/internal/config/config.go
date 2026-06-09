@@ -87,6 +87,8 @@ type Config struct {
 	RolloutEvaluatorSessionRewardEnabled bool     // attach merge SM rewards via registry (T148)
 	RolloutEvaluatorSWEBenchEnabled      bool     // enable SWE-bench evaluator hook stub (T148)
 	RolloutSWEBenchInstance              string   // SWE-bench instance id for PoC scoring (T148)
+	RolloutTrajectoryBuilderEnabled      bool     // enable Polar trajectory builder v2 (T149)
+	RolloutTrajectoryBuilderStrategy     string   // default builder strategy: per_request | prefix_merge (T149)
 	HHDSnapshotTTLSeconds                int      // stale capability threshold for policy-facing snapshots
 	HHDPolicyEngineV2                    bool     // enable policy engine v2 backend selection and fallback
 	HHDHardwareAwareDispatch             bool     // enable dispatch_hardware_aware_job tool + shadow provider catalog (Phase 6)
@@ -206,6 +208,8 @@ func Load(_ string) (*Config, error) {
 		RolloutEvaluatorSessionRewardEnabled: envBool("CWSO_ROLLOUT_EVALUATOR_SESSION_REWARD_ENABLED", false),
 		RolloutEvaluatorSWEBenchEnabled:      envBool("CWSO_ROLLOUT_EVALUATOR_SWEBENCH_ENABLED", false),
 		RolloutSWEBenchInstance:              envOr("CWSO_ROLLOUT_SWEBENCH_INSTANCE", ""),
+		RolloutTrajectoryBuilderEnabled:      envBool("CWSO_ROLLOUT_TRAJECTORY_BUILDER_ENABLED", false),
+		RolloutTrajectoryBuilderStrategy:     envOr("CWSO_ROLLOUT_TRAJECTORY_BUILDER_STRATEGY", "prefix_merge"),
 		HHDSnapshotTTLSeconds:                envInt("CWSO_HHD_CAPABILITY_SNAPSHOT_TTL_SECONDS", 30),
 		HHDPolicyEngineV2:                    envBool("CWSO_HHD_POLICY_ENGINE_V2_ENABLED", false),
 		HHDHardwareAwareDispatch:             envBool("CWSO_HHD_HARDWARE_AWARE_DISPATCH_ENABLED", false),

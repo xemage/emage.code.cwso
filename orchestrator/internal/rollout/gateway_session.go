@@ -78,7 +78,7 @@ func (g *Gateway) partialTraceFromClient(state SessionState) *TrajectoryGroup {
 			Metadata:  meta,
 		}
 	}
-	group, err := g.cfg.Client.BuildFromDrain(g.rootCtx, state.SessionID, 64)
+	group, err := g.svc.BuildTrajectoryFromDrain(g.rootCtx, state.TaskID, state.SessionID, 64)
 	if err != nil || len(group.Chains) == 0 {
 		return &TrajectoryGroup{
 			SessionID: state.SessionID,
