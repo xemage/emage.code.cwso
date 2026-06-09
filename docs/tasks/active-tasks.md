@@ -55,9 +55,9 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T153 | Tag pipeline deploy fix (`needs:optional` e2e) | devops-engineer | done | P1 | T152 | 2026-06-07 |
 | T144 | Polar harness adapters + runtime launcher | backend-developer | done | P1 | T137, T142 | 2026-06-07 |
 | T145 | Rollout `num_samples` session fan-out | backend-developer | done | P1 | T137 | 2026-06-07 |
-| T154 | IDE integration guide (VS Code / Cursor) | technical-writer | in_review | P0 | T142 | 2026-06-07 |
-| T155 | Enable-all-features script | devops-engineer | in_review | P1 | T142 | 2026-06-07 |
-| T146 | Gateway async staging + partial traces | backend-developer | pending | P1 | T132 | 2026-06-07 |
+| T154 | IDE integration guide (VS Code / Cursor) | technical-writer | done | P0 | T142 | 2026-06-07 |
+| T155 | Enable-all-features script | devops-engineer | done | P1 | T142 | 2026-06-07 |
+| T146 | Gateway async staging + partial traces | backend-developer | in_review | P1 | T132 | 2026-06-07 |
 | T149 | Trajectory builder Polar parity | backend-developer | pending | P2 | T133 | 2026-06-07 |
 | T148 | Evaluator registry + SWE-bench hook | backend-developer | pending | P2 | T146 | 2026-06-07 |
 | T150 | KV differential prompting | backend-developer | pending | P2 | T135 | 2026-06-07 |
@@ -697,7 +697,7 @@ Merged @ `50f3406` (MR !56). Registry, Docker runtime, shell-command reference h
 
 Tagged **`v0.3.0`** @ `de071c0`. Release: https://gitlab.com/em-age/emage.code.cwso/-/releases/v0.3.0
 
-Brief: `task-T152.md`. **Next:** T145 (Polar session fan-out), T154/T155 (adopter docs).
+Brief: `task-T152.md`. **Next:** T146 (gateway staging), then T148–T151 Polar parity.
 
 ### T153 (done) — Tag pipeline deploy fix
 
@@ -705,15 +705,15 @@ Merged @ `8aa5c74` (MR !58). `deploy:registry` → `needs:optional` on `e2e:phas
 
 Brief: `task-T153.md`.
 
-### T154 (in_review) — IDE integration guide
+### T154 (done) — IDE integration guide
 
-`docs/user/ide-integration-v1.md` — Cursor/VS Code MCP, JWT, rollout proxy routing.
+Merged @ MR !60. `docs/user/ide-integration-v1.md` — Cursor/VS Code MCP, JWT, rollout proxy routing.
 
 Brief: `task-T154.md`.
 
-### T155 (in_review) — Enable-all-features script
+### T155 (done) — Enable-all-features script
 
-`scripts/cwso-enable-all-features.sh` + env example for local PoC demos.
+Merged @ MR !60. `scripts/cwso-enable-all-features.sh` + env example for local PoC demos.
 
 Brief: `task-T155.md`.
 
@@ -723,7 +723,14 @@ Merged @ MR !59. `num_samples` (1–32), per-session callbacks, integration test
 
 Brief: `task-T145.md`.
 
-### Polar parity backlog (T146–T151)
+### T146 (in_review) — Gateway async staging + partial traces
 
-Gap analysis: `docs/artifacts/polar-gap-analysis-v1.md`. T144/T145 done; post-GA:
-gateway staging (T146), evaluators, trajectory parity, differential prompting, offline SFT.
+Branch `feature/T146-gateway-staging` (MR !61). INIT/READY/RUNNING/POSTRUN pools, evaluator prewarm stub,
+timeout partial trace recovery. Flag: `CWSO_ROLLOUT_GATEWAY_STAGING_ENABLED`.
+
+Brief: `task-T146.md`.
+
+### Polar parity backlog (T148–T151)
+
+Gap analysis: `docs/artifacts/polar-gap-analysis-v1.md`. T144–T145/T154/T155 done; T146 in_review;
+post-GA: evaluators, trajectory parity, differential prompting, offline SFT.

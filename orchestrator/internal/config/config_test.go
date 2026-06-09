@@ -66,6 +66,36 @@ func TestLoadASTSpikeMonitorRejectsNonPositiveWindow(t *testing.T) {
 	}
 }
 
+func TestLoadRolloutGatewayStagingDefaults(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.RolloutGatewayStagingEnabled {
+		t.Fatal("expected gateway staging disabled by default")
+	}
+	if c.RolloutEvaluatorPrewarmEnabled {
+		t.Fatal("expected evaluator prewarm disabled by default")
+	}
+}
+
+func TestLoadRolloutGatewayStagingEnabled(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_ROLLOUT_GATEWAY_STAGING_ENABLED", "true")
+	t.Setenv("CWSO_ROLLOUT_EVALUATOR_PREWARM_ENABLED", "true")
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.RolloutGatewayStagingEnabled || !c.RolloutEvaluatorPrewarmEnabled {
+		t.Fatalf("unexpected gateway config: %+v", c)
+	}
+	if c.RolloutGatewayInitWorkers != 2 || c.RolloutGatewayReadyBuffer != 4 {
+		t.Fatalf("unexpected pool defaults: init=%d ready=%d", c.RolloutGatewayInitWorkers, c.RolloutGatewayReadyBuffer)
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("CWSO_TRANSPORT", "stdio")
 	c, err := Load("")

@@ -192,3 +192,61 @@ func waitBrokerRecords(t *testing.T, broker *memorybroker.Broker, want int) {
 	}
 	t.Fatalf("broker has %d records, want >= %d", broker.Len(), want)
 }
+
+// TestGatewayTimeoutPartialTraceRecovery verifies POSTRUN emits partial trajectories (T146).
+func TestGatewayTimeoutPartialTraceRecovery(t *testing.T) {
+	t.Parallel()
+	svc := NewService(&stubRewardReader{}, nil, nil)
+	gw, err := NewGateway(GatewayConfig{
+		InitWorkers: 1, ReadyBuffer: 1, RunningWorkers: 1, PostRunWorkers: 1,
+		SessionTimeout: 30 * time.Millisecond,
+		Hooks: SessionHooks{
+			Run: func(ctx context.Context, _ SessionState) error {
+				select {
+				case <-time.After(200 * time.Millisecond):
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			},
+			PostRun: func(_ context.Context, state SessionState, timedOut bool) (*TrajectoryGroup, error) {
+				return &TrajectoryGroup{
+					SessionID: state.SessionID,
+					Chains:    []Chain{{ChainID: "timeout-partial", Steps: []Step{{LossMask: []uint8{1, 1}}}}},
+					Metadata:  map[string]string{"timeout": "true", "gateway_stage": "postrun"},
+				}, nil
+			},
+		},
+	}, svc)
+	if err != nil {
+		t.Fatalf("gateway: %v", err)
+	}
+	t.Cleanup(gw.Close)
+	svc.AttachGateway(gw)
+
+	sub, err := svc.SubmitTask(context.Background(), SubmitRequest{
+		TaskSpec: TaskSpec{Description: "timeout", WorkspaceID: "cccccccc-dddd-eeee-ffff-000000000001"},
+	})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		status, err := svc.GetTask(context.Background(), sub.TaskID)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if status.Status == TaskFailed && len(status.Trajectories) == 1 {
+			if status.Trajectories[0].ChainID != "timeout-partial" {
+				t.Fatalf("trajectories: %+v", status.Trajectories)
+			}
+			if status.Trajectories[0].LossMaskTokenCount != 2 {
+				t.Fatalf("loss mask count: %d", status.Trajectories[0].LossMaskTokenCount)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("gateway did not recover partial trace on timeout")
+}
