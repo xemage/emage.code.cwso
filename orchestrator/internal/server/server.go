@@ -302,6 +302,17 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 			log.Info().Msg("rollout KV prefix router enabled")
 		}
 		rolloutSvc = rollout.NewService(broker, rolloutClient, prefixRouter)
+		if cfg.RolloutGatewayStagingEnabled {
+			gwCfg := rollout.GatewayConfigFrom(cfg, rolloutClient)
+			gateway, err := rollout.NewGateway(gwCfg, rolloutSvc)
+			if err != nil {
+				jobMgr.Close()
+				broker.Close()
+				return nil, fmt.Errorf("rollout gateway: %w", err)
+			}
+			rolloutSvc.AttachGateway(gateway)
+			log.Info().Msg("rollout gateway staging enabled (INIT/READY/RUNNING/POSTRUN pools)")
+		}
 		log.Info().Msg("rollout Polar REST API enabled (/rollout/*)")
 	}
 

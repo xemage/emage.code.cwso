@@ -121,6 +121,7 @@ type Service struct {
 	rewards      RewardReader
 	client       *Client
 	prefixRouter *PrefixRouter
+	gateway      *Gateway
 }
 
 // NewService constructs an in-memory rollout API service.
@@ -132,6 +133,26 @@ func NewService(rewards RewardReader, client *Client, prefixRouter *PrefixRouter
 		client:       client,
 		prefixRouter: prefixRouter,
 	}
+}
+
+// AttachGateway wires staged session execution (T146). Gateway must outlive Service usage.
+func (s *Service) AttachGateway(g *Gateway) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.gateway = g
+	s.mu.Unlock()
+}
+
+// Gateway returns the attached gateway, if any.
+func (s *Service) Gateway() *Gateway {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.gateway
 }
 
 // SubmitTask enqueues a rollout task (optionally fanning out num_samples sessions).
@@ -182,7 +203,11 @@ func (s *Service) SubmitTask(ctx context.Context, req SubmitRequest) (SubmitResp
 	}
 	s.mu.Lock()
 	s.tasks[id] = task
+	gateway := s.gateway
 	s.mu.Unlock()
+	if gateway != nil {
+		s.startGatewaySessions(gateway, task)
+	}
 	resp := SubmitResponse{TaskID: id, Status: TaskRunning, PrefixKey: prefixKey}
 	if num > 1 {
 		resp.NumSamples = num
@@ -195,8 +220,8 @@ func (s *Service) SubmitTask(ctx context.Context, req SubmitRequest) (SubmitResp
 func (s *Service) GetTask(ctx context.Context, taskID string) (TaskStatusResponse, error) {
 	s.mu.RLock()
 	task, ok := s.tasks[taskID]
-	s.mu.RUnlock()
 	if !ok {
+		s.mu.RUnlock()
 		return TaskStatusResponse{}, errNotFound
 	}
 	resp := TaskStatusResponse{
@@ -211,7 +236,26 @@ func (s *Service) GetTask(ctx context.Context, taskID string) (TaskStatusRespons
 	}
 	rewards := s.collectRewardsForTask(task)
 	resp.PartialResults = s.mergePartialResults(task, rewards)
-	resp.Trajectories = s.trajectorySummaries(ctx, task)
+	resp.Trajectories = s.readTrajectorySummaries(task)
+	sessionID := task.SessionID
+	hasGroup := task.TrajectoryGroup != nil
+	s.mu.RUnlock()
+
+	if len(resp.Trajectories) > 0 || s.client == nil || hasGroup || sessionID == "" {
+		return resp, nil
+	}
+	group, err := s.client.BuildFromDrain(ctx, sessionID, 64)
+	if err != nil || len(group.Chains) == 0 {
+		return resp, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	task, ok = s.tasks[taskID]
+	if !ok || task.TrajectoryGroup != nil {
+		return resp, nil
+	}
+	task.TrajectoryGroup = &group
+	resp.Trajectories = summariesFromGroup(group)
 	return resp, nil
 }
 
@@ -244,6 +288,16 @@ func (s *Service) FleetStatus(ctx context.Context) FleetStatus {
 		}
 	}
 	return status
+}
+
+func (s *Service) startGatewaySessions(g *Gateway, task *Task) {
+	if len(task.SessionIDs) > 0 {
+		for _, sid := range task.SessionIDs {
+			g.StartSession(task.ID, sid, task.Spec)
+		}
+		return
+	}
+	g.StartSession(task.ID, task.SessionID, task.Spec)
 }
 
 func (s *Service) resolvePrefixKey(ctx context.Context, workspaceID string) (string, error) {
@@ -392,7 +446,7 @@ func mergeOutcomeFromReward(ev RewardEvent) string {
 	}
 }
 
-func (s *Service) trajectorySummaries(ctx context.Context, task *Task) []TrajectorySummary {
+func (s *Service) readTrajectorySummaries(task *Task) []TrajectorySummary {
 	if task.NumSamples > 1 {
 		var out []TrajectorySummary
 		for _, sid := range task.SessionIDs {
@@ -405,17 +459,7 @@ func (s *Service) trajectorySummaries(ctx context.Context, task *Task) []Traject
 	if task.TrajectoryGroup != nil {
 		return summariesFromGroup(*task.TrajectoryGroup)
 	}
-	if s.client == nil {
-		return nil
-	}
-	group, err := s.client.BuildFromDrain(ctx, task.SessionID, 64)
-	if err != nil || len(group.Chains) == 0 {
-		return nil
-	}
-	s.mu.Lock()
-	task.TrajectoryGroup = &group
-	s.mu.Unlock()
-	return summariesFromGroup(group)
+	return nil
 }
 
 func summariesFromGroup(group TrajectoryGroup) []TrajectorySummary {
