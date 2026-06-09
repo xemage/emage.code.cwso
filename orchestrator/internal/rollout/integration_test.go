@@ -261,6 +261,55 @@ func waitBrokerRecords(t *testing.T, broker *memorybroker.Broker, want int) {
 	t.Fatalf("broker has %d records, want >= %d", broker.Len(), want)
 }
 
+// TestTrajectoryBuilderIntegration verifies per-task strategy and prefix merge drain (T149).
+func TestTrajectoryBuilderIntegration(t *testing.T) {
+	t.Parallel()
+	broker := memorybroker.New()
+	t.Cleanup(broker.Close)
+
+	svc := NewService(broker, nil, nil)
+	svc.SetTrajectoryBuilder(BuilderConfig{
+		Active:           true,
+		DefaultStrategy:  StrategyPrefixMerge,
+		InterstitialEOTs: true,
+	})
+
+	sub, err := svc.SubmitTask(context.Background(), SubmitRequest{
+		TrajectoryBuilderStrategy: StrategyPerRequest,
+		TaskSpec: TaskSpec{
+			Description: "builder integration",
+			WorkspaceID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+		},
+	})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+
+	svc.mu.Lock()
+	task := svc.tasks[sub.TaskID]
+	svc.mu.Unlock()
+	if task.TrajectoryBuilderStrategy != StrategyPerRequest {
+		t.Fatalf("task strategy = %q", task.TrajectoryBuilderStrategy)
+	}
+
+	records := polarFig4Fixture()
+	group := assembleTrajectoryGroup(sub.TaskID, records, svc.builder, task.TrajectoryBuilderStrategy)
+	if err := ValidateTrajectoryGroup(group); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if len(group.Chains) != 5 {
+		t.Fatalf("per_request integration chains = %d", len(group.Chains))
+	}
+
+	merged := assembleTrajectoryGroup(sub.TaskID, records, svc.builder, StrategyPrefixMerge)
+	if len(merged.Chains) != 3 {
+		t.Fatalf("prefix_merge integration chains = %d", len(merged.Chains))
+	}
+	if trainerSampleCount(merged) >= trainerSampleCount(group) {
+		t.Fatalf("prefix_merge should reduce trainer samples")
+	}
+}
+
 // TestGatewayTimeoutPartialTraceRecovery verifies POSTRUN emits partial trajectories (T146).
 func TestGatewayTimeoutPartialTraceRecovery(t *testing.T) {
 	t.Parallel()

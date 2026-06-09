@@ -58,7 +58,7 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T154 | IDE integration guide (VS Code / Cursor) | technical-writer | done | P0 | T142 | 2026-06-07 |
 | T155 | Enable-all-features script | devops-engineer | done | P1 | T142 | 2026-06-07 |
 | T146 | Gateway async staging + partial traces | backend-developer | done | P1 | T132 | 2026-06-07 |
-| T149 | Trajectory builder Polar parity | backend-developer | pending | P2 | T133 | 2026-06-07 |
+| T149 | Trajectory builder Polar parity | backend-developer | in_review | P2 | T133 | 2026-06-09 |
 | T148 | Evaluator registry + SWE-bench hook | backend-developer | done | P2 | T146 | 2026-06-09 |
 | T156 | Comprehensive installation guide v2 (v0.4.0) | technical-writer | in_review | P0 | T148, T154 | 2026-06-09 |
 | T157 | v0.4.0 release readiness | release-manager | pending | P0 | T156, T149 | 2026-06-09 |
@@ -737,6 +737,14 @@ Merged @ MR !62. Pluggable post-run evaluators: session reward + SWE-bench stub.
 
 Brief: `task-T148.md`.
 
+### T149 (in_review) — Trajectory builder Polar parity
+
+`per_request` + `prefix_merge` strategies, EOT interstitial masking, partition-key chain
+splitting, per-task `trajectory_builder_strategy` on submit. Feature-flagged
+`CWSO_ROLLOUT_TRAJECTORY_BUILDER_ENABLED` (default off). Golden tests: Polar Fig. 4 fixture.
+
+Brief: `task-T149.md`.
+
 ### T156 (in_review) — Comprehensive installation guide v2
 
 `docs/user/installation-v2.md` — full v0.4.0 adoption doc (architecture, flags, workflows).
@@ -752,4 +760,4 @@ Brief: `task-T157.md`.
 ### Polar parity backlog (T149–T151)
 
 Gap analysis: `docs/artifacts/polar-gap-analysis-v1.md`. T144–T148/T154–T156 in flight;
-post-GA: trajectory parity (T149), differential prompting (T150), offline SFT (T151).
+post-GA: differential prompting (T150), offline SFT (T151).

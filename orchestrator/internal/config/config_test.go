@@ -78,6 +78,25 @@ func TestLoadRolloutGatewayStagingDefaults(t *testing.T) {
 	if c.RolloutEvaluatorPrewarmEnabled {
 		t.Fatal("expected evaluator prewarm disabled by default")
 	}
+	if c.RolloutTrajectoryBuilderEnabled {
+		t.Fatal("expected trajectory builder v2 disabled by default")
+	}
+}
+
+func TestLoadRolloutTrajectoryBuilderEnabled(t *testing.T) {
+	t.Setenv("CWSO_TRANSPORT", "stdio")
+	t.Setenv("CWSO_ROLLOUT_TRAJECTORY_BUILDER_ENABLED", "true")
+	t.Setenv("CWSO_ROLLOUT_TRAJECTORY_BUILDER_STRATEGY", "per_request")
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.RolloutTrajectoryBuilderEnabled {
+		t.Fatal("expected trajectory builder enabled")
+	}
+	if c.RolloutTrajectoryBuilderStrategy != "per_request" {
+		t.Fatalf("strategy = %q", c.RolloutTrajectoryBuilderStrategy)
+	}
 }
 
 func TestLoadRolloutGatewayStagingEnabled(t *testing.T) {

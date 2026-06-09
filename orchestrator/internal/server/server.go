@@ -318,6 +318,10 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 			rolloutSvc.SetEvaluatorRegistry(registry)
 			log.Info().Msg("rollout evaluator registry enabled")
 		}
+		if cfg.RolloutTrajectoryBuilderEnabled {
+			rolloutSvc.SetTrajectoryBuilder(rollout.BuilderConfigFrom(cfg))
+			log.Info().Str("strategy", cfg.RolloutTrajectoryBuilderStrategy).Msg("rollout trajectory builder v2 enabled")
+		}
 		log.Info().Msg("rollout Polar REST API enabled (/rollout/*)")
 	}
 

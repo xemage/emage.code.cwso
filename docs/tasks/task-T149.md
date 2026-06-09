@@ -1,6 +1,6 @@
 # Task T149 — Trajectory builder parity (per-request + full prefix merge)
 
-- **Status:** pending
+- **Status:** in_review
 - **Owner:** backend-developer
 - **Priority:** P2
 - **Depends on:** T133
@@ -13,6 +13,6 @@ EOT interstitial handling, and chain partitioning for sub-agents/compaction boun
 
 ## Acceptance Criteria
 
-- [ ] Configurable builder strategy per rollout task
-- [ ] Golden tests against Polar Fig. 4 scenarios
-- [ ] Prefix merge reduces trainer sample count vs per-request on fixture sessions
+- [x] Configurable builder strategy per rollout task
+- [x] Golden tests against Polar Fig. 4 scenarios
+- [x] Prefix merge reduces trainer sample count vs per-request on fixture sessions

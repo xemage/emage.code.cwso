@@ -35,10 +35,11 @@ type TaskSpec struct {
 
 // SubmitRequest is the POST /rollout/task/submit body.
 type SubmitRequest struct {
-	TaskSpec           TaskSpec `json:"task_spec"`
-	TrainerCallbackURL string   `json:"trainer_callback_url,omitempty"`
-	PrewarmKVPrefix    *bool    `json:"prewarm_kv_prefix,omitempty"`
-	NumSamples         int      `json:"num_samples,omitempty"`
+	TaskSpec                  TaskSpec        `json:"task_spec"`
+	TrainerCallbackURL        string          `json:"trainer_callback_url,omitempty"`
+	PrewarmKVPrefix           *bool           `json:"prewarm_kv_prefix,omitempty"`
+	NumSamples                int             `json:"num_samples,omitempty"`
+	TrajectoryBuilderStrategy BuilderStrategy `json:"trajectory_builder_strategy,omitempty"`
 }
 
 // SubmitResponse is returned when a rollout task is accepted.
@@ -86,20 +87,21 @@ type FleetStatus struct {
 
 // Task is an in-memory rollout task record.
 type Task struct {
-	ID              string
-	Status          TaskStatus
-	Spec            TaskSpec
-	NumSamples      int
-	SessionID       string
-	SessionIDs      []string
-	SessionGroups   map[string]*TrajectoryGroup
-	CallbackURL     string
-	PrefixKey       string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	LastError       string
-	PartialResults  []PartialResult
-	TrajectoryGroup *TrajectoryGroup
+	ID                        string
+	Status                    TaskStatus
+	Spec                      TaskSpec
+	NumSamples                int
+	SessionID                 string
+	SessionIDs                []string
+	SessionGroups             map[string]*TrajectoryGroup
+	CallbackURL               string
+	PrefixKey                 string
+	TrajectoryBuilderStrategy BuilderStrategy
+	CreatedAt                 time.Time
+	UpdatedAt                 time.Time
+	LastError                 string
+	PartialResults            []PartialResult
+	TrajectoryGroup           *TrajectoryGroup
 }
 
 // Node is a registered rollout worker node.
@@ -123,6 +125,7 @@ type Service struct {
 	prefixRouter *PrefixRouter
 	gateway      *Gateway
 	evaluators   *Registry
+	builder      BuilderConfig
 }
 
 // NewService constructs an in-memory rollout API service.
@@ -154,6 +157,16 @@ func (s *Service) Gateway() *Gateway {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.gateway
+}
+
+// SetTrajectoryBuilder wires Polar trajectory reconstruction settings (T149).
+func (s *Service) SetTrajectoryBuilder(cfg BuilderConfig) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.builder = cfg
+	s.mu.Unlock()
 }
 
 // SetEvaluatorRegistry wires post-run evaluator plugins (T148).
@@ -200,15 +213,20 @@ func (s *Service) SubmitTask(ctx context.Context, req SubmitRequest) (SubmitResp
 			return SubmitResponse{}, err
 		}
 	}
+	strategy, err := normalizeBuilderStrategy(req.TrajectoryBuilderStrategy)
+	if err != nil {
+		return SubmitResponse{}, err
+	}
 	task := &Task{
-		ID:          id,
-		Status:      TaskRunning,
-		Spec:        req.TaskSpec,
-		NumSamples:  num,
-		CallbackURL: req.TrainerCallbackURL,
-		PrefixKey:   prefixKey,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:                        id,
+		Status:                    TaskRunning,
+		Spec:                      req.TaskSpec,
+		NumSamples:                num,
+		CallbackURL:               req.TrainerCallbackURL,
+		PrefixKey:                 prefixKey,
+		TrajectoryBuilderStrategy: strategy,
+		CreatedAt:                 now,
+		UpdatedAt:                 now,
 	}
 	if num == 1 {
 		task.SessionID = id
@@ -260,12 +278,14 @@ func (s *Service) GetTask(ctx context.Context, taskID string) (TaskStatusRespons
 	resp.Trajectories = s.readTrajectorySummaries(task)
 	sessionID := task.SessionID
 	hasGroup := task.TrajectoryGroup != nil
+	builder := s.builder
+	taskStrategy := task.TrajectoryBuilderStrategy
 	s.mu.RUnlock()
 
 	if len(resp.Trajectories) > 0 || s.client == nil || hasGroup || sessionID == "" {
 		return resp, nil
 	}
-	group, err := s.client.BuildFromDrain(ctx, sessionID, 64)
+	group, err := s.client.BuildFromDrainWithConfig(ctx, sessionID, 64, builder, taskStrategy)
 	if err != nil || len(group.Chains) == 0 {
 		return resp, nil
 	}
@@ -520,6 +540,35 @@ func summariesFromGroup(group TrajectoryGroup) []TrajectorySummary {
 		})
 	}
 	return out
+}
+
+// BuildTrajectoryFromDrain assembles trajectories using service builder config (T149).
+func (s *Service) BuildTrajectoryFromDrain(ctx context.Context, taskID, sessionID string, limit uint32) (TrajectoryGroup, error) {
+	if s == nil || s.client == nil {
+		return TrajectoryGroup{}, fmt.Errorf("rollout client unavailable")
+	}
+	s.mu.RLock()
+	task, ok := s.tasks[taskID]
+	builder := s.builder
+	strategy := BuilderStrategy("")
+	if ok {
+		strategy = task.TrajectoryBuilderStrategy
+	}
+	client := s.client
+	s.mu.RUnlock()
+	return client.BuildFromDrainWithConfig(ctx, sessionID, limit, builder, strategy)
+}
+
+func normalizeBuilderStrategy(strategy BuilderStrategy) (BuilderStrategy, error) {
+	if strategy == "" {
+		return "", nil
+	}
+	switch strategy {
+	case StrategyPerRequest, StrategyPrefixMerge:
+		return strategy, nil
+	default:
+		return "", fmt.Errorf("trajectory_builder_strategy must be per_request or prefix_merge")
+	}
 }
 
 var errNotFound = errors.New("not found")

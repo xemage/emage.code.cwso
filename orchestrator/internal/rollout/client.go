@@ -112,15 +112,29 @@ func (c *Client) PrefixStats(ctx context.Context) (*PrefixStats, error) {
 
 // BuildFromDrain drains capture records and assembles a trajectory group for sessionID.
 func (c *Client) BuildFromDrain(ctx context.Context, sessionID string, limit uint32) (TrajectoryGroup, error) {
+	return c.BuildFromDrainWithConfig(ctx, sessionID, limit, BuilderConfig{}, "")
+}
+
+// BuildFromDrainWithConfig drains captures and applies the configured builder strategy (T149).
+func (c *Client) BuildFromDrainWithConfig(ctx context.Context, sessionID string, limit uint32, cfg BuilderConfig, taskStrategy BuilderStrategy) (TrajectoryGroup, error) {
 	records, err := c.DrainCapture(ctx, limit)
 	if err != nil {
 		return TrajectoryGroup{}, err
 	}
-	group := BuildTrajectoryGroup(sessionID, records)
+	group := assembleTrajectoryGroup(sessionID, records, cfg, taskStrategy)
 	if err := ValidateTrajectoryGroup(group); err != nil {
 		return TrajectoryGroup{}, fmt.Errorf("validate trajectory: %w", err)
 	}
 	return group, nil
+}
+
+// assembleTrajectoryGroup selects v1 or v2 builder based on feature flag and strategy.
+func assembleTrajectoryGroup(sessionID string, records []CompletionRecord, cfg BuilderConfig, taskStrategy BuilderStrategy) TrajectoryGroup {
+	if !cfg.Active {
+		return BuildTrajectoryGroup(sessionID, records)
+	}
+	strategy := cfg.ResolveStrategy(taskStrategy)
+	return BuildTrajectory(sessionID, records, strategy, cfg.InterstitialEOTs)
 }
 
 type requestEnvelope struct {
