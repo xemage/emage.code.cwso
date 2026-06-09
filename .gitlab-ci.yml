@@ -247,7 +247,23 @@ deploy:registry:
   before_script:
     - docker info >/dev/null
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  # Tag pipelines skip e2e; build and deploy may land on different dind runners, so
+  # locally built images are not guaranteed — rebuild when missing before retag/push.
   script:
+    - |
+      ensure_local_image() {
+        local name="$1"
+        local dockerfile="$2"
+        local img="${CI_REGISTRY_IMAGE}/${name}:${CI_COMMIT_SHORT_SHA}"
+        if docker image inspect "${img}" >/dev/null 2>&1; then
+          echo "Image ${img} present locally"
+        else
+          echo "Image ${img} missing locally; building on this runner..."
+          docker build -t "${img}" -f "${dockerfile}" .
+        fi
+      }
+      ensure_local_image orchestrator deploy/Dockerfile.orchestrator
+      ensure_local_image git-shadow deploy/Dockerfile.git-shadow
     - docker tag $CI_REGISTRY_IMAGE/orchestrator:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE/orchestrator:latest
     - docker tag $CI_REGISTRY_IMAGE/git-shadow:$CI_COMMIT_SHORT_SHA   $CI_REGISTRY_IMAGE/git-shadow:latest
     - docker push $CI_REGISTRY_IMAGE/orchestrator:latest
