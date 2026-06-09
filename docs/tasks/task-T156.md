@@ -1,6 +1,6 @@
 # Task T156 — Comprehensive installation & usage guide (v0.4.0)
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** technical-writer
 - **Priority:** P0
 - **Depends on:** T142, T146, T148, T154
@@ -18,7 +18,7 @@ IDE integration, and troubleshooting — suitable as the primary adoption docume
 - [x] Covers T146 gateway staging, T148 evaluator registry, T145 num_samples, harness adapters
 - [x] Configuration tables for all `CWSO_*` rollout/orchestrator flags used in v0.4.0
 - [x] Linked from README and `installation-v1.md`
-- [ ] Reviewed against live `develop` after T149–T151 land (conditional update before GA tag)
+- [x] Reviewed against live `develop` after T149 lands (trajectory builder section in installation-v2)
 
 ## Notes
 

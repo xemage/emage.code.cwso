@@ -1,6 +1,6 @@
 # Task T149 — Trajectory builder parity (per-request + full prefix merge)
 
-- **Status:** in_review
+- **Status:** done
 - **Owner:** backend-developer
 - **Priority:** P2
 - **Depends on:** T133
