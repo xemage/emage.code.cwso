@@ -131,6 +131,21 @@ JWT claims: `iss=cwso`, `aud=cwso-mcp`, `role=worker|orchestrator`.
 | `CWSO_ROLLOUT_HTTP_BIND` | `127.0.0.1:8787` | Proxy listen (sidecar) |
 | `CWSO_ROLLOUT_UPSTREAM_URL` | — | Upstream inference base URL |
 
+### Trajectory builder (T149)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CWSO_ROLLOUT_TRAJECTORY_BUILDER_ENABLED` | `false` | Enable Polar trajectory builder v2 when draining captures |
+| `CWSO_ROLLOUT_TRAJECTORY_BUILDER_STRATEGY` | `prefix_merge` | Default strategy: `prefix_merge` or `per_request` |
+
+When enabled, completion records from the rollout sidecar are assembled into trainer-facing
+`TrajectoryGroup` chains. **`prefix_merge`** (Polar default) merges successive completions whose
+prompts extend the same token prefix into one chain — fewer trainer samples, with EOT interstitial
+tokens masked (`loss_mask=0`) and partition keys splitting sub-agent/compaction boundaries.
+**`per_request`** emits one independent chain per completion (useful for debugging or when prefix
+sharing is not valid). Override per task via `trajectory_builder_strategy` on submit (empty =
+server default).
+
 ### Gateway staging (T146)
 
 | Variable | Default | Description |
@@ -196,6 +211,8 @@ Enable rollout API + sidecar proxy, then submit tasks from a trainer or script.
 
 ```bash
 export CWSO_ROLLOUT_API_ENABLED=true
+export CWSO_ROLLOUT_TRAJECTORY_BUILDER_ENABLED=true
+export CWSO_ROLLOUT_TRAJECTORY_BUILDER_STRATEGY=prefix_merge   # or per_request
 export CWSO_ROLLOUT_SOCKET=/run/cwso/rollout.sock   # when sidecar attached
 # Sidecar env (separate container):
 export CWSO_ROLLOUT_PROXY_ENABLED=true
@@ -207,7 +224,7 @@ export OPENAI_BASE_URL=http://127.0.0.1:8787
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/rollout/task/submit` | Enqueue task; optional `num_samples` (1–32) |
+| POST | `/rollout/task/submit` | Enqueue task; optional `num_samples` (1–32), `trajectory_builder_strategy` |
 | GET | `/rollout/task/{task_id}` | Poll status + trajectories |
 | GET | `/rollout/status` | Cluster summary |
 | POST | `/callbacks/session_result` | Per-session callback (`session_id` when N>1) |
@@ -221,9 +238,14 @@ curl -sS http://127.0.0.1:8080/rollout/task/submit \
   -d '{
     "task_spec": {"description": "fix flaky test", "workspace_id": "ws-1"},
     "num_samples": 1,
+    "trajectory_builder_strategy": "prefix_merge",
     "trainer_callback_url": "http://trainer/callbacks/session_result"
   }'
 ```
+
+`trajectory_builder_strategy` is optional (`prefix_merge` or `per_request`); when omitted the
+orchestrator uses `CWSO_ROLLOUT_TRAJECTORY_BUILDER_STRATEGY`. Requires
+`CWSO_ROLLOUT_TRAJECTORY_BUILDER_ENABLED=true` for builder v2 assembly at drain time.
 
 ### Multi-session fan-out (`num_samples` > 1)
 

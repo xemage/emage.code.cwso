@@ -1,7 +1,7 @@
 # Plan — CWSO Next-Gen (Phase 6+) "Holy Grail of Agentic Development"
 
-> Owner: orchestrator · Status: **v0.4.0 GA prep** — Polar T149–T151 + installation-v2 (T156)
-> Based on: `docs/artifacts/cwso-nextgen-blueprint-v1.md`, `input/*.pdf`, current `develop` @ `62f8075`
+> Owner: orchestrator · Status: **v0.4.0 GA prep** — T157 release readiness (T149/T156 merged)
+> Based on: `docs/artifacts/cwso-nextgen-blueprint-v1.md`, `input/*.pdf`, current `develop` @ `38ac3f5`
 > Protocol: `plan-approve-execute`. Task IDs continue the sequence after `T079`.
 
 ## Goal
@@ -119,7 +119,7 @@ of LPUs → Rust hyper + zero-copy + binary trajectory storage.
 
 Release packaging: **T139** → `v0.3.0-rc1` tagged @ `2032b33`; **T141** GitLab release published. Post-RC: T135, T140 on `develop`. GA blocked on stakeholder RC validation (`checkpoint-012-nextgen-ga-prep.md`).
 
-**Post-RC track:** complete — **v0.3.0 GA** @ `de071c0`. **v0.4.0 path:** Polar **T149–T151** + **T156** comprehensive install guide + **T157** release; T145–T148/T154–T155 merged.
+**Post-RC track:** complete — **v0.3.0 GA** @ `de071c0`. **v0.4.0 path:** **T149** trajectory builder (MR !65) and **T156** installation-v2 (MR !64) merged; **T157** release readiness is the GA gate. T150/T151 (KV differential prompting, offline SFT) remain optional post-GA backlog. T145–T148/T154–T155 merged.
 
 ## Approval
 
