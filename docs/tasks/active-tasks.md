@@ -57,9 +57,9 @@ Design baseline: `docs/artifacts/cwso-nextgen-blueprint-v1.md`.
 | T145 | Rollout `num_samples` session fan-out | backend-developer | done | P1 | T137 | 2026-06-07 |
 | T154 | IDE integration guide (VS Code / Cursor) | technical-writer | done | P0 | T142 | 2026-06-07 |
 | T155 | Enable-all-features script | devops-engineer | done | P1 | T142 | 2026-06-07 |
-| T146 | Gateway async staging + partial traces | backend-developer | in_review | P1 | T132 | 2026-06-07 |
+| T146 | Gateway async staging + partial traces | backend-developer | done | P1 | T132 | 2026-06-07 |
 | T149 | Trajectory builder Polar parity | backend-developer | pending | P2 | T133 | 2026-06-07 |
-| T148 | Evaluator registry + SWE-bench hook | backend-developer | pending | P2 | T146 | 2026-06-07 |
+| T148 | Evaluator registry + SWE-bench hook | backend-developer | in_review | P2 | T146 | 2026-06-09 |
 | T150 | KV differential prompting | backend-developer | pending | P2 | T135 | 2026-06-07 |
 | T151 | Offline SFT data generation mode | backend-developer | pending | P2 | T134 | 2026-06-07 |
 
@@ -723,14 +723,19 @@ Merged @ MR !59. `num_samples` (1–32), per-session callbacks, integration test
 
 Brief: `task-T145.md`.
 
-### T146 (in_review) — Gateway async staging + partial traces
+### T146 (done) — Gateway async staging + partial traces
 
-Branch `feature/T146-gateway-staging` (MR !61). INIT/READY/RUNNING/POSTRUN pools, evaluator prewarm stub,
-timeout partial trace recovery. Flag: `CWSO_ROLLOUT_GATEWAY_STAGING_ENABLED`.
+Merged @ MR !61. INIT/READY/RUNNING/POSTRUN pools, evaluator prewarm stub, timeout partial trace recovery.
 
 Brief: `task-T146.md`.
 
-### Polar parity backlog (T148–T151)
+### T148 (in_review) — Evaluator registry + SWE-bench hook
 
-Gap analysis: `docs/artifacts/polar-gap-analysis-v1.md`. T144–T145/T154/T155 done; T146 in_review;
-post-GA: evaluators, trajectory parity, differential prompting, offline SFT.
+MR !62 — pluggable post-run evaluators: session reward + SWE-bench stub. Flags default off.
+
+Brief: `task-T148.md`.
+
+### Polar parity backlog (T149–T151)
+
+Gap analysis: `docs/artifacts/polar-gap-analysis-v1.md`. T144–T146/T154/T155 done; T148 in_review;
+post-GA: trajectory parity, differential prompting, offline SFT.

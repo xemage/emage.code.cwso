@@ -313,6 +313,11 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 			rolloutSvc.AttachGateway(gateway)
 			log.Info().Msg("rollout gateway staging enabled (INIT/READY/RUNNING/POSTRUN pools)")
 		}
+		if cfg.RolloutEvaluatorRegistryEnabled {
+			registry := rollout.NewRegistry(rollout.RegistryConfigFrom(cfg, broker, rolloutClient))
+			rolloutSvc.SetEvaluatorRegistry(registry)
+			log.Info().Msg("rollout evaluator registry enabled")
+		}
 		log.Info().Msg("rollout Polar REST API enabled (/rollout/*)")
 	}
 

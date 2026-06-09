@@ -181,6 +181,74 @@ func TestNumSamplesSessionFanOut(t *testing.T) {
 	}
 }
 
+// TestEvaluatorRegistryIntegration verifies post-run rewards attach to trajectories (T148).
+func TestEvaluatorRegistryIntegration(t *testing.T) {
+	t.Parallel()
+	broker := memorybroker.New()
+	t.Cleanup(broker.Close)
+
+	svc := NewService(broker, nil, nil)
+	svc.SetEvaluatorRegistry(NewRegistry(RegistryConfig{
+		Enabled:              true,
+		SessionRewardEnabled: true,
+		SWEBenchEnabled:      true,
+		SWEBenchInstance:     "django-1234",
+		Rewards:              broker,
+	}))
+
+	sub, err := svc.SubmitTask(context.Background(), SubmitRequest{
+		TaskSpec: TaskSpec{
+			Description: "evaluator registry",
+			WorkspaceID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+		},
+	})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+
+	if !broker.Ingest(TopicReward, RewardEvent{
+		Kind: RewardMergeSuccess, Reward: 1.0, SessionID: sub.TaskID, Outcome: "success",
+	}) {
+		t.Fatal("broker ingest failed")
+	}
+	waitBrokerRecords(t, broker, 1)
+
+	group := TrajectoryGroup{
+		SessionID: sub.TaskID,
+		Chains: []Chain{{
+			ChainID:        "chain-1",
+			PrefixTokenIDs: []uint32{1},
+			Steps:          []Step{{TokenIDs: []uint32{2}, LossMask: []uint8{1}}},
+		}},
+	}
+	if err := svc.CompleteSession(sub.TaskID, "", &group); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if len(group.Rewards) != 2 {
+		t.Fatalf("rewards: %+v", group.Rewards)
+	}
+	if group.Rewards[0] != 1.0 {
+		t.Fatalf("session reward: %g", group.Rewards[0])
+	}
+	if group.Metadata["evaluator.session-reward.merge_outcome"] != "success" {
+		t.Fatalf("session metadata: %+v", group.Metadata)
+	}
+	if group.Metadata["evaluator.swe-bench.instance_id"] != "django-1234" {
+		t.Fatalf("swe-bench metadata: %+v", group.Metadata)
+	}
+
+	status, err := svc.GetTask(context.Background(), sub.TaskID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if status.Status != TaskCompleted {
+		t.Fatalf("status: %q", status.Status)
+	}
+	if len(status.Trajectories) != 1 || status.Trajectories[0].TotalReward != 1.0 {
+		t.Fatalf("trajectories: %+v", status.Trajectories)
+	}
+}
+
 func waitBrokerRecords(t *testing.T, broker *memorybroker.Broker, want int) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
