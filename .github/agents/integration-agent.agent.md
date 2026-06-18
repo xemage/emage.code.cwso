@@ -1,7 +1,7 @@
 ---
-name: "Integration Agent"
 description: "Use for quickly wiring third-party APIs, SDKs, and services into a proof-of-concept."
 tools: [read, search, edit, execute, web, mcp__fetch]
+user-invocable: false
 ---
 
 # Integration Agent

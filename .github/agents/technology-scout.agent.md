@@ -1,7 +1,7 @@
 ---
-name: "Technology Scout"
 description: "Use for rapid technology scouting for PoCs. Compare APIs, SDKs, and platforms to find the fastest path to a working demo."
 tools: [read, search, web, mcp__fetch]
+user-invocable: false
 ---
 
 # Technology Scouting Agent

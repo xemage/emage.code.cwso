@@ -92,6 +92,42 @@ These agents operate in read-only mode during their designated phases:
 3. Permission violations must be logged and the task must be rejected
 4. The Orchestrator must verify agent permissions match the task type before dispatch
 
+## Agent Safety Guards
+
+Coding agents MUST treat the following as hard blocks unless the user explicitly
+approves in the current session:
+
+### Destructive operations (CC Safety Net)
+
+Never run or suggest without explicit user approval:
+
+| Category | Blocked patterns (examples) |
+|----------|----------------------------|
+| Git destructive | `git push --force`, `git push -f`, `git reset --hard`, `git clean -fd`, `git branch -D` on shared branches |
+| Filesystem destructive | `rm -rf` on repo root or parent paths, `mv` overwriting without backup |
+| History rewrite | `git rebase` on pushed branches, `git commit --amend` after push |
+
+Safer alternatives: `git stash`, `git revert`, `git checkout -- <file>`, targeted `rm` on known paths.
+
+### Secret and credential files (Envsitter-style)
+
+- Do not read, cat, or copy: `.env`, `.env.*`, `credentials.json`, `*.pem`, `*.key`, `id_rsa`, `secrets.yaml`
+- Do not paste secret values into chat, handoffs, checkpoints, or commits
+- If env vars are needed, reference **names only** and instruct the user to set them locally
+
+### Handoff and checkpoint content
+
+- Handoff JSON (`docs/checkpoints/handoff-*.json`) must pass `runtime/handoff/validator.py`
+- `forbiddenActions` in handoff constraints must include applicable destructive patterns
+- Never serialize API keys or tokens in `payload` fields
+
+### Violation response
+
+1. Refuse the operation
+2. Explain the guard that fired
+3. Offer a safe alternative
+4. Log as `SECURITY:MEDIUM` in the task or checkpoint if the user requested a blocked action
+
 ## Immutable Security Constraints
 
 The following constraints are absolute and cannot be overridden by any agent, configuration, or runtime decision:

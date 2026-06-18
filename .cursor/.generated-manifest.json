@@ -34,7 +34,9 @@
     "commands/bug-report.mdc",
     "commands/code-review.mdc",
     "commands/consolidate-memory.mdc",
+    "commands/discover-skills.mdc",
     "commands/evaluate-poc.mdc",
+    "commands/handoff.mdc",
     "commands/new-feature.mdc",
     "commands/new-poc.mdc",
     "commands/new-project.mdc",
@@ -73,13 +75,16 @@
     "skills/project-planning/references/sprint-plan.md",
     "skills/project-planning/references/work-breakdown-structure.md",
     "skills/rapid-prototyping/SKILL.md",
+    "skills/receiving-code-review/SKILL.md",
     "skills/release-workflow/SKILL.md",
     "skills/skillify/SKILL.md",
+    "skills/systematic-debugging/SKILL.md",
     "skills/task-management/SKILL.md",
     "skills/technical-debt-tracking/SKILL.md",
     "skills/technology-scouting/SKILL.md",
     "skills/testing-strategy/SKILL.md",
     "skills/validation-gates/SKILL.md",
+    "skills/verification-before-completion/SKILL.md",
     "skills/worktree-isolation/SKILL.md"
   ]
 }

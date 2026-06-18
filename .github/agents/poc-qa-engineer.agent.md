@@ -1,7 +1,7 @@
 ---
-name: "PoC QA Engineer"
 description: "Use for lightweight PoC validation testing focused on happy-path and demo reliability."
 tools: [read, search, edit, execute, mcp__playwright]
+user-invocable: false
 ---
 
 # PoC QA Engineer

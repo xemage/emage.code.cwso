@@ -40,7 +40,9 @@
     "prompts/bug-report.prompt.md",
     "prompts/code-review.prompt.md",
     "prompts/consolidate-memory.prompt.md",
+    "prompts/discover-skills.prompt.md",
     "prompts/evaluate-poc.prompt.md",
+    "prompts/handoff.prompt.md",
     "prompts/new-feature.prompt.md",
     "prompts/new-poc.prompt.md",
     "prompts/new-project.prompt.md",
@@ -74,13 +76,16 @@
     "skills/project-planning/references/sprint-plan.md",
     "skills/project-planning/references/work-breakdown-structure.md",
     "skills/rapid-prototyping/SKILL.md",
+    "skills/receiving-code-review/SKILL.md",
     "skills/release-workflow/SKILL.md",
     "skills/skillify/SKILL.md",
+    "skills/systematic-debugging/SKILL.md",
     "skills/task-management/SKILL.md",
     "skills/technical-debt-tracking/SKILL.md",
     "skills/technology-scouting/SKILL.md",
     "skills/testing-strategy/SKILL.md",
     "skills/validation-gates/SKILL.md",
+    "skills/verification-before-completion/SKILL.md",
     "skills/worktree-isolation/SKILL.md"
   ]
 }
