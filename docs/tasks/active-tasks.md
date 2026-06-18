@@ -9,7 +9,7 @@
 | T160 | Reconcile v0.4.0 GA documentation drift | technical-writer | done | P1 | T157 | 2026-06-19 |
 | T161 | Clean active/completed task board hygiene | scrum-master | done | P1 | T160 | 2026-06-19 |
 | T162 | Remediate high-value reliability/security technical debt | backend-developer | done | P1 | T158 | 2026-06-19 |
-| T163 | Hardening and Polar parity validation gate | qa / security / tech-lead | in_review | P0 | T159, T161, T162, T150, T151 | 2026-06-19 |
+| T163 | Hardening and Polar parity validation gate | qa / security / tech-lead | done | P0 | T159, T161, T162, T150, T151 | 2026-06-18 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)

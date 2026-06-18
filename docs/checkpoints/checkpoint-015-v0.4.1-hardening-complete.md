@@ -2,7 +2,7 @@
 
 **Phase:** v0.4.1 Usability & Reliability Hardening  
 **Date:** 2026-06-19  
-**Status:** HARDENING READY FOR VALIDATION GATE  
+**Status:** HARDENING VALIDATED (GATE PASS)  
 **Commit:** `36c4b78` (feat: execute v0.4.1 hardening plan)
 
 ---
@@ -189,7 +189,7 @@ curl -X POST http://localhost:8080/rollout/task/offline_generate \
 ---
 
 ### ✅ T163: Hardening and Polar Parity Validation Gate
-**Status:** in_review  
+**Status:** done  
 **Owner:** qa-engineer / security-engineer / tech-lead  
 **Dependencies:** All upstream tasks (T158-T162, T150-T151) now done
 
@@ -206,10 +206,11 @@ curl -X POST http://localhost:8080/rollout/task/offline_generate \
 - ✅ No new compilation errors
 - ✅ Code formatted per project standards
 - ✅ All tasks committed with conventional commits
-- ⏳ Awaiting execution of `make smoke-local` (end-to-end validation)
-- ⏳ Awaiting QA/security/tech-lead validation gate review
+- ✅ `make smoke-local` executed with `PHASE 2 INTEGRATION TEST: PASS`
+- ✅ QA/security/tech-lead validation gate recorded as PASS
 
-**Expected Verdict:** PASS (enable release) or CONDITIONAL_PASS (with tracked debt)
+**Verdict:** PASS
+**Gate artifact:** `docs/artifacts/gate-v0.4.1-hardening-2026-06-18.md`
 
 ---
 
@@ -259,11 +260,11 @@ Python:
 
 ## Next Steps
 
-### Immediate (Validation Gate Phase)
-1. **Execute Smoke Test:** `make smoke-local` to validate end-to-end auth + integration
-2. **QA Review:** Verify all hardening goals met
-3. **Security Review:** Verify error redaction, auth flow, no credential leaks
-4. **Tech Lead Review:** Code quality, test coverage, architectural decisions
+### Immediate (Post-Gate)
+1. **Create release branch:** `release/v0.4.1` from `develop`
+2. **Prepare release notes:** include hardening and Polar parity outcomes
+3. **Run release-readiness checks:** CI green + docs verification + rollout checklist
+4. **Tag candidate:** `v0.4.1-rc1`
 
 ### Post-Gate (If PASS verdict)
 1. Create GitLab release v0.4.1-rc1 with changelog
@@ -314,7 +315,7 @@ Date:   Thu Jun 18 12:58:26 2026 +0200
 - [ ] Tech Lead: Code quality acceptable; tests comprehensive; no architectural debt introduced
 - [ ] Product Owner: Feature set meets v0.4.1 acceptance criteria
 
-**Status:** Awaiting validation gate review
+**Status:** Completed (Gate PASS)
 
 ---
 
