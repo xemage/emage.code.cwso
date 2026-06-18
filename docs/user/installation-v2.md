@@ -76,6 +76,12 @@ curl -sS http://127.0.0.1:8080/healthz
 python3 scripts/phase2-integration.py   # expect: PASS
 ```
 
+One-command deterministic local smoke:
+
+```bash
+make smoke-local
+```
+
 ### Full local stack (Phase 2 + 4)
 
 ```bash
@@ -128,6 +134,7 @@ JWT claims: `iss=cwso`, `aud=cwso-mcp`, `role=worker|orchestrator`.
 | `CWSO_ROLLOUT_REWARD_ENABLED` | `false` | Merge SM programmatic rewards |
 | `CWSO_ROLLOUT_KV_PREFIX_ROUTER_ENABLED` | `false` | BLAKE3 prefix router on submit |
 | `CWSO_ROLLOUT_PROXY_ENABLED` | `false` | Sidecar HTTP proxy (Rust) |
+| `CWSO_ROLLOUT_KV_DIFFERENTIAL_PROMPTING_ENABLED` | `false` | Differential prompting on prefix-cache hit + `cache_salt` forwarding |
 | `CWSO_ROLLOUT_HTTP_BIND` | `127.0.0.1:8787` | Proxy listen (sidecar) |
 | `CWSO_ROLLOUT_UPSTREAM_URL` | — | Upstream inference base URL |
 
@@ -225,6 +232,7 @@ export OPENAI_BASE_URL=http://127.0.0.1:8787
 | Method | Path | Purpose |
 |--------|------|---------|
 | POST | `/rollout/task/submit` | Enqueue task; optional `num_samples` (1–32), `trajectory_builder_strategy` |
+| POST | `/rollout/task/offline_generate` | Build trajectories from existing session IDs (no callback) |
 | GET | `/rollout/task/{task_id}` | Poll status + trajectories |
 | GET | `/rollout/status` | Cluster summary |
 | POST | `/callbacks/session_result` | Per-session callback (`session_id` when N>1) |
@@ -250,6 +258,24 @@ orchestrator uses `CWSO_ROLLOUT_TRAJECTORY_BUILDER_STRATEGY`. Requires
 ### Multi-session fan-out (`num_samples` > 1)
 
 Set `"num_samples": 3` to spawn three distinct `session_id`s. Callbacks must include `session_id`; task completes when all sessions report.
+
+### Offline SFT generation mode
+
+Use offline mode to generate trajectories from captured sessions without trainer callbacks:
+
+```bash
+curl -sS http://127.0.0.1:8080/rollout/task/offline_generate \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_spec": {"description": "offline-sft", "workspace_id": "ws-1"},
+    "source_session_ids": ["session-a", "session-b"],
+    "drain_limit": 128,
+    "trajectory_builder_strategy": "prefix_merge"
+  }'
+```
+
+This path is intended for fixed-checkpoint batch generation and Parquet-backed capture replay.
 
 ### Reference harness
 

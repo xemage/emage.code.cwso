@@ -24,6 +24,7 @@ const (
 
 	defaultNumSamples = 1
 	maxNumSamples     = 32
+	defaultDrainLimit = 64
 )
 
 // TaskSpec is the inner task_spec from POST /rollout/task/submit.
@@ -49,6 +50,14 @@ type SubmitResponse struct {
 	PrefixKey  string     `json:"prefix_key,omitempty"`
 	NumSamples int        `json:"num_samples,omitempty"`
 	SessionIDs []string   `json:"session_ids,omitempty"`
+}
+
+// OfflineGenerateRequest defines batch offline SFT trajectory assembly.
+type OfflineGenerateRequest struct {
+	TaskSpec                  TaskSpec        `json:"task_spec"`
+	SourceSessionIDs          []string        `json:"source_session_ids"`
+	DrainLimit                uint32          `json:"drain_limit,omitempty"`
+	TrajectoryBuilderStrategy BuilderStrategy `json:"trajectory_builder_strategy,omitempty"`
 }
 
 // PartialResult mirrors rollout_task_status partial_results items.
@@ -115,13 +124,18 @@ type RewardReader interface {
 	Query(opts memorybroker.QueryOptions) []memorybroker.Record
 }
 
+type trajectoryClient interface {
+	BuildFromDrainWithConfig(ctx context.Context, sessionID string, limit uint32, cfg BuilderConfig, taskStrategy BuilderStrategy) (TrajectoryGroup, error)
+	PrefixStats(ctx context.Context) (*PrefixStats, error)
+}
+
 // Service implements Polar REST semantics (rollout-architecture-v1 §8).
 type Service struct {
 	mu           sync.RWMutex
 	tasks        map[string]*Task
 	nodes        map[string]*Node
 	rewards      RewardReader
-	client       *Client
+	client       trajectoryClient
 	prefixRouter *PrefixRouter
 	gateway      *Gateway
 	evaluators   *Registry
@@ -137,6 +151,87 @@ func NewService(rewards RewardReader, client *Client, prefixRouter *PrefixRouter
 		client:       client,
 		prefixRouter: prefixRouter,
 	}
+}
+
+// GenerateOfflineTask builds trajectories in batch mode for existing source sessions.
+// This path does not require trainer callbacks and marks the task complete when all
+// source sessions are assembled.
+func (s *Service) GenerateOfflineTask(ctx context.Context, req OfflineGenerateRequest) (TaskStatusResponse, error) {
+	if s.client == nil {
+		return TaskStatusResponse{}, fmt.Errorf("rollout client unavailable")
+	}
+	if req.TaskSpec.Description == "" || req.TaskSpec.WorkspaceID == "" {
+		return TaskStatusResponse{}, fmt.Errorf("task_spec.description and workspace_id are required")
+	}
+	if len(req.SourceSessionIDs) == 0 {
+		return TaskStatusResponse{}, fmt.Errorf("source_session_ids is required")
+	}
+	if len(req.SourceSessionIDs) > maxNumSamples {
+		return TaskStatusResponse{}, fmt.Errorf("source_session_ids must be <= %d", maxNumSamples)
+	}
+	for _, sid := range req.SourceSessionIDs {
+		if sid == "" {
+			return TaskStatusResponse{}, fmt.Errorf("source_session_ids must not contain empty values")
+		}
+	}
+	strategy, err := normalizeBuilderStrategy(req.TrajectoryBuilderStrategy)
+	if err != nil {
+		return TaskStatusResponse{}, err
+	}
+	id, err := newUUID()
+	if err != nil {
+		return TaskStatusResponse{}, err
+	}
+	now := time.Now().UTC()
+	task := &Task{
+		ID:                        id,
+		Status:                    TaskRunning,
+		Spec:                      req.TaskSpec,
+		NumSamples:                len(req.SourceSessionIDs),
+		SessionIDs:                append([]string(nil), req.SourceSessionIDs...),
+		SessionGroups:             make(map[string]*TrajectoryGroup, len(req.SourceSessionIDs)),
+		TrajectoryBuilderStrategy: strategy,
+		CreatedAt:                 now,
+		UpdatedAt:                 now,
+	}
+	if len(req.SourceSessionIDs) == 1 {
+		task.SessionID = req.SourceSessionIDs[0]
+	}
+	s.mu.Lock()
+	s.tasks[id] = task
+	builder := s.builder
+	client := s.client
+	s.mu.Unlock()
+
+	limit := req.DrainLimit
+	if limit == 0 {
+		limit = defaultDrainLimit
+	}
+	for _, sid := range req.SourceSessionIDs {
+		group, buildErr := client.BuildFromDrainWithConfig(ctx, sid, limit, builder, strategy)
+		if buildErr != nil {
+			s.markTaskFailed(id, fmt.Sprintf("offline build failed for session %s: %v", sid, buildErr))
+			break
+		}
+		if completeErr := s.CompleteSession(id, sid, &group); completeErr != nil {
+			s.markTaskFailed(id, fmt.Sprintf("offline complete failed for session %s: %v", sid, completeErr))
+			break
+		}
+	}
+
+	return s.GetTask(ctx, id)
+}
+
+func (s *Service) markTaskFailed(taskID, reason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	task, ok := s.tasks[taskID]
+	if !ok {
+		return
+	}
+	task.Status = TaskFailed
+	task.LastError = reason
+	task.UpdatedAt = time.Now().UTC()
 }
 
 // AttachGateway wires staged session execution (T146). Gateway must outlive Service usage.

@@ -13,6 +13,7 @@ func NewHTTPHandler(svc *Service) http.Handler {
 	mux := http.NewServeMux()
 	h := &apiHandler{svc: svc}
 	mux.HandleFunc("POST /rollout/task/submit", h.submitTask)
+	mux.HandleFunc("POST /rollout/task/offline_generate", h.offlineGenerate)
 	mux.HandleFunc("GET /rollout/task/{task_id}", h.getTask)
 	mux.HandleFunc("GET /rollout/status", h.fleetStatus)
 	mux.HandleFunc("POST /callbacks/session_result", h.sessionResult)
@@ -33,6 +34,20 @@ func (h *apiHandler) submitTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, err := h.svc.SubmitTask(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, resp)
+}
+
+func (h *apiHandler) offlineGenerate(w http.ResponseWriter, r *http.Request) {
+	var req OfflineGenerateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	resp, err := h.svc.GenerateOfflineTask(r.Context(), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

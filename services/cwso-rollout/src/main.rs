@@ -75,6 +75,7 @@ fn main() -> Result<()> {
         let pipeline = Arc::new(CapturePipeline::new(
             proxy_config.clone(),
             Arc::clone(&store),
+            Arc::clone(&prefix_cache),
         ));
         let bind = proxy_config.http_bind.clone();
         runtime.block_on(async move {

@@ -16,6 +16,7 @@ pub struct ProxyConfig {
     pub upstream_url: String,
     pub upstream_api_key: Option<String>,
     pub capture_enabled: bool,
+    pub kv_differential_prompting_enabled: bool,
     pub capture_queue_capacity: usize,
     pub http_timeout_ms: u64,
     pub allow_insecure_endpoints: bool,
@@ -70,6 +71,10 @@ fn load_proxy_config() -> Result<ProxyConfig> {
             .ok()
             .filter(|value| !value.is_empty()),
         capture_enabled: env_bool("CWSO_ROLLOUT_CAPTURE_ENABLED", true),
+        kv_differential_prompting_enabled: env_bool(
+            "CWSO_ROLLOUT_KV_DIFFERENTIAL_PROMPTING_ENABLED",
+            false,
+        ),
         capture_queue_capacity: env_usize(
             "CWSO_ROLLOUT_CAPTURE_QUEUE_CAPACITY",
             CAPTURE_QUEUE_DEFAULT,
@@ -147,6 +152,7 @@ mod tests {
             upstream_url: "http://127.0.0.1:8000".to_string(),
             upstream_api_key: None,
             capture_enabled: true,
+            kv_differential_prompting_enabled: false,
             capture_queue_capacity: 8,
             http_timeout_ms: 1_000,
             allow_insecure_endpoints: false,
@@ -165,6 +171,7 @@ mod tests {
             upstream_url: "http://127.0.0.1:8000".to_string(),
             upstream_api_key: None,
             capture_enabled: true,
+            kv_differential_prompting_enabled: false,
             capture_queue_capacity: 8,
             http_timeout_ms: 1_000,
             allow_insecure_endpoints: false,

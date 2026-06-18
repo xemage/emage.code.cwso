@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/emage/cwso/orchestrator/internal/eventbus"
+	"github.com/emage/cwso/orchestrator/internal/logging"
 )
 
 const (
@@ -45,6 +47,7 @@ type Config struct {
 	Workers   int
 	QueueSize int
 	Now       func() time.Time
+	Log       *logging.Logger
 }
 
 // Request defines a job submission. Exactly one of Run or RunResult must be set:
@@ -83,6 +86,7 @@ type Manager struct {
 	queue     chan *record
 	publisher Publisher
 	now       func() time.Time
+	log       *logging.Logger
 
 	rootCtx    context.Context
 	rootCancel context.CancelFunc
@@ -115,6 +119,7 @@ func NewManager(cfg Config, publisher Publisher) (*Manager, error) {
 		queue:      make(chan *record, cfg.QueueSize),
 		publisher:  publisher,
 		now:        cfg.Now,
+		log:        cfg.Log,
 		rootCtx:    rootCtx,
 		rootCancel: rootCancel,
 		jobs:       make(map[string]*record),
@@ -134,7 +139,40 @@ func (m *Manager) Close() {
 		return
 	}
 	m.rootCancel()
+	m.cancelQueuedJobsOnClose()
 	m.wg.Wait()
+}
+
+func (m *Manager) cancelQueuedJobsOnClose() {
+	for {
+		select {
+		case r := <-m.queue:
+			if r == nil {
+				continue
+			}
+			m.cancelQueuedRecord(r)
+		default:
+			return
+		}
+	}
+}
+
+func (m *Manager) cancelQueuedRecord(r *record) {
+	r.cancel()
+	m.mu.Lock()
+	stored, ok := m.jobs[r.job.ID]
+	if !ok || stored.job.State != StateQueued {
+		m.mu.Unlock()
+		return
+	}
+	now := m.now()
+	prev := stored.job.State
+	stored.job.State = StateCancelled
+	stored.job.Error = context.Canceled.Error()
+	stored.job.FinishedAt = &now
+	snapshot := stored.job
+	m.mu.Unlock()
+	m.publishTransition(snapshot, prev)
 }
 
 // Enqueue submits a job for asynchronous execution.
@@ -334,7 +372,7 @@ func (m *Manager) publishTransition(job Job, previous State) {
 		payload["finished_at"] = job.FinishedAt.UTC().Format(time.RFC3339Nano)
 	}
 	if job.Error != "" {
-		payload["error"] = job.Error
+		payload["error"] = sanitizeErrorForBroadcast(job.Error)
 	}
 	if job.Result != "" {
 		payload["result"] = job.Result
@@ -356,7 +394,36 @@ func (m *Manager) publish(topic string, payload any) {
 	if m.publisher == nil {
 		return
 	}
-	_ = m.publisher.Publish(topic, payload)
+	if err := m.publisher.Publish(topic, payload); err != nil && m.log != nil {
+		m.log.Debug().Err(err).Str("topic", topic).Msg("jobs publish failed")
+	}
+}
+
+func sanitizeErrorForBroadcast(errMsg string) string {
+	trimmed := strings.TrimSpace(errMsg)
+	if trimmed == "" {
+		return ""
+	}
+	lower := strings.ToLower(trimmed)
+	sensitiveHints := []string{
+		"authorization",
+		"bearer ",
+		"token",
+		"secret",
+		"password",
+		"api_key",
+		"apikey",
+	}
+	for _, hint := range sensitiveHints {
+		if strings.Contains(lower, hint) {
+			return "error details redacted"
+		}
+	}
+	const maxLen = 256
+	if len(trimmed) > maxLen {
+		return trimmed[:maxLen] + "..."
+	}
+	return trimmed
 }
 
 func (m *Manager) nextID(now time.Time) string {

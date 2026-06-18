@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -317,6 +318,88 @@ func TestRaceSafeParallelGetCancel(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+func TestCloseCancelsQueuedJobs(t *testing.T) {
+	m, err := NewManager(Config{Workers: 1, QueueSize: 2}, nil)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	runningStarted := make(chan struct{})
+	_, err = m.Enqueue(Request{Run: func(ctx context.Context) error {
+		closeOnce(runningStarted)
+		<-ctx.Done()
+		return ctx.Err()
+	}})
+	if err != nil {
+		t.Fatalf("enqueue running: %v", err)
+	}
+	<-runningStarted
+
+	queued, err := m.Enqueue(Request{Run: func(context.Context) error { return nil }})
+	if err != nil {
+		t.Fatalf("enqueue queued: %v", err)
+	}
+
+	m.Close()
+
+	snapshot, ok := m.Get(queued.ID)
+	if !ok {
+		t.Fatal("expected queued job snapshot")
+	}
+	if snapshot.State != StateCancelled {
+		t.Fatalf("queued state = %q, want cancelled", snapshot.State)
+	}
+	if snapshot.FinishedAt == nil {
+		t.Fatal("expected queued finished_at on close cancellation")
+	}
+}
+
+func TestPublishLifecycleErrorIsRedacted(t *testing.T) {
+	bus := eventbus.New()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	m, err := NewManager(Config{Workers: 1, QueueSize: 2}, bus)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	defer m.Close()
+
+	job, err := m.Enqueue(Request{Run: func(context.Context) error {
+		return fmt.Errorf("upstream returned bearer token abc123")
+	}})
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		select {
+		case msg := <-sub.Messages():
+			if msg.Topic != eventbus.TopicNotificationsJobState {
+				continue
+			}
+			var payload map[string]any
+			if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+				t.Fatalf("unmarshal payload: %v", err)
+			}
+			if payload["job_id"] != job.ID {
+				continue
+			}
+			if payload["state"] != string(StateFailed) {
+				continue
+			}
+			if got := payload["error"]; got != "error details redacted" {
+				t.Fatalf("broadcast error = %v", got)
+			}
+			return
+		default:
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	t.Fatal("did not receive failed redacted notification")
 }
 
 func waitForState(t *testing.T, m *Manager, id string, want State, timeout time.Duration) {

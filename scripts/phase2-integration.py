@@ -60,9 +60,38 @@ BASE_URL = resolve_base_url()
 LAST_RPC_AT = 0.0
 ENABLE_PHASE4_MATRIX = os.environ.get("CWSO_PHASE4_MATRIX") == "1" or "phase4" in COMPOSE_PROFILES
 
-if "CWSO_JWT_SECRET" not in os.environ:
-    os.environ["CWSO_JWT_SECRET"] = base64.b64encode(secrets.token_bytes(32)).decode()
-SECRET = os.environ["CWSO_JWT_SECRET"].encode()
+
+def load_local_jwt_secret() -> str | None:
+    secret_file = REPO / ".env.jwt.dev"
+    if not secret_file.exists():
+        return None
+    raw = secret_file.read_text(encoding="utf-8").strip()
+    if not raw:
+        return None
+    if "\n" in raw:
+        for line in raw.splitlines():
+            value = line.strip()
+            if value and not value.startswith("#"):
+                return value
+        return None
+    return raw
+
+
+def resolve_jwt_secret() -> str:
+    configured = os.environ.get("CWSO_JWT_SECRET", "").strip()
+    if configured:
+        return configured
+    if not os.environ.get("CI"):
+        local = load_local_jwt_secret()
+        if local:
+            os.environ["CWSO_JWT_SECRET"] = local
+            return local
+    generated = base64.b64encode(secrets.token_bytes(32)).decode()
+    os.environ["CWSO_JWT_SECRET"] = generated
+    return generated
+
+
+SECRET = resolve_jwt_secret().encode()
 
 
 def b64url(data: bytes) -> str:

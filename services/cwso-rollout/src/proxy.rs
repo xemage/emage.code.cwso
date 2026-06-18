@@ -116,6 +116,7 @@ fn full_body(body: Vec<u8>) -> BoxBody<Bytes, hyper::Error> {
 mod tests {
     use super::*;
     use crate::config::ProxyConfig;
+    use crate::prefix_cache::PrefixCache;
     use crate::record::CaptureStore;
     use std::sync::Arc;
 
@@ -151,11 +152,16 @@ mod tests {
             upstream_url: upstream,
             upstream_api_key: None,
             capture_enabled: false,
+            kv_differential_prompting_enabled: false,
             capture_queue_capacity: 8,
             http_timeout_ms: 5_000,
             allow_insecure_endpoints: false,
         };
-        let pipeline = Arc::new(CapturePipeline::new(config, store));
+        let pipeline = Arc::new(CapturePipeline::new(
+            config,
+            store,
+            Arc::new(PrefixCache::new(8)),
+        ));
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind proxy");
         let proxy_addr = listener.local_addr().expect("addr");
         let pipeline_task = Arc::clone(&pipeline);

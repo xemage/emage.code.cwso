@@ -5,7 +5,7 @@ SHELL := /bin/bash
 COMPOSE := docker compose -f deploy/docker-compose.yml
 
 .PHONY: help build build-orchestrator build-git-shadow build-merge-engine \
-	test test-go test-rust run stop logs inspector demo clean lint fmt release-assets
+	test test-go test-rust run stop logs inspector demo smoke-local clean lint fmt release-assets
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -47,6 +47,9 @@ inspector: ## Launch mcp-inspector against running server
 demo: ## End-to-end Phase 1 demo
 	@echo "Running Phase 1 demo..."
 	docker run --rm --network host cwso/orchestrator:dev /usr/local/bin/cwso-demo
+
+smoke-local: ## Deterministic local smoke (build + phase2 integration + teardown)
+	python3 scripts/phase2-integration.py
 
 lint: ## Run linters
 	docker run --rm -v $$PWD/orchestrator:/src -w /src golangci/golangci-lint:v1.62-alpine \

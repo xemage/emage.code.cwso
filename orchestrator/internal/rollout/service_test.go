@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,25 @@ import (
 
 type stubRewardReader struct {
 	records []memorybroker.Record
+}
+
+type fakeTrajectoryClient struct {
+	groups map[string]TrajectoryGroup
+	err    error
+}
+
+func (f *fakeTrajectoryClient) BuildFromDrainWithConfig(_ context.Context, sessionID string, _ uint32, _ BuilderConfig, _ BuilderStrategy) (TrajectoryGroup, error) {
+	if f.err != nil {
+		return TrajectoryGroup{}, f.err
+	}
+	if group, ok := f.groups[sessionID]; ok {
+		return group, nil
+	}
+	return TrajectoryGroup{}, fmt.Errorf("unknown session")
+}
+
+func (f *fakeTrajectoryClient) PrefixStats(_ context.Context) (*PrefixStats, error) {
+	return &PrefixStats{}, nil
 }
 
 func (s *stubRewardReader) Query(opts memorybroker.QueryOptions) []memorybroker.Record {
@@ -122,5 +142,57 @@ func TestHTTPFleetStatus(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status code=%d", rec.Code)
+	}
+}
+
+func TestGenerateOfflineTaskCompletesWithoutCallback(t *testing.T) {
+	t.Parallel()
+	svc := NewService(&stubRewardReader{}, nil, nil)
+	svc.client = &fakeTrajectoryClient{groups: map[string]TrajectoryGroup{
+		"sess-a": {
+			SessionID: "sess-a",
+			Chains:    []Chain{{ChainID: "c-a", Steps: []Step{{LossMask: []uint8{1}}}}},
+		},
+		"sess-b": {
+			SessionID: "sess-b",
+			Chains:    []Chain{{ChainID: "c-b", Steps: []Step{{LossMask: []uint8{1, 1}}}}},
+		},
+	}}
+
+	status, err := svc.GenerateOfflineTask(context.Background(), OfflineGenerateRequest{
+		TaskSpec:         TaskSpec{Description: "offline sft", WorkspaceID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"},
+		SourceSessionIDs: []string{"sess-a", "sess-b"},
+		DrainLimit:       128,
+	})
+	if err != nil {
+		t.Fatalf("generate offline: %v", err)
+	}
+	if status.Status != TaskCompleted {
+		t.Fatalf("status = %q", status.Status)
+	}
+	if status.NumSamples != 2 || status.SessionsCompleted != 2 {
+		t.Fatalf("status: %+v", status)
+	}
+	if len(status.Trajectories) != 2 {
+		t.Fatalf("trajectories: %+v", status.Trajectories)
+	}
+}
+
+func TestHTTPOfflineGenerate(t *testing.T) {
+	svc := NewService(&stubRewardReader{}, nil, nil)
+	svc.client = &fakeTrajectoryClient{groups: map[string]TrajectoryGroup{
+		"sess-a": {SessionID: "sess-a", Chains: []Chain{{ChainID: "c-a", Steps: []Step{{LossMask: []uint8{1}}}}}},
+	}}
+	h := NewHTTPHandler(svc)
+
+	body, _ := json.Marshal(OfflineGenerateRequest{
+		TaskSpec:         TaskSpec{Description: "offline", WorkspaceID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"},
+		SourceSessionIDs: []string{"sess-a"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/rollout/task/offline_generate", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("offline generate code=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

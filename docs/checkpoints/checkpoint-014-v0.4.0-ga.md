@@ -3,7 +3,7 @@
 **Date:** 2026-06-09  
 **Phase:** GA release (Polar parity)  
 **develop tip:** `adf34d2` (post-!66 board sync)  
-**GA tag:** `v0.4.0` (pending T157 merge + stakeholder approval)
+**GA tag:** `v0.4.0` (published)
 
 ## Completed since v0.3.0
 
@@ -31,10 +31,9 @@
 
 ## Blockers
 
-None technical. Tag + GitLab release await post-MR approval.
+None.
 
 ## Next steps
 
-1. Merge T157 MR; tag **`v0.4.0`**; verify tag pipeline green.
-2. Publish GitLab release linking `installation-v2.md`.
-3. T150/T151 post-GA backlog (differential prompting, offline SFT).
+1. Track post-GA backlog T150/T151 (differential prompting, offline SFT).
+2. Continue v0.4.x hardening for local operability and debt remediation.
