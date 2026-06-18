@@ -144,11 +144,15 @@ type Service struct {
 
 // NewService constructs an in-memory rollout API service.
 func NewService(rewards RewardReader, client *Client, prefixRouter *PrefixRouter) *Service {
+	var trajectorySvc trajectoryClient
+	if client != nil {
+		trajectorySvc = client
+	}
 	return &Service{
 		tasks:        make(map[string]*Task),
 		nodes:        make(map[string]*Node),
 		rewards:      rewards,
-		client:       client,
+		client:       trajectorySvc,
 		prefixRouter: prefixRouter,
 	}
 }

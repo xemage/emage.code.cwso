@@ -137,6 +137,7 @@ mod tests {
     use super::*;
     use crate::config::ProxyConfig;
     use crate::record::CaptureStore;
+    use http_body_util::BodyExt;
     use hyper::body::Incoming;
     use hyper::service::service_fn;
     use hyper::{Request, Response};
@@ -176,6 +177,7 @@ mod tests {
             upstream_url: upstream,
             upstream_api_key: None,
             capture_enabled: true,
+            kv_differential_prompting_enabled: false,
             capture_queue_capacity: 16,
             http_timeout_ms: 5_000,
             allow_insecure_endpoints: false,
@@ -204,6 +206,7 @@ mod tests {
             upstream_url: upstream,
             upstream_api_key: None,
             capture_enabled: true,
+            kv_differential_prompting_enabled: false,
             capture_queue_capacity: 16,
             http_timeout_ms: 5_000,
             allow_insecure_endpoints: false,
