@@ -1,7 +1,7 @@
 ---
-name: "Backend Developer"
 description: "Use when implementing server-side code, REST APIs, GraphQL endpoints, business logic, service layers, middleware, authentication flows, database queries, background jobs, or any backend/server functionality."
 tools: [read, search, edit, execute, web, mcp__fetch]
+user-invocable: false
 ---
 
 # Backend Developer

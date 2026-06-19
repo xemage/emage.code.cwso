@@ -1,0 +1,137 @@
+package dispatch
+
+import (
+	"fmt"
+	"sync/atomic"
+	"time"
+
+	"github.com/emage/cwso/orchestrator/internal/memorybroker"
+)
+
+const defaultAnomalyLatencyThresholdMS = 1200
+
+// DecisionAnomalyMonitorConfig configures spike-level anomaly monitoring.
+type DecisionAnomalyMonitorConfig struct {
+	PreferEBPF         bool
+	LatencyThresholdMS int
+	EBPFChecker        func() (bool, string)
+	Redaction          TelemetryRedactionConfig
+}
+
+// AnomalyEvent is the telemetry envelope for event-driven dispatch anomalies.
+type AnomalyEvent struct {
+	AnomalyID                  string   `json:"anomaly_id"`
+	DecisionID                 string   `json:"decision_id"`
+	CapabilityEpoch            uint64   `json:"capability_epoch"`
+	SelectedProvider           string   `json:"selected_provider"`
+	ReasonCode                 string   `json:"reason_code"`
+	Severity                   string   `json:"severity"`
+	ObservedValue              float64  `json:"observed_value"`
+	ThresholdValue             float64  `json:"threshold_value"`
+	SignalPath                 string   `json:"signal_path"`
+	PrivilegeRequirement       string   `json:"privilege_requirement"`
+	DetectionLatencyMS         int      `json:"detection_latency_ms"`
+	DetectionLatencyMode       string   `json:"detection_latency_mode"`
+	DetectionLatencyIsAdvisory bool     `json:"detection_latency_is_advisory"`
+	FeatureFlagsApplied        []string `json:"feature_flags_applied,omitempty"`
+	QualityGuardrailState      string   `json:"quality_guardrail_state"`
+	DetectedAt                 string   `json:"detected_at"`
+	Notes                      string   `json:"notes,omitempty"`
+}
+
+// DecisionAnomalyMonitor emits anomaly events from dispatch decision telemetry.
+type DecisionAnomalyMonitor struct {
+	publisher          memorybroker.Publisher
+	now                func() time.Time
+	nextID             atomic.Uint64
+	latencyThresholdMS int
+	resolver           signalPathResolver
+	redactor           telemetryRedactor
+}
+
+func NewDecisionAnomalyMonitor(publisher memorybroker.Publisher, cfg DecisionAnomalyMonitorConfig) *DecisionAnomalyMonitor {
+	if publisher == nil {
+		return nil
+	}
+	if cfg.LatencyThresholdMS <= 0 {
+		cfg.LatencyThresholdMS = defaultAnomalyLatencyThresholdMS
+	}
+	return &DecisionAnomalyMonitor{
+		publisher:          publisher,
+		now:                time.Now,
+		latencyThresholdMS: cfg.LatencyThresholdMS,
+		resolver:           newSignalPathResolver(signalPathConfig{PreferEBPF: cfg.PreferEBPF, EBPFChecker: cfg.EBPFChecker}),
+		redactor:           newTelemetryRedactor(cfg.Redaction),
+	}
+}
+
+func (m *DecisionAnomalyMonitor) ObserveDecision(event DecisionEvent) error {
+	if m == nil || m.publisher == nil {
+		return nil
+	}
+	detectedAt := m.now().UTC()
+	signalPath, privilege, notes := m.resolver.resolve()
+
+	anomalies := make([]AnomalyEvent, 0, 2)
+	if event.ActualLatencyMS >= m.latencyThresholdMS {
+		anomalies = append(anomalies, m.newAnomaly(
+			event,
+			detectedAt,
+			signalPath,
+			privilege,
+			notes,
+			"latency_threshold_exceeded",
+			"warning",
+			float64(event.ActualLatencyMS),
+			float64(m.latencyThresholdMS),
+		))
+	}
+	if event.FallbackCount > 0 {
+		anomalies = append(anomalies, m.newAnomaly(
+			event,
+			detectedAt,
+			signalPath,
+			privilege,
+			notes,
+			"fallback_engaged",
+			"warning",
+			float64(event.FallbackCount),
+			0,
+		))
+	}
+
+	for _, anomaly := range anomalies {
+		if err := m.publisher.Publish(TopicDispatchAnomaly, anomaly); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *DecisionAnomalyMonitor) newAnomaly(
+	event DecisionEvent,
+	detectedAt time.Time,
+	signalPath, privilege, notes, reasonCode, severity string,
+	observed, threshold float64,
+) AnomalyEvent {
+	latencyMS, mode, advisory := detectionLatency(event.EmittedAt, detectedAt, signalPath)
+	return AnomalyEvent{
+		AnomalyID:                  fmt.Sprintf("anomaly-%d", m.nextID.Add(1)),
+		DecisionID:                 event.DecisionID,
+		CapabilityEpoch:            event.CapabilityEpoch,
+		SelectedProvider:           event.SelectedProvider,
+		ReasonCode:                 reasonCode,
+		Severity:                   severity,
+		ObservedValue:              observed,
+		ThresholdValue:             threshold,
+		SignalPath:                 signalPath,
+		PrivilegeRequirement:       privilege,
+		DetectionLatencyMS:         latencyMS,
+		DetectionLatencyMode:       mode,
+		DetectionLatencyIsAdvisory: advisory,
+		FeatureFlagsApplied:        event.FeatureFlagsApplied,
+		QualityGuardrailState:      event.QualityGuardrailState,
+		DetectedAt:                 detectedAt.Format(time.RFC3339Nano),
+		Notes:                      m.redactor.redactAnomalyNotes(notes),
+	}
+}

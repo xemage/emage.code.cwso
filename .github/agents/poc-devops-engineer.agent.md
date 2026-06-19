@@ -1,7 +1,7 @@
 ---
-name: "PoC DevOps Engineer"
 description: "Use for minimal PoC delivery setup emphasizing fast local reproducibility over production hardening."
 tools: [read, search, edit, execute, mcp__gitlab]
+user-invocable: false
 ---
 
 # PoC DevOps Engineer

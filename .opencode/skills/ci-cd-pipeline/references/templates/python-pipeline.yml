@@ -1,0 +1,74 @@
+# Reusable GitLab CI pipeline for Python projects (PEP 517/518).
+# Stages: install -> lint -> test -> build
+
+stages:
+  - install
+  - lint
+  - test
+  - build
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip"
+  PYTHON_VERSION: "3.12"
+
+default:
+  image: python:${PYTHON_VERSION}-slim
+  cache:
+    key:
+      files:
+        - pyproject.toml
+        - poetry.lock
+        - requirements*.txt
+    paths:
+      - .pip/
+      - .venv/
+
+install:
+  stage: install
+  script:
+    - python -m venv .venv
+    - . .venv/bin/activate
+    - pip install --upgrade pip
+    - if [ -f poetry.lock ]; then pip install poetry && poetry install --no-interaction; \
+      elif [ -f requirements.txt ]; then pip install -r requirements.txt; \
+      else pip install -e ".[dev]"; fi
+  artifacts:
+    paths:
+      - .venv/
+    expire_in: 1 hour
+
+lint:
+  stage: lint
+  needs: ["install"]
+  script:
+    - . .venv/bin/activate
+    - ruff check .
+    - ruff format --check .
+    - mypy .
+
+test:
+  stage: test
+  needs: ["install"]
+  script:
+    - . .venv/bin/activate
+    - pytest --junitxml=report.xml --cov --cov-report=xml --cov-report=term
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+
+build:
+  stage: build
+  needs: ["lint", "test"]
+  script:
+    - . .venv/bin/activate
+    - pip install build
+    - python -m build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week

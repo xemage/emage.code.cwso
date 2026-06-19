@@ -12,7 +12,12 @@
         "properties": {
           "agent_role": { "type": "string" },
           "objective_prompt": { "type": "string", "minLength": 1 },
-          "target_workspace_uuid": { "type": "string", "format": "uuid" }
+          "target_workspace_uuid": { "type": "string", "format": "uuid" },
+          "sandbox_profile": {
+            "type": "string",
+            "enum": ["docker-trusted", "gvisor-fast-ephemeral", "firecracker-secure-isolation"],
+            "description": "Requested sandbox isolation tier. Server policy is enforced server-side; callers cannot escalate to docker-trusted."
+          }
         },
         "required": ["agent_role", "objective_prompt", "target_workspace_uuid"],
         "additionalProperties": false

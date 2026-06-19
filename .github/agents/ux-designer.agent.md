@@ -1,7 +1,7 @@
 ---
-name: "UX Designer"
 description: "Use when creating wireframes, designing user flows, defining UI/UX specifications, planning information architecture, creating design system guidelines, evaluating usability, writing accessibility requirements, or specifying responsive layout behavior."
 tools: [read, search, edit, web]
+user-invocable: false
 ---
 
 # UX Designer

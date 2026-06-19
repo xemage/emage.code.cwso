@@ -1,7 +1,7 @@
 ---
-name: "Technical Writer"
 description: "Use when writing API documentation, creating user guides, generating README files, writing architecture decision records (ADRs), creating CONTRIBUTING guides, documenting deployment procedures, writing inline code documentation, or maintaining project wikis."
 tools: [read, search, edit, web]
+user-invocable: false
 ---
 
 # Technical Writer

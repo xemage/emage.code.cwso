@@ -1,7 +1,7 @@
 ---
-name: "QA Engineer"
 description: "Use when creating test plans, writing automated tests (unit, integration, e2e), performing test execution, reporting bugs, defining test strategies, checking test coverage, doing regression testing, or verifying acceptance criteria."
 tools: [read, search, edit, execute, web, mcp__playwright, mcp__gitlab]
+user-invocable: false
 ---
 
 # QA Engineer

@@ -1,6 +1,6 @@
 //! AST queries via tree-sitter.
 //!
-//! Phase 2 PoC supports Go and Python (POC-DEBT P2-3: Rust+TS in T029).
+//! Phase 2+ supports Go, Python, Rust, and TypeScript (T029: Rust+TS added).
 //! Implements the five query types specified in `query_ast`:
 //!   find_definition | find_references | extract_signature
 //!   | list_exports | detect_entrypoints
@@ -13,6 +13,8 @@ use tree_sitter::{Language, Node, Parser};
 pub enum Lang {
     Go,
     Python,
+    Rust,
+    TypeScript,
 }
 
 pub fn detect_language(path: &str) -> Option<Lang> {
@@ -20,19 +22,29 @@ pub fn detect_language(path: &str) -> Option<Lang> {
         Some(Lang::Go)
     } else if path.ends_with(".py") {
         Some(Lang::Python)
+    } else if path.ends_with(".rs") {
+        Some(Lang::Rust)
+    } else if path.ends_with(".ts")
+        || path.ends_with(".tsx")
+        || path.ends_with(".js")
+        || path.ends_with(".jsx")
+    {
+        Some(Lang::TypeScript)
     } else {
         None
     }
 }
 
 pub fn supported_languages() -> Vec<&'static str> {
-    vec!["go", "python"]
+    vec!["go", "python", "rust", "typescript"]
 }
 
 fn ts_language(lang: Lang) -> Language {
     match lang {
         Lang::Go => tree_sitter_go::language(),
         Lang::Python => tree_sitter_python::language(),
+        Lang::Rust => tree_sitter_rust::language(),
+        Lang::TypeScript => tree_sitter_typescript::language_typescript(),
     }
 }
 
@@ -47,22 +59,34 @@ fn definition_kinds(lang: Lang) -> &'static [&'static str] {
             "var_declaration",
         ],
         Lang::Python => &["function_definition", "class_definition"],
+        Lang::Rust => &[
+            "function_item",
+            "impl_item",
+            "struct_item",
+            "enum_item",
+            "trait_item",
+            "const_item",
+            "static_item",
+        ],
+        Lang::TypeScript => &[
+            "function_declaration",
+            "class_declaration",
+            "interface_declaration",
+            "type_alias_declaration",
+            "enum_declaration",
+            "module",
+        ],
     }
 }
 
 /// Identifier node kind name per language (for the symbol-name child lookup).
 fn name_field(lang: Lang) -> &'static str {
     match lang {
-        Lang::Go | Lang::Python => "name",
+        Lang::Go | Lang::Python | Lang::Rust | Lang::TypeScript => "name",
     }
 }
 
-pub fn query(
-    lang: Lang,
-    src: &[u8],
-    query_type: &str,
-    target: &str,
-) -> Result<serde_json::Value> {
+pub fn query(lang: Lang, src: &[u8], query_type: &str, target: &str) -> Result<serde_json::Value> {
     let mut parser = Parser::new();
     parser
         .set_language(&ts_language(lang))
@@ -141,6 +165,13 @@ pub fn query(
                         }
                     }
                 }
+                Lang::Rust | Lang::TypeScript => {
+                    if definition_kinds(lang).contains(&n.kind()) {
+                        if let Some(name) = node_name(n, src, name_field(lang)) {
+                            hits.push(json!({ "kind": n.kind(), "name": name }));
+                        }
+                    }
+                }
             });
             // For list_exports, target is ignored.
             let _ = target;
@@ -156,11 +187,20 @@ pub fn query(
                         }
                     }
                 }
-                Lang::Python => {
+                Lang::Python | Lang::TypeScript => {
                     // Look for `if __name__ == "__main__":`
                     if n.kind() == "if_statement" {
                         if let Ok(text) = n.utf8_text(src) {
                             if text.contains("__name__") && text.contains("__main__") {
+                                hits.push(node_to_json(n, src));
+                            }
+                        }
+                    }
+                }
+                Lang::Rust => {
+                    if n.kind() == "function_item" {
+                        if let Some(name) = node_name(n, src, name_field(lang)) {
+                            if name == "main" {
                                 hits.push(node_to_json(n, src));
                             }
                         }
@@ -173,7 +213,12 @@ pub fn query(
     }
 
     Ok(json!({
-        "language": match lang { Lang::Go => "go", Lang::Python => "python" },
+        "language": match lang {
+            Lang::Go => "go",
+            Lang::Python => "python",
+            Lang::Rust => "rust",
+            Lang::TypeScript => "typescript",
+        },
         "query_type": query_type,
         "target_symbol": target,
         "hits": hits,
@@ -257,6 +302,22 @@ mod tests {
     fn go_detect_entrypoint() {
         let src = b"package main\nfunc main() { println(\"hi\") }\n";
         let res = query(Lang::Go, src, "detect_entrypoints", "").unwrap();
+        let hits = res["hits"].as_array().unwrap();
+        assert_eq!(hits.len(), 1);
+    }
+
+    #[test]
+    fn rust_find_definition() {
+        let src = b"fn helper() {}\nfn main() {}\n";
+        let res = query(Lang::Rust, src, "find_definition", "main").unwrap();
+        let hits = res["hits"].as_array().unwrap();
+        assert_eq!(hits.len(), 1);
+    }
+
+    #[test]
+    fn typescript_find_definition() {
+        let src = b"export function greet(name: string): string { return `hi ${name}`; }\n";
+        let res = query(Lang::TypeScript, src, "find_definition", "greet").unwrap();
         let hits = res["hits"].as_array().unwrap();
         assert_eq!(hits.len(), 1);
     }

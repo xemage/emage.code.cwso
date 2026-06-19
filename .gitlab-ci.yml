@@ -1,0 +1,273 @@
+# CWSO CI/CD pipeline.
+#
+# Stages:
+#   * lint   — go vet, gofmt check, cargo fmt --check
+#   * build  — orchestrator (Go) + cwso-git-shadow (Rust) Docker images
+#   * test   — go test -race + cargo test (release)
+#   * e2e    — docker-compose-driven Phase-2 integration test
+#   * deploy — placeholder for future container registry pushes
+#
+# Runner layout (Option A — Docker socket binding):
+#   * tag `docker` — lint / test / audit (no Docker daemon required)
+#   * tag `dind`   — build / e2e / deploy (runner mounts /var/run/docker.sock)
+#
+# Do NOT set DOCKER_TLS_CERTDIR globally; that forces tcp://docker:2375 (DinD).
+
+stages:
+  - lint
+  - build
+  - test
+  - audit
+  - e2e
+  - deploy
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+  # Cache cargo registry across jobs.
+  CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+  GOPATH: "$CI_PROJECT_DIR/.gopath"
+
+default:
+  interruptible: true
+  tags: [docker]
+
+# Shared template for jobs that talk to the host Docker daemon via socket.
+.docker-socket:
+  tags: [dind]
+  variables:
+    DOCKER_HOST: unix:///var/run/docker.sock
+
+# -----------------------------------------------------------------------------
+# Lint
+# -----------------------------------------------------------------------------
+
+go:lint:
+  stage: lint
+  image: golang:1.25
+  cache:
+    key: go-mod-$CI_COMMIT_REF_SLUG
+    paths: [.gopath/pkg/mod]
+  script:
+    - cd orchestrator
+    - test -z "$(gofmt -l .)" || (echo 'gofmt issues:' && gofmt -d . && exit 1)
+    - go vet ./...
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+rust:lint:
+  stage: lint
+  image: rust:1.86
+  cache:
+    key: cargo-$CI_COMMIT_REF_SLUG
+    paths: [.cargo, services/target]
+  script:
+    - cd services
+    - rustup component add rustfmt clippy
+    - cargo fmt --all -- --check
+  allow_failure: true   # PoC phase: clippy/fmt warnings should not block.
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# -----------------------------------------------------------------------------
+# Test
+# -----------------------------------------------------------------------------
+
+go:test:
+  stage: test
+  image: golang:1.25
+  cache:
+    key: go-mod-$CI_COMMIT_REF_SLUG
+    paths: [.gopath/pkg/mod]
+  variables:
+    CGO_ENABLED: "1"
+  script:
+    - cd orchestrator
+    - go test ./... -race -coverprofile=coverage.out -covermode=atomic
+    - go tool cover -func=coverage.out | tail -1
+  coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
+  artifacts:
+    when: always
+    paths: [orchestrator/coverage.out]
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+rust:test:
+  stage: test
+  image: rust:1.86-slim
+  cache:
+    key: cargo-$CI_COMMIT_REF_SLUG
+    paths: [.cargo, services/target]
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq build-essential pkg-config cmake ca-certificates >/dev/null
+  script:
+    - cd services
+    - cargo test --release -p cwso-git-shadow
+    - cargo test --release -p cwso-merge-engine
+    - cargo test --release -p cwso-hal
+    - cargo test --release -p cwso-sparse
+    - cargo test --release -p cwso-rollout
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# -----------------------------------------------------------------------------
+# Dependency audit (T094)
+# -----------------------------------------------------------------------------
+# Scans Go and Rust dependency trees for known vulnerabilities. Blocking gate
+# since T140 (v0.3.0 GA hardening); rust:lint remains advisory.
+
+go:audit:
+  stage: audit
+  image: golang:1.25
+  cache:
+    key: go-mod-$CI_COMMIT_REF_SLUG
+    paths: [.gopath/pkg/mod]
+  script:
+    - go install golang.org/x/vuln/cmd/govulncheck@latest
+    - cd orchestrator
+    - $GOPATH/bin/govulncheck ./...
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+rust:audit:
+  stage: audit
+  image: rust:1.86
+  cache:
+    key: cargo-$CI_COMMIT_REF_SLUG
+    paths: [.cargo, services/target]
+  script:
+    - cargo install cargo-audit --locked --version 0.22.1
+    - cd services
+    - cargo audit
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# -----------------------------------------------------------------------------
+# Build container images
+# -----------------------------------------------------------------------------
+
+.docker-base:
+  extends: .docker-socket
+  stage: build
+  image: docker:27
+  before_script:
+    - docker info >/dev/null
+
+build:orchestrator:
+  extends: .docker-base
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE/orchestrator:$CI_COMMIT_SHORT_SHA -f deploy/Dockerfile.orchestrator .
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
+build:git-shadow:
+  extends: .docker-base
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE/git-shadow:$CI_COMMIT_SHORT_SHA -f deploy/Dockerfile.git-shadow .
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
+build:merge-engine:
+  extends: .docker-base
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE/merge-engine:$CI_COMMIT_SHORT_SHA -f deploy/Dockerfile.merge-engine .
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
+# -----------------------------------------------------------------------------
+# End-to-end integration tests
+# -----------------------------------------------------------------------------
+
+.e2e-base:
+  extends: .docker-socket
+  stage: e2e
+  image: docker:27
+  variables:
+    CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"
+  before_script:
+    - apk add --no-cache python3 docker-cli-compose iproute2
+    # JWT is injected via deploy/docker-compose.ci.yml (avoids host bind-mount path issues).
+    # Compose publishes 8080 on the host; reach it via the container default gateway.
+    - export CWSO_BASE_URL="http://$(ip route | awk '/default/ {print $3}'):8080"
+    - docker info >/dev/null
+  script:
+    - python3 scripts/phase2-integration.py
+
+e2e:phase2:
+  extends: .e2e-base
+  needs: ["build:orchestrator", "build:git-shadow"]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+e2e:phase4-swarm:
+  extends: .e2e-base
+  needs: ["build:orchestrator", "build:git-shadow", "build:merge-engine", "e2e:phase2"]
+  variables:
+    CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"
+    CWSO_COMPOSE_PROFILES: "phase2,phase4"
+    CWSO_PHASE4_MATRIX: "1"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# -----------------------------------------------------------------------------
+# Deploy (placeholder)
+# -----------------------------------------------------------------------------
+
+deploy:registry:
+  extends: .docker-socket
+  stage: deploy
+  image: docker:27
+  needs:
+    - job: build:orchestrator
+    - job: build:git-shadow
+    - job: e2e:phase2
+      optional: true   # T153: e2e excluded on tag pipelines; develop/main still gate deploy
+  before_script:
+    - docker info >/dev/null
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  # Tag pipelines skip e2e; build and deploy may land on different dind runners, so
+  # locally built images are not guaranteed — rebuild when missing before retag/push.
+  script:
+    - |
+      ensure_local_image() {
+        local name="$1"
+        local dockerfile="$2"
+        local img="${CI_REGISTRY_IMAGE}/${name}:${CI_COMMIT_SHORT_SHA}"
+        if docker image inspect "${img}" >/dev/null 2>&1; then
+          echo "Image ${img} present locally"
+        else
+          echo "Image ${img} missing locally; building on this runner..."
+          docker build -t "${img}" -f "${dockerfile}" .
+        fi
+      }
+      ensure_local_image orchestrator deploy/Dockerfile.orchestrator
+      ensure_local_image git-shadow deploy/Dockerfile.git-shadow
+    - docker tag $CI_REGISTRY_IMAGE/orchestrator:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE/orchestrator:latest
+    - docker tag $CI_REGISTRY_IMAGE/git-shadow:$CI_COMMIT_SHORT_SHA   $CI_REGISTRY_IMAGE/git-shadow:latest
+    - docker push $CI_REGISTRY_IMAGE/orchestrator:latest
+    - docker push $CI_REGISTRY_IMAGE/git-shadow:latest
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG

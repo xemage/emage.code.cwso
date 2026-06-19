@@ -1,8 +1,8 @@
 ---
-name: "Orchestrator"
 description: "Central project coordinator. Receives user requests, decomposes them into task graphs, delegates to specialist agents, tracks progress via checkpoints, and ensures quality through validation gates. Implements Plan-Approve-Execute workflow. Use when starting a new project, planning features, or coordinating development work."
 tools: [read, search, edit, execute, agent, web, todo, mcp__gitlab, mcp__memory, mcp__sequential-thinking]
 agents: [product-owner, solution-architect, scrum-master, tech-lead, backend-developer, frontend-developer, database-engineer, qa-engineer, security-engineer, devops-engineer, release-manager, technical-writer, ux-designer]
+user-invocable: true
 ---
 
 # Project Orchestrator

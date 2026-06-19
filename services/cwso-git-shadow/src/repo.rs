@@ -89,7 +89,9 @@ impl ShadowStore {
         check_path(path)?;
         let oid = self.repo.lock().blob(content)?;
         let mut wss = self.workspaces.lock();
-        let ws = wss.get_mut(&id).ok_or_else(|| anyhow!("no such workspace"))?;
+        let ws = wss
+            .get_mut(&id)
+            .ok_or_else(|| anyhow!("no such workspace"))?;
         ws.files.insert(path.to_string(), oid);
         Ok(oid)
     }
@@ -114,6 +116,31 @@ impl ShadowStore {
         let mut out: Vec<String> = ws.files.keys().cloned().collect();
         out.sort();
         Ok(out)
+    }
+
+    fn workspace_meta(&self, id: Uuid) -> Result<serde_json::Value> {
+        let wss = self.workspaces.lock();
+        let ws = wss.get(&id).ok_or_else(|| anyhow!("no such workspace"))?;
+        let mut files: Vec<serde_json::Value> = ws
+            .files
+            .iter()
+            .map(|(path, oid)| {
+                json!({
+                    "path": path,
+                    "blob_oid": oid.to_string(),
+                })
+            })
+            .collect();
+        files.sort_by(|a, b| {
+            a["path"]
+                .as_str()
+                .unwrap_or_default()
+                .cmp(b["path"].as_str().unwrap_or_default())
+        });
+        Ok(json!({
+            "base_tree_oid": ws.base_tree.map(|o| o.to_string()),
+            "files": files,
+        }))
     }
 
     fn commit(&self, id: Uuid, message: &str) -> Result<(Oid, Oid)> {
@@ -163,8 +190,8 @@ impl ShadowStore {
         target: &str,
     ) -> Result<serde_json::Value> {
         let bytes = self.read_file(id, path)?;
-        let lang = ast::detect_language(path)
-            .ok_or_else(|| anyhow!("unsupported language for {path}"))?;
+        let lang =
+            ast::detect_language(path).ok_or_else(|| anyhow!("unsupported language for {path}"))?;
         ast::query(lang, &bytes, query_type, target)
     }
 
@@ -202,17 +229,28 @@ pub fn dispatch(store: &Arc<ShadowStore>, req: Request) -> Response {
             let ids: Vec<String> = wss.keys().map(|u| u.to_string()).collect();
             Ok(json!({ "workspace_uuids": ids }))
         }
+        Request::GetWorkspace { workspace_uuid } => {
+            let id = Uuid::parse_str(&workspace_uuid)?;
+            store.workspace_meta(id)
+        }
         Request::DropWorkspace { workspace_uuid } => {
             let id = Uuid::parse_str(&workspace_uuid)?;
             Ok(json!({ "dropped": store.drop_workspace(id) }))
         }
-        Request::WriteFile { workspace_uuid, path, content_b64 } => {
+        Request::WriteFile {
+            workspace_uuid,
+            path,
+            content_b64,
+        } => {
             let id = Uuid::parse_str(&workspace_uuid)?;
             let bytes = B64.decode(content_b64.as_bytes())?;
             let oid = store.write_file(id, &path, &bytes)?;
             Ok(json!({ "blob_oid": oid.to_string(), "size": bytes.len() }))
         }
-        Request::ReadFile { workspace_uuid, path } => {
+        Request::ReadFile {
+            workspace_uuid,
+            path,
+        } => {
             let id = Uuid::parse_str(&workspace_uuid)?;
             let bytes = store.read_file(id, &path)?;
             Ok(json!({ "content_b64": B64.encode(&bytes), "size": bytes.len() }))
@@ -221,7 +259,10 @@ pub fn dispatch(store: &Arc<ShadowStore>, req: Request) -> Response {
             let id = Uuid::parse_str(&workspace_uuid)?;
             Ok(json!({ "files": store.list_files(id)? }))
         }
-        Request::Commit { workspace_uuid, message } => {
+        Request::Commit {
+            workspace_uuid,
+            message,
+        } => {
             let id = Uuid::parse_str(&workspace_uuid)?;
             let (tree_oid, commit_oid) = store.commit(id, &message)?;
             Ok(json!({
@@ -229,7 +270,12 @@ pub fn dispatch(store: &Arc<ShadowStore>, req: Request) -> Response {
                 "commit_oid": commit_oid.to_string(),
             }))
         }
-        Request::QueryAst { workspace_uuid, path, query_type, target_symbol } => {
+        Request::QueryAst {
+            workspace_uuid,
+            path,
+            query_type,
+            target_symbol,
+        } => {
             let id = Uuid::parse_str(&workspace_uuid)?;
             store.query_ast(id, &path, &query_type, &target_symbol)
         }
@@ -277,6 +323,27 @@ mod tests {
         s.write_file(b, "f.txt", b"BBB").unwrap();
         assert_eq!(s.read_file(a, "f.txt").unwrap(), b"AAA");
         assert_eq!(s.read_file(b, "f.txt").unwrap(), b"BBB");
+    }
+
+    #[test]
+    fn workspace_meta_reports_base_tree_and_files() {
+        let s = store();
+        let (seed_id, _) = s.create(None).unwrap();
+        s.write_file(seed_id, "seed.txt", b"seed").unwrap();
+        let (tree_oid, commit_oid) = s.commit(seed_id, "seed").unwrap();
+        let (id, _) = s.create(Some(commit_oid.to_string())).unwrap();
+        s.write_file(id, "z.txt", b"z").unwrap();
+        s.write_file(id, "a.txt", b"a").unwrap();
+        let meta = s.workspace_meta(id).unwrap();
+        assert_eq!(
+            meta["base_tree_oid"].as_str(),
+            Some(tree_oid.to_string().as_str())
+        );
+        let files = meta["files"].as_array().expect("files");
+        assert_eq!(files.len(), 3);
+        assert_eq!(files[0]["path"].as_str(), Some("a.txt"));
+        assert_eq!(files[1]["path"].as_str(), Some("seed.txt"));
+        assert_eq!(files[2]["path"].as_str(), Some("z.txt"));
     }
 
     #[test]

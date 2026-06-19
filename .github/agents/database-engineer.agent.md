@@ -1,7 +1,7 @@
 ---
-name: "Database Engineer"
 description: "Use when designing database schemas, creating migrations, writing complex queries, optimizing query performance, setting up indexes, designing ERD diagrams, handling data modeling, or managing database infrastructure."
 tools: [read, search, edit, execute, web]
+user-invocable: false
 ---
 
 # Database Engineer
