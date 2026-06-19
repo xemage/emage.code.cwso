@@ -139,17 +139,53 @@ Use this fix sequence:
 
 Important: CWSO does not require you to manually register an OAuth client ID for this local JWT flow.
 
+## 7a. Rate limiting & development
+
+CWSO enforces rate limiting to protect against abuse:
+
+- **Localhost (127.0.0.1, ::1):** Exempt from rate limiting (development convenience)
+- **Remote IPs:** 60 requests/minute with burst capacity for connection initialization
+- **VS Code MCP client behavior:** May show `[info] Error 429 ...` during initial connection attempts as it probes the endpoint
+
+**For local development (typical scenario):**
+- No rate limiting applies when connecting from the same machine
+- Connection should succeed on first attempt
+
+**If you see 429 errors:**
+1. Confirm you're running CWSO and VS Code on the same machine (localhost)
+2. If connecting remotely, wait 60 seconds before retrying
+3. The server logs `rate limit exceeded` for remote clients only
+
 ## 8. Common issues
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | `${env:CWSO_MCP_TOKEN}` not resolved | Variable not exported to extension host env | `export ...`, then start `code .` from same shell or reload window |
 | OAuth client ID prompt | Missing/invalid `Authorization` header | Fix token export; keep Bearer header in `mcp.json` |
+| Error 429 (too many requests) | Rate limiting (remote IPs only) | Localhost is exempt; if still occurs, wait 60s and retry |
 | 401 on `/mcp` | JWT mismatch/expired | Mint new token, check `iss`, `aud`, `role` |
 | 403 on `/mcp` | Origin not allowed | Ensure header `Origin: http://localhost` and allowlist settings |
 | `curl /healthz` OK but MCP fails | Auth path issue, not server uptime | Validate with authenticated `tools/list` curl |
+| `[info] ... Error 429 ...` logged | VS Code extension logging level (not server) | This is informational; no action needed if connection succeeds after retry |
 
-## 9. Recommended daily workflow
+## 9. About VS Code MCP extension logging
+
+VS Code's MCP extension logs all connection-related events (including errors) at `[info]` level rather than `[error]`. This is expected behavior:
+
+- `[info] Starting server cwso` — server start attempt
+- `[info] Connection state: Error 429 ...` — connection error message, logged at info level
+- `[info] Connection state: Running` — successful connection
+
+**Don't be alarmed:** Information-level messages with error content are normal during connection establishment. The client automatically retries on 429 (rate limit) and other transient errors.
+
+**Expected flow:**
+1. `Starting server cwso` — attempt 1
+2. Possibly one or more `Error 429` messages as client probes endpoint
+3. `Connection state: Running` — connection established
+
+This is not a bug; it's how VS Code's extension logs connection lifecycle events.
+
+## 10. Recommended daily workflow
 
 ```bash
 cd <repo-root>
@@ -162,7 +198,7 @@ code .
 
 Then use MCP tools from VS Code.
 
-## 10. Related docs
+## 11. Related docs
 
 - `docs/user/installation-v2.md` (full feature and rollout reference)
 - `docs/user/ide-integration-v2.md` (IDE-focused setup and troubleshooting)
