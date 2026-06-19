@@ -61,11 +61,11 @@ Append-only log. Entries move here after the orchestrator marks a task `done`.
 | T148 | Evaluator registry + SWE-bench hook | backend-developer | 2026-06-09 | Migrated from active-tasks.md board cleanup |
 | T156 | Comprehensive installation guide v2 (v0.4.0) | technical-writer | 2026-06-09 | Migrated from active-tasks.md board cleanup |
 | T157 | v0.4.0 release readiness | release-manager | 2026-06-09 | Migrated from active-tasks.md board cleanup |
-| T150 | KV differential prompting | backend-developer | 2026-06-19 | `services/cwso-rollout/src/capture.rs`; test `differential_prompting_strips_prefix_tokens_on_cache_hit` PASS |
-| T151 | Offline SFT data generation mode | backend-developer | 2026-06-19 | `orchestrator/internal/rollout/service.go`; tests TestGenerateOfflineTaskCompletesWithoutCallback + TestHTTPOfflineGenerate PASS |
-| T158 | Fix local Phase 2 integration auth mismatch | backend-developer | 2026-06-19 | `.env.jwt.dev` canonical source; `make smoke-local` PASS (9/9 checks) |
-| T159 | Add deterministic one-command local smoke target | devops-engineer | 2026-06-19 | `Makefile` smoke-local target; installation guide updated |
-| T160 | Reconcile v0.4.0 GA documentation drift | technical-writer | 2026-06-19 | checkpoint-014 + installation-v2.md updated to v0.4.0 GA state |
-| T161 | Clean active/completed task board hygiene | scrum-master | 2026-06-19 | 80 tasks migrated to completed-tasks.md; active board cleared |
-| T162 | Remediate high-value reliability/security technical debt | backend-developer | 2026-06-19 | TestCloseCancelsQueuedJobs + TestPublishLifecycleErrorIsRedacted PASS; TD-05/06/08 resolved |
-| T163 | Hardening and Polar parity validation gate | qa / security / tech-lead | 2026-06-19 | `docs/artifacts/gate-v0.4.1-hardening-2026-06-18.md`; QA + Security + Tech-Lead PASS |
+| T150 | KV differential prompting | backend-developer | 2026-06-19 | `services/cwso-rollout/src/capture.rs`; test `differential_prompting_strips_prefix_tokens_on_cache_hit` PASS; implemented in MR !70 / tag `v0.4.1` |
+| T151 | Offline SFT data generation mode | backend-developer | 2026-06-19 | `orchestrator/internal/rollout/service.go`; tests TestGenerateOfflineTaskCompletesWithoutCallback + TestHTTPOfflineGenerate PASS; implemented in MR !70 / tag `v0.4.1` |
+| T158 | Fix local Phase 2 integration auth mismatch | backend-developer | 2026-06-19 | `.env.jwt.dev` canonical source; `make smoke-local` PASS (9/9 checks); included in MR !70 / tag `v0.4.1` |
+| T159 | Add deterministic one-command local smoke target | devops-engineer | 2026-06-19 | `Makefile` smoke-local target; installation guide updated; included in MR !70 / tag `v0.4.1` |
+| T160 | Reconcile v0.4.0 GA documentation drift | technical-writer | 2026-06-19 | checkpoint-014 + installation-v2.md updated to v0.4.0 GA state; included in MR !70 / tag `v0.4.1` |
+| T161 | Clean active/completed task board hygiene | scrum-master | 2026-06-19 | 80 tasks migrated to completed-tasks.md; active board cleared; included in MR !70 / tag `v0.4.1` |
+| T162 | Remediate high-value reliability/security technical debt | backend-developer | 2026-06-19 | TestCloseCancelsQueuedJobs + TestPublishLifecycleErrorIsRedacted PASS; TD-05/06/08 resolved; included in MR !70 / tag `v0.4.1` |
+| T163 | Hardening and Polar parity validation gate | qa / security / tech-lead | 2026-06-19 | `docs/archive/artifacts/gate-v0.4.1-hardening-2026-06-18.md`; QA + Security + Tech-Lead PASS; release MR !70 merged; GA tag `v0.4.1` published |

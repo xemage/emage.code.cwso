@@ -3,7 +3,7 @@
 ## Metadata
 - Producer agent: backend-developer / release-manager
 - Created: 2026-06-19
-- Based on: `gate-v0.4.1-hardening-2026-06-18.md`, v0.4.0 baseline, T150–T163
+- Based on: `docs/archive/artifacts/gate-v0.4.1-hardening-2026-06-18.md`, v0.4.0 baseline, T150–T163
 - **develop tip:** `a3c9c31` (post-CI-fix)
 - **Prior GA tag:** `v0.4.0` @ published 2026-06-09
 
@@ -48,7 +48,7 @@
 ### Documentation
 - [`docs/user/installation-v2.md`](../user/installation-v2.md): Updated with new env vars and endpoints
 - [`docs/checkpoints/checkpoint-015-v0.4.1-hardening-complete.md`](../checkpoints/checkpoint-015-v0.4.1-hardening-complete.md): Complete execution record of v0.4.1 hardening sprint
-- [`docs/artifacts/gate-v0.4.1-hardening-2026-06-18.md`](./gate-v0.4.1-hardening-2026-06-18.md): Validation gate artifact with PASS verdict
+- [`docs/archive/artifacts/gate-v0.4.1-hardening-2026-06-18.md`](../archive/artifacts/gate-v0.4.1-hardening-2026-06-18.md): Validation gate artifact with PASS verdict
 
 ### Operations
 - Board hygiene: Migrated 80 completed tasks (T080–T157) to `completed-tasks.md`
@@ -65,7 +65,7 @@ All other flags unchanged from v0.4.0.
 
 ## Validation and CI evidence
 
-- **Hardening validation gate:** PASS (QA + security + tech-lead) per `gate-v0.4.1-hardening-2026-06-18.md`
+- **Hardening validation gate:** PASS (QA + security + tech-lead) per `docs/archive/artifacts/gate-v0.4.1-hardening-2026-06-18.md`
 - **End-to-end smoke test:** `make smoke-local` PASS on clean stack lifecycle
 - **All unit tests:** Go tests 4/4 pass, Rust tests 33/33 pass (race-free)
 - **CI pipeline:** `develop` pipeline #2611568664 all jobs green (lint, build, test, e2e)
