@@ -1,0 +1,129 @@
+---
+description: "Use for proof-of-concept workstreams where speed and hypothesis validation are primary goals. Enforces mandatory debt tracking, hypothesis-first validation, and debt scorecards."
+globs: "**"
+---
+
+# PoC Guidelines
+
+## Primary Goal
+Validate the target hypothesis quickly and clearly.
+
+## Hypothesis-First Validation
+
+Every PoC must begin with a clearly stated hypothesis before any code is written.
+
+### Hypothesis Format
+```
+HYPOTHESIS: [What we believe]
+VALIDATION: [How we will prove/disprove it]
+SUCCESS CRITERIA: [Measurable outcome that confirms the hypothesis]
+FAILURE CRITERIA: [Measurable outcome that disproves the hypothesis]
+```
+
+### Example
+```
+HYPOTHESIS: WebSocket-based real-time sync can maintain <100ms latency
+             with 50 concurrent users on a single server instance.
+VALIDATION: Build minimal WebSocket server with echo test, measure p95 latency
+            under simulated 50-user load using k6.
+SUCCESS CRITERIA: p95 latency < 100ms over a 5-minute sustained test
+FAILURE CRITERIA: p95 latency > 200ms OR connection drops > 1%
+```
+
+### Rules
+1. **No code before hypothesis** — The hypothesis must be documented before implementation starts
+2. **One hypothesis per PoC** — Keep scope tight. If multiple hypotheses emerge, split into separate PoCs
+3. **Time-box strictly** — Every PoC has a hard deadline. If the hypothesis isn't validated by the deadline, it fails
+4. **Binary outcome** — A PoC either validates or invalidates the hypothesis. "Partially validated" requires a follow-up PoC with refined criteria
+
+## Priorities
+1. Demonstrability over completeness
+2. Feasibility evidence over architecture perfection
+3. Fast iteration over broad scope
+
+## Allowed Shortcuts
+- Narrow test coverage to happy path
+- Minimal infrastructure setup
+- Temporary integration adapters
+
+## Mandatory Debt Tracking
+
+Every shortcut taken during a PoC **must** be tracked. Untracked debt is unacceptable — it becomes invisible and compounds.
+
+### Inline Debt Tags
+When introducing a shortcut in code, mark it with an HTML comment tag:
+
+```
+<!-- POC-DEBT: description of the shortcut and what the production version needs -->
+```
+
+### Examples
+```python
+# <!-- POC-DEBT: Hardcoded connection string; production must use secret vault -->
+db_url = "postgresql://localhost:5432/poc_db"
+
+# <!-- POC-DEBT: No input validation; production must validate all user input -->
+def create_user(name, email):
+    return db.insert({"name": name, "email": email})
+
+# <!-- POC-DEBT: Synchronous call; production should use async with retry -->
+response = requests.post(external_api_url, json=payload)
+```
+
+### Debt Tag Rules
+1. Every `POC-DEBT` tag must describe **what** the shortcut is and **what** the production solution needs
+2. Tags must be placed directly adjacent to the shortcut code (same line or line above)
+3. Generic tags like `<!-- POC-DEBT: fix later -->` are not acceptable — be specific
+4. Debt tags must also be registered in the debt scorecard (see below)
+
+## Debt Scorecard
+
+Before a PoC can be marked as complete, a **debt scorecard** must be produced. This is a summary document that inventories all shortcuts taken.
+
+### Scorecard Format
+Create a `POC-DEBT-SCORECARD.md` file in the PoC root with this structure:
+
+```markdown
+# PoC Debt Scorecard
+
+## Hypothesis
+[Copy the hypothesis from the PoC definition]
+
+## Result
+[VALIDATED / INVALIDATED]
+
+## Debt Inventory
+
+| # | File | Line | Category | Description | Production Effort |
+|---|------|------|----------|-------------|-------------------|
+| 1 | src/db.py | 12 | Security | Hardcoded connection string | S — use vault integration |
+| 2 | src/api.py | 34 | Validation | No input validation | M — add schema validation |
+| 3 | src/sync.py | 56 | Reliability | No retry logic | M — add retry with backoff |
+
+## Summary
+- Total debt items: N
+- Critical (must fix before production): X
+- Medium (should fix before production): Y
+- Low (nice to have): Z
+
+## Recommendation
+[Go / No-Go for production implementation, with conditions]
+```
+
+### Scorecard Rules
+1. The scorecard must account for **every** `POC-DEBT` tag in the codebase
+2. Each item must have an estimated production effort: `S` (small), `M` (medium), `L` (large)
+3. The scorecard must be reviewed by the Tech Lead before the PoC is closed
+4. No PoC task may be marked complete without a finalized scorecard
+
+## Required Debt Marking (Legacy)
+When introducing shortcuts, document them with `DEBT:` comments and update `TECHNICAL-DEBT.md`.
+
+> **Note:** The `POC-DEBT` tag format above supersedes the legacy `DEBT:` comment format. Use `POC-DEBT` tags for all new PoC work.
+
+## Not Allowed
+- Exposing secrets in code
+- Using real PII in demos
+- Claiming production readiness without explicit criteria
+- Marking a PoC complete without a debt scorecard
+- Starting implementation without a documented hypothesis

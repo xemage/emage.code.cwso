@@ -1,7 +1,7 @@
 ---
-name: "Data Mockup Agent"
 description: "Use for generating realistic synthetic demo data for PoCs when production data is unavailable or inappropriate."
 tools: [read, search, edit, execute]
+user-invocable: false
 ---
 
 # Data Mockup Agent

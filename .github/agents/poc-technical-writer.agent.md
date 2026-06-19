@@ -1,7 +1,7 @@
 ---
-name: "PoC Technical Writer"
 description: "Use for minimal PoC documentation: run steps, assumptions, and demo walkthrough."
 tools: [read, search, edit]
+user-invocable: false
 ---
 
 # PoC Technical Writer

@@ -1,61 +1,229 @@
 package transport
 
 import (
+	"bufio"
+	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/emage/cwso/orchestrator/internal/config"
+	"github.com/emage/cwso/orchestrator/internal/eventbus"
+	"github.com/emage/cwso/orchestrator/internal/logging"
+	"github.com/emage/cwso/orchestrator/internal/memorybroker"
+	"github.com/golang-jwt/jwt/v5"
 )
 
-func makeToken(secret string, claims map[string]any) string {
-	hdr, _ := json.Marshal(map[string]string{"alg": "HS256", "typ": "JWT"})
-	body, _ := json.Marshal(claims)
+type sseTestHarness struct {
+	server    *httptest.Server
+	token     string
+	bus       *eventbus.Bus
+	broker    *memorybroker.Broker
+	publisher eventPublisher
+}
+
+func makeJWT(secret string, claims *jwtClaims) string {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, _ := token.SignedString([]byte(secret))
+	return tokenString
+}
+
+func TestVerifyJWT_ValidHS256(t *testing.T) {
+	secret := "test-secret-32-bytes-minimum-padding-x"
+	cfg := &config.Config{
+		JWTSecret:   secret,
+		JWTAlg:      "HS256",
+		JWTIssuer:   "cwso",
+		JWTAudience: "cwso-mcp",
+	}
+	log := logging.New("debug")
+
+	claims := &jwtClaims{
+		Role: "worker",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "alice",
+			Issuer:    "cwso",
+			Audience:  jwt.ClaimStrings{"cwso-mcp"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+		},
+	}
+	tok := makeJWT(secret, claims)
+
+	verified, err := verifyJWT(tok, cfg, log)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if verified.Subject != "alice" || verified.Role != "worker" {
+		t.Fatalf("unexpected claims: %+v", verified)
+	}
+}
+
+func TestVerifyJWT_Expired(t *testing.T) {
+	secret := "test-secret-32-bytes-minimum-padding-x"
+	cfg := &config.Config{
+		JWTSecret:   secret,
+		JWTAlg:      "HS256",
+		JWTIssuer:   "cwso",
+		JWTAudience: "cwso-mcp",
+	}
+	log := logging.New("debug")
+
+	claims := &jwtClaims{
+		Role: "worker",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Hour)),
+		},
+	}
+	tok := makeJWT(secret, claims)
+
+	_, err := verifyJWT(tok, cfg, log)
+	if err == nil || err.Error() != "token expired" {
+		t.Fatalf("expected 'token expired' error, got: %v", err)
+	}
+}
+
+func TestVerifyJWT_WrongIssuer(t *testing.T) {
+	secret := "test-secret-32-bytes-minimum-padding-x"
+	cfg := &config.Config{
+		JWTSecret:   secret,
+		JWTAlg:      "HS256",
+		JWTIssuer:   "cwso",
+		JWTAudience: "cwso-mcp",
+	}
+	log := logging.New("debug")
+
+	claims := &jwtClaims{
+		Role: "worker",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "wrong-issuer",
+			Audience:  jwt.ClaimStrings{"cwso-mcp"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+		},
+	}
+	tok := makeJWT(secret, claims)
+
+	_, err := verifyJWT(tok, cfg, log)
+	if err == nil || err.Error() != "invalid issuer: expected \"cwso\", got \"wrong-issuer\"" {
+		t.Fatalf("expected issuer validation error, got: %v", err)
+	}
+}
+
+func TestVerifyJWT_WrongAudience(t *testing.T) {
+	secret := "test-secret-32-bytes-minimum-padding-x"
+	cfg := &config.Config{
+		JWTSecret:   secret,
+		JWTAlg:      "HS256",
+		JWTIssuer:   "cwso",
+		JWTAudience: "cwso-mcp",
+	}
+	log := logging.New("debug")
+
+	claims := &jwtClaims{
+		Role: "worker",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "cwso",
+			Audience:  jwt.ClaimStrings{"wrong-audience"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+		},
+	}
+	tok := makeJWT(secret, claims)
+
+	_, err := verifyJWT(tok, cfg, log)
+	if err == nil || err.Error() != "invalid audience: expected \"cwso-mcp\"" {
+		t.Fatalf("expected audience validation error, got: %v", err)
+	}
+}
+
+func TestVerifyJWT_WrongAlgorithm(t *testing.T) {
+	secret := "test-secret-32-bytes-minimum-padding-x"
+	cfg := &config.Config{
+		JWTSecret:   secret,
+		JWTAlg:      "HS256",
+		JWTIssuer:   "cwso",
+		JWTAudience: "cwso-mcp",
+	}
+	log := logging.New("debug")
+
+	// Create token with RS256 (wrong algorithm)
+	hdr, _ := json.Marshal(map[string]string{"alg": "RS256", "typ": "JWT"})
+	body, _ := json.Marshal(map[string]any{"sub": "alice", "role": "worker"})
 	h := base64.RawURLEncoding.EncodeToString(hdr)
 	b := base64.RawURLEncoding.EncodeToString(body)
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(h + "." + b))
 	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	return h + "." + b + "." + sig
+	tok := h + "." + b + "." + sig
+
+	_, err := verifyJWT(tok, cfg, log)
+	if err == nil {
+		t.Fatalf("expected algorithm mismatch error, got nil")
+	}
 }
 
-func TestVerifyHS256_Success(t *testing.T) {
+func TestVerifyJWT_NotBeforeClaimInFuture(t *testing.T) {
 	secret := "test-secret-32-bytes-minimum-padding-x"
-	tok := makeToken(secret, map[string]any{
-		"sub":  "alice",
-		"role": "worker",
-		"exp":  float64(time.Now().Add(1 * time.Hour).Unix()),
-	})
-	claims, err := verifyHS256(tok, secret)
+	cfg := &config.Config{
+		JWTSecret:   secret,
+		JWTAlg:      "HS256",
+		JWTIssuer:   "cwso",
+		JWTAudience: "cwso-mcp",
+	}
+	log := logging.New("debug")
+
+	claims := &jwtClaims{
+		Role: "worker",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "cwso",
+			Audience:  jwt.ClaimStrings{"cwso-mcp"},
+			NotBefore: jwt.NewNumericDate(time.Now().Add(2 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(3 * time.Hour)),
+		},
+	}
+	tok := makeJWT(secret, claims)
+
+	_, err := verifyJWT(tok, cfg, log)
+	if err == nil || err.Error() != "token used before valid (nbf)" {
+		t.Fatalf("expected 'token used before valid' error, got: %v", err)
+	}
+}
+
+func TestVerifyJWT_Leeway(t *testing.T) {
+	// Test that 60s leeway allows slightly expired tokens
+	secret := "test-secret-32-bytes-minimum-padding-x"
+	cfg := &config.Config{
+		JWTSecret:   secret,
+		JWTAlg:      "HS256",
+		JWTIssuer:   "cwso",
+		JWTAudience: "cwso-mcp",
+	}
+	log := logging.New("debug")
+
+	// Token expired 30s ago (within 60s leeway)
+	claims := &jwtClaims{
+		Role: "worker",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "cwso",
+			Audience:  jwt.ClaimStrings{"cwso-mcp"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-30 * time.Second)),
+		},
+	}
+	tok := makeJWT(secret, claims)
+
+	// Should succeed due to 60s leeway
+	verified, err := verifyJWT(tok, cfg, log)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("should accept token within leeway, got error: %v", err)
 	}
-	if claims["sub"] != "alice" || claims["role"] != "worker" {
-		t.Fatalf("unexpected claims: %v", claims)
-	}
-}
-
-func TestVerifyHS256_Expired(t *testing.T) {
-	secret := "test-secret-32-bytes-minimum-padding-x"
-	tok := makeToken(secret, map[string]any{
-		"exp": float64(time.Now().Add(-1 * time.Hour).Unix()),
-	})
-	if _, err := verifyHS256(tok, secret); err == nil {
-		t.Fatal("expected expired token error")
-	}
-}
-
-func TestVerifyHS256_BadSignature(t *testing.T) {
-	tok := makeToken("secret-a", map[string]any{"sub": "x"})
-	if _, err := verifyHS256(tok, "secret-b"); err == nil {
-		t.Fatal("expected signature mismatch")
-	}
-}
-
-func TestVerifyHS256_NoSecret(t *testing.T) {
-	if _, err := verifyHS256("a.b.c", ""); err == nil {
-		t.Fatal("expected error when secret unset")
+	if verified == nil {
+		t.Fatal("expected verified claims")
 	}
 }
 
@@ -69,5 +237,610 @@ func TestOriginHostAllowed(t *testing.T) {
 	}
 	if originHostAllowed(allow, "evil.example.com") {
 		t.Fatal("evil host should not be allowed")
+	}
+}
+
+func TestRateLimitMiddleware_AllowsFirstRequest(t *testing.T) {
+	store := newRateLimiterStore(context.Background())
+	log := logging.New("debug")
+	limiter := rateLimitMiddleware(store, log)
+
+	handler := limiter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.RemoteAddr = "127.0.0.1:8000"
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestRateLimitMiddleware_EnforcesLimit(t *testing.T) {
+	store := newRateLimiterStore(context.Background())
+	log := logging.New("debug")
+	limiter := rateLimitMiddleware(store, log)
+
+	handler := limiter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// First request should succeed
+	req1 := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req1.RemoteAddr = "127.0.0.1:8000"
+	w1 := httptest.NewRecorder()
+	handler.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected first request to succeed with 200, got %d", w1.Code)
+	}
+
+	// Second request should be rate limited (burst=1)
+	req2 := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req2.RemoteAddr = "127.0.0.1:8000"
+	w2 := httptest.NewRecorder()
+	handler.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected second request to be rate limited with 429, got %d", w2.Code)
+	}
+	if w2.Header().Get("Retry-After") != "60" {
+		t.Fatalf("expected Retry-After header, got: %s", w2.Header().Get("Retry-After"))
+	}
+}
+
+func TestRateLimitMiddleware_PerIP(t *testing.T) {
+	store := newRateLimiterStore(context.Background())
+	log := logging.New("debug")
+	limiter := rateLimitMiddleware(store, log)
+
+	handler := limiter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Request from IP1 succeeds
+	req1 := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req1.RemoteAddr = "192.168.1.1:8000"
+	w1 := httptest.NewRecorder()
+	handler.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected IP1 request to succeed with 200, got %d", w1.Code)
+	}
+
+	// Request from IP2 should also succeed (different bucket)
+	req2 := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req2.RemoteAddr = "192.168.1.2:8000"
+	w2 := httptest.NewRecorder()
+	handler.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected IP2 request to succeed with 200, got %d", w2.Code)
+	}
+}
+
+func TestRateLimitMiddleware_SkipsGET(t *testing.T) {
+	store := newRateLimiterStore(context.Background())
+	log := logging.New("debug")
+	limiter := rateLimitMiddleware(store, log)
+
+	handler := limiter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// GET requests should not be rate limited
+	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	req.RemoteAddr = "127.0.0.1:8000"
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected GET to skip rate limiting, got %d", w.Code)
+	}
+}
+
+func TestSecurityHeadersMiddleware_AppliesBaselineHeaders(t *testing.T) {
+	handler := securityHeadersMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if got := rr.Header().Get("Content-Security-Policy"); got != "default-src 'self'" {
+		t.Fatalf("expected Content-Security-Policy header, got %q", got)
+	}
+	if got := rr.Header().Get("Strict-Transport-Security"); got != "max-age=31536000; includeSubDomains" {
+		t.Fatalf("expected Strict-Transport-Security header, got %q", got)
+	}
+	if got := rr.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("expected X-Content-Type-Options header, got %q", got)
+	}
+	if got := rr.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Fatalf("expected X-Frame-Options header, got %q", got)
+	}
+	if got := rr.Header().Get("X-XSS-Protection"); got != "0" {
+		t.Fatalf("expected X-XSS-Protection header, got %q", got)
+	}
+	if got := rr.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("expected Cache-Control no-store for POST, got %q", got)
+	}
+}
+
+func TestHandlePOST_RejectsUnsupportedMediaType(t *testing.T) {
+	secret := "test-secret-32-bytes-minimum-padding-x"
+	cfg := &config.Config{
+		JWTSecret:      secret,
+		JWTAlg:         "HS256",
+		JWTIssuer:      "cwso",
+		JWTAudience:    "cwso-mcp",
+		AllowedOrigins: []string{"http://localhost"},
+	}
+	log := logging.New("debug")
+	businessHandler := func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
+		return []byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`), nil
+	}
+	handler := newHTTPHandler(context.Background(), cfg, log, eventbus.New(), nil, nil, businessHandler)
+
+	claims := &jwtClaims{
+		Role: "worker",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "alice",
+			Issuer:    "cwso",
+			Audience:  jwt.ClaimStrings{"cwso-mcp"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+		},
+	}
+	tok := makeJWT(secret, claims)
+
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Origin", "http://localhost")
+	req.Header.Set("Content-Type", "text/plain")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("expected 415 for unsupported media type, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func readSSEFrame(t *testing.T, r *bufio.Reader, timeout time.Duration) (event string, data string, heartbeat bool) {
+	t.Helper()
+	type result struct {
+		event     string
+		data      string
+		heartbeat bool
+		err       error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		res := result{}
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				res.err = err
+				ch <- res
+				return
+			}
+			line = strings.TrimRight(line, "\r\n")
+			if line == "" {
+				ch <- res
+				return
+			}
+			if strings.HasPrefix(line, ":") {
+				res.heartbeat = true
+				continue
+			}
+			if strings.HasPrefix(line, "event: ") {
+				res.event = strings.TrimPrefix(line, "event: ")
+				continue
+			}
+			if strings.HasPrefix(line, "data: ") {
+				if res.data == "" {
+					res.data = strings.TrimPrefix(line, "data: ")
+				} else {
+					res.data += "\n" + strings.TrimPrefix(line, "data: ")
+				}
+			}
+		}
+	}()
+
+	select {
+	case res := <-ch:
+		if res.err != nil {
+			t.Fatalf("read SSE frame: %v", res.err)
+		}
+		return res.event, res.data, res.heartbeat
+	case <-time.After(timeout):
+		t.Fatalf("timed out waiting for SSE frame")
+		return "", "", false
+	}
+}
+
+func newSSETestServer(t *testing.T, bus *eventbus.Bus,
+	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
+) *sseTestHarness {
+	t.Helper()
+	secret := "test-secret-32-bytes-minimum-padding-x"
+	cfg := &config.Config{
+		JWTSecret:      secret,
+		JWTAlg:         "HS256",
+		JWTIssuer:      "cwso",
+		JWTAudience:    "cwso-mcp",
+		AllowedOrigins: []string{"http://localhost"},
+	}
+	log := logging.New("error")
+	broker := memorybroker.New(
+		memorybroker.WithCapacity(128),
+		memorybroker.WithIngressQueueSize(128),
+	)
+	t.Cleanup(broker.Close)
+	publisher := memorybroker.NewTeePublisher(bus, broker)
+
+	handler := newHTTPHandler(context.Background(), cfg, log, bus, broker, publisher, h)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	claims := &jwtClaims{
+		Role: "worker",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "sse-test",
+			Issuer:    "cwso",
+			Audience:  jwt.ClaimStrings{"cwso-mcp"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+		},
+	}
+	tok := makeJWT(secret, claims)
+	return &sseTestHarness{
+		server:    srv,
+		token:     tok,
+		bus:       bus,
+		broker:    broker,
+		publisher: publisher,
+	}
+}
+
+func openSSE(t *testing.T, baseURL, token string) (*http.Response, *bufio.Reader) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, baseURL+"/mcp", nil)
+	if err != nil {
+		t.Fatalf("new sse request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Origin", "http://localhost")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("open sse: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		t.Fatalf("expected 200 from SSE endpoint, got %d body=%s", resp.StatusCode, string(body))
+	}
+
+	return resp, bufio.NewReader(resp.Body)
+}
+
+func TestSSEReadyAndHeartbeat(t *testing.T) {
+	oldHeartbeat := heartbeatInterval
+	heartbeatInterval = 20 * time.Millisecond
+	defer func() { heartbeatInterval = oldHeartbeat }()
+
+	bus := eventbus.New()
+	harness := newSSETestServer(t, bus, func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
+		return []byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`), nil
+	})
+
+	resp, reader := openSSE(t, harness.server.URL, harness.token)
+	defer resp.Body.Close()
+
+	event, data, heartbeat := readSSEFrame(t, reader, 200*time.Millisecond)
+	if heartbeat {
+		t.Fatal("expected ready frame first, got heartbeat")
+	}
+	if event != "ready" {
+		t.Fatalf("expected ready event, got %q", event)
+	}
+	if !strings.Contains(data, `"protocolVersion":"2025-03-26"`) {
+		t.Fatalf("unexpected ready payload: %s", data)
+	}
+
+	_, _, hb := readSSEFrame(t, reader, 200*time.Millisecond)
+	if !hb {
+		t.Fatal("expected heartbeat frame")
+	}
+}
+
+func TestSSEBroadcastToTwoSubscribers(t *testing.T) {
+	oldHeartbeat := heartbeatInterval
+	heartbeatInterval = 500 * time.Millisecond
+	defer func() { heartbeatInterval = oldHeartbeat }()
+
+	bus := eventbus.New()
+	harness := newSSETestServer(t, bus, func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
+		return []byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`), nil
+	})
+
+	resp1, r1 := openSSE(t, harness.server.URL, harness.token)
+	defer resp1.Body.Close()
+	resp2, r2 := openSSE(t, harness.server.URL, harness.token)
+	defer resp2.Body.Close()
+
+	_, _, _ = readSSEFrame(t, r1, 200*time.Millisecond)
+	_, _, _ = readSSEFrame(t, r2, 200*time.Millisecond)
+
+	start := time.Now()
+	if err := harness.publisher.Publish(eventbus.TopicNotificationsJobState, map[string]any{"state": "running"}); err != nil {
+		t.Fatalf("publish failed: %v", err)
+	}
+
+	_, data1, _ := readSSEFrame(t, r1, 200*time.Millisecond)
+	latency1 := time.Since(start)
+	_, data2, _ := readSSEFrame(t, r2, 200*time.Millisecond)
+
+	if latency1 > 100*time.Millisecond {
+		t.Fatalf("notification latency exceeded target: %v", latency1)
+	}
+
+	var env1 struct {
+		JSONRPC string         `json:"jsonrpc"`
+		Method  string         `json:"method"`
+		Params  map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(data1), &env1); err != nil {
+		t.Fatalf("unmarshal sse envelope #1: %v", err)
+	}
+	if env1.JSONRPC != "2.0" || env1.Method != eventbus.TopicNotificationsJobState {
+		t.Fatalf("unexpected sse envelope #1: %s", data1)
+	}
+	if env1.Params["state"] != "running" {
+		t.Fatalf("unexpected params in envelope #1: %v", env1.Params)
+	}
+
+	var env2 struct {
+		Method string `json:"method"`
+	}
+	if err := json.Unmarshal([]byte(data2), &env2); err != nil {
+		t.Fatalf("unmarshal sse envelope #2: %v", err)
+	}
+	if env2.Method != eventbus.TopicNotificationsJobState {
+		t.Fatalf("unexpected sse envelope #2: %s", data2)
+	}
+}
+
+func TestSSEWithPOSTNoRegressionAndSampleNotifications(t *testing.T) {
+	oldHeartbeat := heartbeatInterval
+	heartbeatInterval = 500 * time.Millisecond
+	defer func() { heartbeatInterval = oldHeartbeat }()
+
+	bus := eventbus.New()
+	harness := newSSETestServer(t, bus, func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
+		return []byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`), nil
+	})
+
+	resp, reader := openSSE(t, harness.server.URL, harness.token)
+	defer resp.Body.Close()
+	_, _, _ = readSSEFrame(t, reader, 200*time.Millisecond) // ready
+
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping","arguments":{}}}`)
+	postReq, err := http.NewRequest(http.MethodPost, harness.server.URL+"/mcp", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("new post request: %v", err)
+	}
+	postReq.Header.Set("Authorization", "Bearer "+harness.token)
+	postReq.Header.Set("Origin", "http://localhost")
+	postReq.Header.Set("Content-Type", "application/json")
+
+	postResp, err := http.DefaultClient.Do(postReq)
+	if err != nil {
+		t.Fatalf("post /mcp: %v", err)
+	}
+	defer postResp.Body.Close()
+
+	if postResp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(postResp.Body)
+		t.Fatalf("expected 200 from POST /mcp, got %d body=%s", postResp.StatusCode, string(b))
+	}
+	b, _ := io.ReadAll(postResp.Body)
+	if !strings.Contains(string(b), `"result":{"ok":true}`) {
+		t.Fatalf("unexpected post response body: %s", string(b))
+	}
+
+	seen := map[string]bool{}
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) && !(seen[eventbus.TopicNotificationsLog] && seen[eventbus.TopicNotificationsJobState]) {
+		_, data, heartbeat := readSSEFrame(t, reader, 200*time.Millisecond)
+		if heartbeat {
+			continue
+		}
+		var env struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal([]byte(data), &env); err != nil {
+			t.Fatalf("unmarshal notification envelope: %v", err)
+		}
+		seen[env.Method] = true
+	}
+
+	if !seen[eventbus.TopicNotificationsLog] || !seen[eventbus.TopicNotificationsJobState] {
+		t.Fatalf("expected both sample notification topics, got seen=%v", seen)
+	}
+}
+
+func TestSSETopicAwareTelemetryThrottling(t *testing.T) {
+	oldHeartbeat := heartbeatInterval
+	heartbeatInterval = 500 * time.Millisecond
+	defer func() { heartbeatInterval = oldHeartbeat }()
+
+	bus := eventbus.New()
+	harness := newSSETestServer(t, bus, func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
+		return []byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`), nil
+	})
+
+	resp, reader := openSSE(t, harness.server.URL, harness.token)
+	defer resp.Body.Close()
+	_, _, _ = readSSEFrame(t, reader, 200*time.Millisecond)
+
+	for i := 0; i < 3; i++ {
+		if ok := harness.broker.Ingest(eventbus.TopicNotificationsLog, map[string]any{"idx": i}); !ok {
+			t.Fatalf("ingest %d failed", i)
+		}
+	}
+
+	_, data, heartbeat := readSSEFrame(t, reader, 200*time.Millisecond)
+	if heartbeat {
+		t.Fatal("expected throttled notification, got heartbeat")
+	}
+
+	var env struct {
+		JSONRPC string         `json:"jsonrpc"`
+		Method  string         `json:"method"`
+		Params  map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(data), &env); err != nil {
+		t.Fatalf("unmarshal throttled envelope: %v", err)
+	}
+	if env.JSONRPC != "2.0" || env.Method != eventbus.TopicNotificationsLog {
+		t.Fatalf("unexpected throttled envelope: %s", data)
+	}
+	if env.Params["idx"].(float64) != 0 {
+		t.Fatalf("expected first event in window to be emitted, got %v", env.Params["idx"])
+	}
+
+	time.Sleep(defaultLogThrottleWindow)
+	if ok := harness.broker.Ingest(eventbus.TopicNotificationsLog, map[string]any{"idx": 99}); !ok {
+		t.Fatal("expected post-window ingest to succeed")
+	}
+
+	_, data, heartbeat = readSSEFrame(t, reader, 200*time.Millisecond)
+	if heartbeat {
+		t.Fatal("expected post-window notification, got heartbeat")
+	}
+	if err := json.Unmarshal([]byte(data), &env); err != nil {
+		t.Fatalf("unmarshal post-window envelope: %v", err)
+	}
+	if env.Params["idx"].(float64) != 99 {
+		t.Fatalf("expected new-window payload idx=99, got %v", env.Params["idx"])
+	}
+}
+
+func TestSSETerminalJobStateBypassesThrottle(t *testing.T) {
+	oldHeartbeat := heartbeatInterval
+	heartbeatInterval = 500 * time.Millisecond
+	defer func() { heartbeatInterval = oldHeartbeat }()
+
+	bus := eventbus.New()
+	harness := newSSETestServer(t, bus, func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
+		return []byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`), nil
+	})
+
+	resp, reader := openSSE(t, harness.server.URL, harness.token)
+	defer resp.Body.Close()
+	_, _, _ = readSSEFrame(t, reader, 200*time.Millisecond)
+
+	if ok := harness.broker.Ingest(eventbus.TopicNotificationsJobState, map[string]any{"job_id": "job-1", "state": "running"}); !ok {
+		t.Fatal("expected running ingest to succeed")
+	}
+	if ok := harness.broker.Ingest(eventbus.TopicNotificationsJobState, map[string]any{"job_id": "job-1", "state": "failed"}); !ok {
+		t.Fatal("expected failed ingest to succeed")
+	}
+
+	_, firstData, firstHeartbeat := readSSEFrame(t, reader, 200*time.Millisecond)
+	if firstHeartbeat {
+		t.Fatal("expected running job-state notification first")
+	}
+	_, secondData, secondHeartbeat := readSSEFrame(t, reader, 200*time.Millisecond)
+	if secondHeartbeat {
+		t.Fatal("expected terminal job-state notification second")
+	}
+
+	var firstEnv, secondEnv struct {
+		Method string         `json:"method"`
+		Params map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(firstData), &firstEnv); err != nil {
+		t.Fatalf("unmarshal first job-state envelope: %v", err)
+	}
+	if err := json.Unmarshal([]byte(secondData), &secondEnv); err != nil {
+		t.Fatalf("unmarshal second job-state envelope: %v", err)
+	}
+	if firstEnv.Method != eventbus.TopicNotificationsJobState || firstEnv.Params["state"] != "running" {
+		t.Fatalf("unexpected first job-state envelope: %s", firstData)
+	}
+	if secondEnv.Params["state"] != "failed" {
+		t.Fatalf("expected terminal state to bypass throttle, got %v", secondEnv.Params["state"])
+	}
+}
+
+func TestVerifyJWT_NoExpiry_Rejected(t *testing.T) {
+	secret := "test-secret-32-bytes-minimum-padding-x"
+	cfg := &config.Config{
+		JWTSecret:   secret,
+		JWTAlg:      "HS256",
+		JWTIssuer:   "cwso",
+		JWTAudience: "cwso-mcp",
+	}
+	log := logging.New("debug")
+
+	// Token without exp claim
+	claims := &jwtClaims{
+		Role: "worker",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:   "cwso",
+			Audience: jwt.ClaimStrings{"cwso-mcp"},
+			Subject:  "no-exp",
+			// ExpiresAt intentionally omitted
+		},
+	}
+	tok := makeJWT(secret, claims)
+	_, err := verifyJWT(tok, cfg, log)
+	if err == nil {
+		t.Fatal("expected error for token without exp claim, got nil")
+	}
+}
+
+func TestAuthMiddleware_UnknownRole_Returns403(t *testing.T) {
+	secret := "test-secret-32-bytes-minimum-padding-x"
+	cfg := &config.Config{
+		JWTSecret:      secret,
+		JWTAlg:         "HS256",
+		JWTIssuer:      "cwso",
+		JWTAudience:    "cwso-mcp",
+		AllowedOrigins: []string{"http://localhost"},
+	}
+	log := logging.New("debug")
+
+	claims := &jwtClaims{
+		Role: "admin", // unrecognised role
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "eve",
+			Issuer:    "cwso",
+			Audience:  jwt.ClaimStrings{"cwso-mcp"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+		},
+	}
+	tok := makeJWT(secret, claims)
+
+	mw := authMiddleware(cfg, log)
+	called := false
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Origin", "http://localhost")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for unknown role, got %d", rr.Code)
+	}
+	if called {
+		t.Fatal("next handler must not be called for forbidden role")
 	}
 }

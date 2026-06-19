@@ -29,10 +29,11 @@ const (
 	ErrInternal       = -32603
 
 	// MCP-specific error codes.
-	ErrUnauthorized      = -32001
-	ErrPermissionDenied  = -32002
-	ErrToolNotFound      = -32010
-	ErrToolExecution     = -32011
+	ErrUnauthorized     = -32001
+	ErrPermissionDenied = -32002
+	ErrToolNotFound     = -32010
+	ErrToolExecution    = -32011
+	ErrResourceNotFound = -32020
 )
 
 // Request is an inbound JSON-RPC message.
@@ -154,6 +155,56 @@ func TextResult(text string) *ToolCallResult {
 // TextError builds a single-text-block error tool result.
 func TextError(text string) *ToolCallResult {
 	return &ToolCallResult{Content: []ContentBlock{{Type: "text", Text: text}}, IsError: true}
+}
+
+// --- MCP Resources (spec 2025-03-26 §Resources) ---
+//
+// Added in Phase 7 (T117) to expose AST write-spike streams as subscribable
+// resources under the cwso:// scheme. Resource contents are JSON text blocks
+// (a replay snapshot from the broker); live updates are delivered over the
+// existing SSE transport scoped to the subscription id.
+
+// Resource is a concrete resource returned by resources/list.
+type Resource struct {
+	URI         string `json:"uri"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	MimeType    string `json:"mimeType,omitempty"`
+}
+
+// ResourceTemplate is a parameterized resource URI returned by resources/templates/list.
+type ResourceTemplate struct {
+	URITemplate string `json:"uriTemplate"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	MimeType    string `json:"mimeType,omitempty"`
+}
+
+// ResourcesListResult is the response payload for resources/list.
+type ResourcesListResult struct {
+	Resources []Resource `json:"resources"`
+}
+
+// ResourceTemplatesListResult is the response payload for resources/templates/list.
+type ResourceTemplatesListResult struct {
+	ResourceTemplates []ResourceTemplate `json:"resourceTemplates"`
+}
+
+// ResourceURIParams is the inbound params for resources/read|subscribe|unsubscribe.
+type ResourceURIParams struct {
+	URI string `json:"uri"`
+}
+
+// ResourceContents is a single content item returned by resources/read.
+type ResourceContents struct {
+	URI      string `json:"uri"`
+	MimeType string `json:"mimeType,omitempty"`
+	Text     string `json:"text,omitempty"`
+}
+
+// ResourceReadResult is the response payload for resources/read.
+type ResourceReadResult struct {
+	Contents []ResourceContents `json:"contents"`
 }
 
 // SupportedProtocolVersion is the MCP spec version pinned per ADR-002.

@@ -1,7 +1,7 @@
 ---
-name: "Technical Debt Narrator"
 description: "Use to document shortcuts and debt introduced during PoC work so production transition is explicit and manageable."
 tools: [read, search, edit]
+user-invocable: false
 ---
 
 # Technical Debt Narrator

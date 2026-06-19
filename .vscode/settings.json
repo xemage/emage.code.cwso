@@ -1,5 +1,11 @@
 {
     "chat.tools.terminal.autoApprove": {
+        "awk": true,
+        "cat": true,
+        "cargo": true,
+        "chmod": true,
+        "curl": true,
+        "docker": true,
         "dotnet": true,
         "dotnet add": true,
 		"dotnet build": true,
@@ -7,6 +13,7 @@
 		"dotnet restore": true,
         "dotnet run": true,		
         "dotnet test": true,
+        "find": true,
 		"ForEach-Object": true,
         "gemini": true,
         "Get-Command": true,
@@ -14,6 +21,7 @@
         "git add": true,
         "git checkout": true,
         "git commit": true,
+        "git diff": true,
         "git merge": true,
         "git push": true,
         "git remote": true,
@@ -26,12 +34,23 @@
         "go version": true,
 		"go test": true,
 		"go env": true,
+        "grep": true,
+        "head": true,
+        "mv": true,
 		"node": true,
         "opencode": true,
+        "python": true,
+        "python3": true,
+        "rm": true,
         "Select": true,
         "Set-Content": true,
+        "sort": true,
+        "tail": true,
         "Tee-Object": true,
         "Test-Path": true,
-        "type": true        
-    }
+        "type": true,
+        "uniq": true,
+        "xargs": true
+    },
+    "makefile.configureOnOpen": false
 }

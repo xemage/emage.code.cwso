@@ -1,7 +1,7 @@
 ---
-name: "Product Owner"
 description: "Use when defining product requirements, writing user stories, creating acceptance criteria, managing product backlog, prioritizing features, defining epics, refining requirements, or analyzing business value."
 tools: [read, search, web, todo]
+user-invocable: false
 ---
 
 # Product Owner

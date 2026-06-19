@@ -1,7 +1,7 @@
 ---
-name: "Feasibility Agent"
 description: "Use to test assumptions early and identify high-risk unknowns before significant implementation effort is invested."
 tools: [read, search, execute, web, mcp__fetch]
+user-invocable: false
 ---
 
 # Feasibility Agent

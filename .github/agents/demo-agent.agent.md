@@ -1,7 +1,7 @@
 ---
-name: "Demo Agent"
 description: "Use when packaging a proof-of-concept into a stakeholder-ready demonstration flow."
 tools: [read, search, edit, web, mcp__playwright]
+user-invocable: false
 ---
 
 # Demo Agent

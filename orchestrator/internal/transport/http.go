@@ -2,21 +2,60 @@ package transport
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/emage/cwso/orchestrator/internal/config"
+	"github.com/emage/cwso/orchestrator/internal/eventbus"
 	"github.com/emage/cwso/orchestrator/internal/logging"
+	"github.com/emage/cwso/orchestrator/internal/memorybroker"
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/time/rate"
 )
+
+var heartbeatInterval = 15 * time.Second
+
+type eventPublisher interface {
+	Publish(topic string, payload any) error
+}
+
+// RecordFilter decides whether a broker/bus record should be delivered to a
+// subscription-scoped SSE stream. Implemented by dispatch.SpikeSubscription.
+type RecordFilter interface {
+	Allow(topic string, payload []byte) bool
+}
+
+// SubscriptionResolver resolves a subscription id (from the ?subscription= query
+// parameter) to its record filter. ok=false means the id is unknown.
+type SubscriptionResolver func(id string) (RecordFilter, bool)
+
+type httpOptions struct {
+	resolveSub SubscriptionResolver
+	rollout    http.Handler
+}
+
+// HTTPOption configures optional HTTP transport behaviour without growing the
+// already-wide RunHTTP/newHTTPHandler positional signatures (see TD-02).
+type HTTPOption func(*httpOptions)
+
+// WithSubscriptionResolver enables subscription-scoped SSE: GET /mcp?subscription=<id>
+// streams only the records the resolved filter allows.
+func WithSubscriptionResolver(r SubscriptionResolver) HTTPOption {
+	return func(o *httpOptions) { o.resolveSub = r }
+}
+
+// WithRolloutAPI mounts Polar REST routes (/rollout/*, /callbacks/*, /nodes/*) when set.
+func WithRolloutAPI(h http.Handler) HTTPOption {
+	return func(o *httpOptions) { o.rollout = h }
+}
 
 // RunHTTP starts the Streamable HTTP transport per MCP spec 2025-03-26.
 //
@@ -28,52 +67,36 @@ import (
 //
 // Security (FR-7.1, FR-7.2):
 //
-//	* Origin allow-list validated on every request (DNS-rebinding protection)
-//	* JWT (HS256) Bearer token required on /mcp endpoints
-//
-// POC-DEBT: SSE GET endpoint is registered but only emits a heartbeat in
-// Phase 1. Real notifications land in Phase 3 (T030). Tracked in
-// POC-DEBT-SCORECARD-phase1.md.
+//   - Origin allow-list validated on every request (DNS-rebinding protection)
+//   - JWT (HS256) Bearer token required on /mcp endpoints
 func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
+	bus *eventbus.Bus,
+	broker *memorybroker.Broker,
+	samplePublisher eventPublisher,
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
+	opts ...HTTPOption,
 ) error {
+	if bus == nil {
+		bus = eventbus.New()
+	}
+	if samplePublisher == nil {
+		if broker != nil {
+			samplePublisher = memorybroker.NewTeePublisher(bus, broker)
+		} else {
+			samplePublisher = bus
+		}
+	}
 
-	mux := http.NewServeMux()
+	handler := newHTTPHandler(ctx, cfg, log, bus, broker, samplePublisher, h, opts...)
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-
-	originSet := make(map[string]struct{}, len(cfg.AllowedOrigins))
-	for _, o := range cfg.AllowedOrigins {
-		originSet[strings.ToLower(strings.TrimSpace(o))] = struct{}{}
-	}
-
-	mw := chain(
-		recoverMiddleware(log),
-		requestIDMiddleware(),
-		originMiddleware(originSet, log),
-	)
-
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, "ok")
-	})
-
-	mux.Handle("/mcp", mw(authMiddleware(cfg.JWTSecret, log)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost:
-			handlePOST(w, r, log, h)
-		case http.MethodGet:
-			handleSSE(w, r, log)
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-	}))))
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -94,13 +117,76 @@ func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 	}
 }
 
-func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger,
+func newHTTPHandler(ctx context.Context, cfg *config.Config, log *logging.Logger, bus *eventbus.Bus, broker *memorybroker.Broker,
+	samplePublisher eventPublisher,
+	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
+	opts ...HTTPOption,
+) http.Handler {
+	var o httpOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	mux := http.NewServeMux()
+
+	originSet := make(map[string]struct{}, len(cfg.AllowedOrigins))
+	for _, o := range cfg.AllowedOrigins {
+		originSet[strings.ToLower(strings.TrimSpace(o))] = struct{}{}
+	}
+
+	rateLimiter := newRateLimiterStore(ctx)
+
+	mw := chain(
+		recoverMiddleware(log),
+		requestIDMiddleware(),
+		originMiddleware(originSet, log),
+		securityHeadersMiddleware(),
+		rateLimitMiddleware(rateLimiter, log),
+	)
+
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "ok")
+	})
+
+	mux.Handle("/mcp", mw(authMiddleware(cfg, log)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			handlePOST(w, r, log, samplePublisher, h)
+		case http.MethodGet:
+			ip, _, _ := strings.Cut(r.RemoteAddr, ":")
+			if !rateLimiter.sseConns.acquire(ip) {
+				http.Error(w, "too many SSE connections", http.StatusTooManyRequests)
+				return
+			}
+			defer rateLimiter.sseConns.release(ip)
+			handleSSE(w, r, log, bus, broker, o.resolveSub)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))))
+
+	if o.rollout != nil {
+		mux.Handle("/", mw(authMiddleware(cfg, log)(o.rollout)))
+	}
+
+	return mux
+}
+
+func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger, publisher eventPublisher,
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
 ) {
 	const maxBody = 8 << 20
+	contentType := r.Header.Get("Content-Type")
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil || mediaType != "application/json" {
+		http.Error(w, "unsupported media type", http.StatusUnsupportedMediaType)
+		return
+	}
+
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
 	if err != nil {
-		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+		log.Warn().Err(err).Str("handler", "POST /mcp").Msg("failed to read request body")
+		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	if len(body) > maxBody {
@@ -108,26 +194,56 @@ func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger,
 		return
 	}
 
+	var reqMeta struct {
+		Method string `json:"method"`
+	}
+	_ = json.Unmarshal(body, &reqMeta)
+	requestID, _ := r.Context().Value(requestIDCtxKey{}).(string)
+
 	sess, _ := r.Context().Value(sessionCtxKey{}).(*Session)
 	resp, err := h(r.Context(), sess, body)
 	if err != nil {
+		publishSampleEvents(publisher, log, reqMeta.Method, requestID, "failed", err.Error())
 		log.Error().Err(err).Msg("handler error")
 		http.Error(w, "handler error", http.StatusInternalServerError)
 		return
 	}
 	if resp == nil {
+		publishSampleEvents(publisher, log, reqMeta.Method, requestID, "accepted", "")
 		// Notification — per MCP spec, return 202 Accepted with no body.
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
+	publishSampleEvents(publisher, log, reqMeta.Method, requestID, "completed", "")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(resp)
 }
 
-func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger) {
-	// POC-DEBT: SSE only emits heartbeats in Phase 1. Phase 3 (T030) wires
-	// the EventBus → SSE bridge for real telemetry.
+func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus *eventbus.Bus, broker *memorybroker.Broker, resolve SubscriptionResolver) {
+	// Resolve an optional subscription scope before writing any SSE headers so an unknown
+	// id can still return a clean 404.
+	var filter RecordFilter
+	if id := r.URL.Query().Get("subscription"); id != "" {
+		if resolve == nil {
+			http.Error(w, "subscriptions not enabled", http.StatusNotFound)
+			return
+		}
+		f, ok := resolve(id)
+		if !ok {
+			http.Error(w, "unknown subscription", http.StatusNotFound)
+			return
+		}
+		filter = f
+	}
+
+	if broker != nil {
+		handleBrokerSSE(w, r, log, broker, filter)
+		return
+	}
+	if bus == nil {
+		bus = eventbus.New()
+	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
@@ -138,12 +254,21 @@ func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger) {
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 
-	ticker := time.NewTicker(15 * time.Second)
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
 
 	_, _ = fmt.Fprintf(w, "event: ready\ndata: {\"protocolVersion\":\"2025-03-26\"}\n\n")
 	flusher.Flush()
 	log.Debug().Msg("SSE client connected")
+	defer func() {
+		dropped := sub.Dropped()
+		if dropped > 0 {
+			log.Warn().Int("dropped_events", int(dropped)).Msg("SSE subscriber dropped events due to backpressure")
+		}
+	}()
 
 	for {
 		select {
@@ -152,7 +277,134 @@ func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger) {
 		case <-ticker.C:
 			_, _ = fmt.Fprintf(w, ": heartbeat\n\n")
 			flusher.Flush()
+		case msg, ok := <-sub.Messages():
+			if !ok {
+				return
+			}
+			if filter != nil && !filter.Allow(msg.Topic, msg.Payload) {
+				continue
+			}
+			envelope, err := marshalJSONRPCNotification(msg.Topic, msg.Payload)
+			if err != nil {
+				log.Warn().Err(err).Str("topic", msg.Topic).Msg("failed to marshal notification envelope")
+				continue
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", envelope); err != nil {
+				log.Debug().Err(err).Msg("SSE write failed")
+				return
+			}
+			flusher.Flush()
 		}
+	}
+}
+
+func handleBrokerSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, broker *memorybroker.Broker, filter RecordFilter) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	sub := broker.Subscribe()
+	defer sub.Close()
+	throttle := newTelemetryThrottle()
+
+	ticker := time.NewTicker(heartbeatInterval)
+	defer ticker.Stop()
+
+	_, _ = fmt.Fprintf(w, "event: ready\ndata: {\"protocolVersion\":\"2025-03-26\"}\n\n")
+	flusher.Flush()
+	log.Debug().Msg("SSE client connected")
+	defer func() {
+		fields := map[string]any{}
+		for topic, counters := range throttle.Snapshot() {
+			fields[topic] = map[string]int{
+				"emitted":    counters.Emitted,
+				"suppressed": counters.Suppressed,
+			}
+		}
+		entry := log.Info().Any("telemetry_counts", fields)
+		if dropped := sub.Dropped(); dropped > 0 {
+			entry = log.Warn().Int("dropped_events", int(dropped)).Any("telemetry_counts", fields)
+		}
+		entry.Msg("SSE telemetry stream closed")
+	}()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			_, _ = fmt.Fprintf(w, ": heartbeat\n\n")
+			flusher.Flush()
+		case rec, ok := <-sub.Messages():
+			if !ok {
+				return
+			}
+			if filter != nil && !filter.Allow(rec.Topic, rec.Payload) {
+				continue
+			}
+			if !throttle.Allow(rec) {
+				continue
+			}
+			envelope, err := marshalJSONRPCNotification(rec.Topic, rec.Payload)
+			if err != nil {
+				log.Warn().Err(err).Str("topic", rec.Topic).Msg("failed to marshal notification envelope")
+				continue
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", envelope); err != nil {
+				log.Debug().Err(err).Msg("SSE write failed")
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
+func marshalJSONRPCNotification(topic string, payload json.RawMessage) ([]byte, error) {
+	if len(payload) == 0 {
+		payload = json.RawMessage(`{}`)
+	}
+	env := struct {
+		JSONRPC string          `json:"jsonrpc"`
+		Method  string          `json:"method"`
+		Params  json.RawMessage `json:"params"`
+	}{
+		JSONRPC: "2.0",
+		Method:  topic,
+		Params:  payload,
+	}
+	return json.Marshal(env)
+}
+
+func publishSampleEvents(publisher eventPublisher, log *logging.Logger, method, requestID, state, errMsg string) {
+	if publisher == nil {
+		return
+	}
+	logPayload := map[string]any{
+		"request_id": requestID,
+		"method":     method,
+		"state":      state,
+	}
+	if errMsg != "" {
+		logPayload["error"] = errMsg
+	}
+	if err := publisher.Publish(eventbus.TopicNotificationsLog, logPayload); err != nil {
+		log.Warn().Err(err).Msg("publish notifications/log failed")
+	}
+	if method != "tools/call" {
+		return
+	}
+	jobPayload := map[string]any{
+		"request_id": requestID,
+		"state":      state,
+	}
+	if err := publisher.Publish(eventbus.TopicNotificationsJobState, jobPayload); err != nil {
+		log.Warn().Err(err).Msg("publish notifications/job-state failed")
 	}
 }
 
@@ -169,6 +421,21 @@ func chain(mws ...middleware) middleware {
 			next = mws[i](next)
 		}
 		return next
+	}
+}
+func securityHeadersMiddleware() middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Security-Policy", "default-src 'self'")
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("X-Frame-Options", "DENY")
+			w.Header().Set("X-XSS-Protection", "0")
+			if r.Method == http.MethodPost {
+				w.Header().Set("Cache-Control", "no-store")
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
 }
 
@@ -252,13 +519,125 @@ func originHostAllowed(allowed map[string]struct{}, host string) bool {
 	return false
 }
 
-// --- minimal HS256 JWT verification (Phase 1 PoC) ---
+// --- Rate limiting middleware (T029 remediation #7) ---
 //
-// POC-DEBT: Hand-rolled HS256 verifier; production must adopt
-// github.com/golang-jwt/jwt/v5 with RS256, key rotation, and proper claims
-// validation (iss, aud, exp leeway). Tracked in POC-DEBT-SCORECARD-phase1.md.
+// Token-bucket rate limiter per IP address. Default: 60 requests per minute.
+// Rejects excess requests with HTTP 429 Too Many Requests.
 
-func authMiddleware(secret string, log *logging.Logger) middleware {
+type sseConnectionStore struct {
+	mu    sync.Mutex
+	conns map[string]int
+}
+
+const maxSSEConnsPerIP = 10
+
+func (s *sseConnectionStore) acquire(ip string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.conns[ip] >= maxSSEConnsPerIP {
+		return false
+	}
+	s.conns[ip]++
+	return true
+}
+
+func (s *sseConnectionStore) release(ip string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.conns[ip] > 0 {
+		s.conns[ip]--
+	}
+}
+
+type rateLimiterEntry struct {
+	lim      *rate.Limiter
+	lastSeen time.Time
+}
+
+type rateLimiterStore struct {
+	mu       sync.Mutex
+	limiters map[string]*rateLimiterEntry
+	sseConns *sseConnectionStore
+}
+
+func newRateLimiterStore(ctx context.Context) *rateLimiterStore {
+	rls := &rateLimiterStore{
+		limiters: make(map[string]*rateLimiterEntry),
+		sseConns: &sseConnectionStore{conns: make(map[string]int)},
+	}
+	go rls.evictLoop(ctx)
+	return rls
+}
+
+func (rls *rateLimiterStore) evictLoop(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cutoff := time.Now().Add(-5 * time.Minute)
+			rls.mu.Lock()
+			for ip, entry := range rls.limiters {
+				if entry.lastSeen.Before(cutoff) {
+					delete(rls.limiters, ip)
+				}
+			}
+			rls.mu.Unlock()
+		}
+	}
+}
+
+func (rls *rateLimiterStore) getLimiter(ip string) *rate.Limiter {
+	rls.mu.Lock()
+	defer rls.mu.Unlock()
+	if entry, ok := rls.limiters[ip]; ok {
+		entry.lastSeen = time.Now()
+		return entry.lim
+	}
+	lim := rate.NewLimiter(rate.Every(time.Minute/60), 1) // 60 req/min, burst=1
+	rls.limiters[ip] = &rateLimiterEntry{lim: lim, lastSeen: time.Now()}
+	return lim
+}
+
+func rateLimitMiddleware(store *rateLimiterStore, log *logging.Logger) middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Only rate-limit /mcp POST (not GET SSE)
+			if r.Method != http.MethodPost {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			ip, _, err := net.SplitHostPort(r.RemoteAddr)
+			if err != nil {
+				ip = r.RemoteAddr // fallback if SplitHostPort fails
+			}
+
+			lim := store.getLimiter(ip)
+			if !lim.Allow() {
+				log.Warn().Str("ip", ip).Msg("rate limit exceeded")
+				w.Header().Set("Retry-After", "60")
+				http.Error(w, "too many requests", http.StatusTooManyRequests)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// --- JWT verification using github.com/golang-jwt/jwt/v5 (T029 remediation) ---
+//
+// Supports HS256 selected by CWSO_JWT_ALG.
+// Validates iss, aud, nbf, exp with 60s leeway.
+
+type jwtClaims struct {
+	Role string `json:"role"`
+	jwt.RegisteredClaims
+}
+
+func authMiddleware(cfg *config.Config, log *logging.Logger) middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authz := r.Header.Get("Authorization")
@@ -268,67 +647,70 @@ func authMiddleware(secret string, log *logging.Logger) middleware {
 				return
 			}
 			token := strings.TrimPrefix(authz, prefix)
-			claims, err := verifyHS256(token, secret)
+			claims, err := verifyJWT(token, cfg, log)
 			if err != nil {
 				log.Warn().Err(err).Msg("jwt rejected")
 				http.Error(w, "invalid token", http.StatusUnauthorized)
 				return
 			}
-			role, _ := claims["role"].(string)
+			role := claims.Role
 			if role != "orchestrator" && role != "worker" {
-				role = "orchestrator"
+				http.Error(w, "forbidden: unrecognised role", http.StatusForbidden)
+				return
 			}
-			sub, _ := claims["sub"].(string)
-			sess := &Session{Role: role, Subject: sub}
+			sess := &Session{Role: role, Subject: claims.Subject}
 			ctx := context.WithValue(r.Context(), sessionCtxKey{}, sess)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
-func verifyHS256(token, secret string) (map[string]any, error) {
-	if secret == "" {
+func verifyJWT(tokenString string, cfg *config.Config, log *logging.Logger) (*jwtClaims, error) {
+	if cfg.JWTSecret == "" {
 		return nil, errors.New("jwt secret not configured")
 	}
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return nil, errors.New("malformed token")
-	}
-	signingInput := parts[0] + "." + parts[1]
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(signingInput))
-	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(expected), []byte(parts[2])) {
-		return nil, errors.New("signature mismatch")
+
+	claims := &jwtClaims{}
+
+	var keyFunc jwt.Keyfunc
+	switch cfg.JWTAlg {
+	case "HS256":
+		keyFunc = func(token *jwt.Token) (interface{}, error) {
+			if token.Method.Alg() != "HS256" {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return []byte(cfg.JWTSecret), nil
+		}
+	default:
+		return nil, fmt.Errorf("unsupported algorithm: %s", cfg.JWTAlg)
 	}
 
-	hdrBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	parser := jwt.NewParser(jwt.WithLeeway(60*time.Second), jwt.WithExpirationRequired())
+	_, err := parser.ParseWithClaims(tokenString, claims, keyFunc)
 	if err != nil {
-		return nil, fmt.Errorf("decode header: %w", err)
-	}
-	var hdr struct {
-		Alg string `json:"alg"`
-		Typ string `json:"typ"`
-	}
-	if err := json.Unmarshal(hdrBytes, &hdr); err != nil {
-		return nil, fmt.Errorf("parse header: %w", err)
-	}
-	if hdr.Alg != "HS256" {
-		return nil, fmt.Errorf("unsupported alg %q", hdr.Alg)
-	}
-
-	claimBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, fmt.Errorf("decode claims: %w", err)
-	}
-	var claims map[string]any
-	if err := json.Unmarshal(claimBytes, &claims); err != nil {
-		return nil, fmt.Errorf("parse claims: %w", err)
-	}
-	if exp, ok := claims["exp"].(float64); ok {
-		if time.Now().Unix() > int64(exp) {
+		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, errors.New("token expired")
 		}
+		if errors.Is(err, jwt.ErrTokenNotValidYet) {
+			return nil, errors.New("token used before valid (nbf)")
+		}
+		return nil, fmt.Errorf("parse token: %w", err)
 	}
+
+	if claims.Issuer != cfg.JWTIssuer {
+		return nil, fmt.Errorf("invalid issuer: expected %q, got %q", cfg.JWTIssuer, claims.Issuer)
+	}
+
+	audienceFound := false
+	for _, aud := range claims.Audience {
+		if aud == cfg.JWTAudience {
+			audienceFound = true
+			break
+		}
+	}
+	if !audienceFound {
+		return nil, fmt.Errorf("invalid audience: expected %q", cfg.JWTAudience)
+	}
+
 	return claims, nil
 }
