@@ -249,6 +249,13 @@ func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus 
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
+	// Disable the server-level WriteTimeout for this SSE connection.
+	// WriteTimeout is measured from first byte written and fires at 30 s, which
+	// would kill long-lived streams. SSE connections must run until the client
+	// disconnects or the request context is cancelled.
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
+		log.Warn().Err(err).Msg("failed to clear SSE write deadline")
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -303,6 +310,10 @@ func handleBrokerSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger
 	if !ok {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
+	}
+	// Disable the server-level WriteTimeout for this SSE connection (same reason as handleSSE).
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
+		log.Warn().Err(err).Msg("failed to clear broker SSE write deadline")
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
