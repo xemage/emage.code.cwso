@@ -36,6 +36,7 @@
 		"go env": true,
         "grep": true,
         "head": true,
+        "jq": true,
         "mv": true,
 		"node": true,
         "opencode": true,
