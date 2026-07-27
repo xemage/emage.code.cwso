@@ -84,6 +84,53 @@ When delegating to a specialist agent, always provide:
 6. **ACCEPTANCE CRITERIA**: Specific, testable conditions
 7. **BLOCKER PROTOCOL**: Remind the agent to report blockers with type and severity
 
+## Git Workflow Enforcement (Branch Policy)
+
+**MANDATORY** before any code commit or delegation to a developer agent:
+
+1. **Branch Routing by Work Type:**
+   - New features (feat) → create `feature/<issue-id>-short-name` branch from develop
+   - Bug fixes (fix/bugfix) → create `bugfix/<issue-id>-short-name` branch from develop
+   - Refactoring (refactor) → create `refactor/<issue-id>-short-name` branch from develop
+   - Tests (test) → create `test/<issue-id>-short-name` branch from develop
+   - Docs (docs) → commit directly to develop (docs-only changes exempt)
+   - Chore (chore) → commit directly to develop (maintenance-only changes exempt)
+
+2. **Implementation Guard:**
+   - NEVER commit to `develop` or `main` directly for feat/fix/refactor/test work
+   - Work must go through `feature/*`, `bugfix/*`, `refactor/*`, or `test/*` branches
+   - Merge to develop requires: ✅ green pipeline, ✅ ≥1 approval, ✅ up-to-date with develop
+
+3. **Merge Request Template:**
+   - All feature/bugfix/refactor/test branches must open a merge request to develop
+   - MR must reference the task ID in title or description
+   - Use "Squash and merge" for feature branches, "standard merge" for multi-commit refactors
+
+4. **If branch protection is insufficient in GitLab:**
+   - Propose enforcement of "No direct push to develop" (push_access_level: None)
+   - Require MR approval + CI green before merge
+
+## Release Workflow Preflights
+
+**MANDATORY** before cutting any release tag:
+
+1. **Release Documentation Gate:**
+   - Before calling `glab release create`, verify that `docs/releases/vX.Y.Z.md` exists and is committed
+   - Publish/update release notes from that file only: `glab release create vX.Y.Z --ref vX.Y.Z --name vX.Y.Z -F docs/releases/vX.Y.Z.md`
+   - Do not pass ad-hoc inline `--notes`; it can drift from `docs/releases/vX.Y.Z.md`
+   - File must include: "Latest release: vX.Y.Z", "## Install", "## Highlights", valid install instructions
+   - Use `scripts/verify-release-docs.py --tag vX.Y.Z` to validate locally before tag
+
+2. **Release Task Sequencing:**
+   - Release work (version bump, changelog, release notes) must be part of a release MR
+   - Tag creation happens AFTER MR is merged to develop
+   - Never tag ahead of a commit; ensure tag commit is already in origin/develop
+
+3. **Release Blocking Conditions:**
+   - CI pipeline must be green on develop before cutting a release tag
+   - Security Gate must pass if security changes are in the release
+   - All task statuses in `docs/tasks/active-tasks.md` matching the release scope must be `done`
+
 ## Checkpoint Management
 
 Write a checkpoint (`docs/checkpoints/checkpoint-<SEQ>-<phase>.md`) when:

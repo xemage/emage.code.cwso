@@ -55,7 +55,7 @@ pending → in_progress → blocked → in_review → done | cancelled
 ## Skill Workflow (mandatory)
 
 Before implementation, debugging, review response, or completion claims, agents
-MUST check applicable skills in `knowledge/skills/` (or invoke `/discover-skills`).
+MUST check applicable skills in the active platform projection (`.github/skills/`, `.cursor/skills/`, `.gemini/skills/`, `.opencode/skills/`, `.pi/skills/`) (or invoke `/discover-skills`).
 
 | Situation | Required skill |
 |-----------|----------------|
@@ -68,25 +68,25 @@ Skipping a mandatory skill requires orchestrator approval and a logged exception
 in the task brief or checkpoint.
 
 ## Code Standards
-- See `instructions/coding-standards.md` (canonical) — projected to each platform.
+- See platform instruction projections: `.github/instructions/coding-standards.instructions.md`, `.cursor/rules/coding-standards.mdc`, `.gemini/instructions/coding-standards.md`, `.opencode/instructions/coding-standards.md`, `.pi/instructions/coding-standards.md`.
 - Max 50-line functions, max 4 parameters, early returns.
 - Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
 - GitFlow: `main`, `develop`, `feature/*`, `bugfix/*`, `release/*`, `hotfix/*`.
 
 ## Security
-- See `instructions/security-guidelines.md` and `SECURITY.md`.
+- See platform security instruction projections: `.github/instructions/security-guidelines.instructions.md`, `.cursor/rules/security-guidelines.mdc`, `.gemini/instructions/security-guidelines.md`, `.opencode/instructions/security-guidelines.md`, `.pi/instructions/security-guidelines.md`, and `implementation/SECURITY.md`.
 - OWASP Top 10 compliance required.
 - No secrets in code — use environment variables or vault. **Never commit live API keys.**
 - Parameterized queries only.
 - Input validation at all system boundaries.
 
 ## Knowledge Base
-- The single source of truth for agents, skills, commands, and instructions is `knowledge/`.
+- Source knowledge lives in the emage.code repository under `implementation/knowledge/`; this target uses installed platform projections.
 - Per-platform folders (`.github/`, `.gemini/`, `.opencode/`, `.cursor/`, `.pi/`) are **generated** by `scripts/sync.mjs`. **Do not edit them by hand.**
-- See [`knowledge/README.md`](knowledge/README.md) for authoring rules.
+- Use the installed platform folders (`.github/`, `.cursor/`, `.gemini/`, `.opencode/`, `.pi/`) as runtime references in this target project.
 
 ## MCP Servers
-Declared in [`knowledge/mcp/servers.yaml`](knowledge/mcp/servers.yaml). Each server is tagged:
+Declared in platform MCP configs (`.vscode/mcp.json`, `.cursor/mcp.json`, `.gemini/settings.json`, `.opencode/opencode.json`, `.pi/mcp.json`). Each server is tagged:
 
 | Tag | Emitted to |
 |-----|-----------|

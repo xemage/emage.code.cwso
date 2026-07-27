@@ -249,6 +249,13 @@ func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus 
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
+	// Disable the server-level WriteTimeout for this SSE connection.
+	// WriteTimeout is measured from first byte written and fires at 30 s, which
+	// would kill long-lived streams. SSE connections must run until the client
+	// disconnects or the request context is cancelled.
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
+		log.Warn().Err(err).Msg("failed to clear SSE write deadline")
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -303,6 +310,10 @@ func handleBrokerSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger
 	if !ok {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
+	}
+	// Disable the server-level WriteTimeout for this SSE connection (same reason as handleSSE).
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
+		log.Warn().Err(err).Msg("failed to clear broker SSE write deadline")
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -569,6 +580,11 @@ func newRateLimiterStore(ctx context.Context) *rateLimiterStore {
 	return rls
 }
 
+// isLocalhost checks if an IP is a loopback address (localhost in development)
+func isLocalhost(ip string) bool {
+	return ip == "127.0.0.1" || ip == "::1" || ip == "localhost"
+}
+
 func (rls *rateLimiterStore) evictLoop(ctx context.Context) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
@@ -592,11 +608,14 @@ func (rls *rateLimiterStore) evictLoop(ctx context.Context) {
 func (rls *rateLimiterStore) getLimiter(ip string) *rate.Limiter {
 	rls.mu.Lock()
 	defer rls.mu.Unlock()
+	// No rate limiting for localhost (development convenience)
+	// Remote clients get 60 req/min with burst capacity for connection handshakes
 	if entry, ok := rls.limiters[ip]; ok {
 		entry.lastSeen = time.Now()
 		return entry.lim
 	}
-	lim := rate.NewLimiter(rate.Every(time.Minute/60), 1) // 60 req/min, burst=1
+	// Create limiter: 60 requests per minute with burst of 10 for connection init
+	lim := rate.NewLimiter(rate.Every(time.Minute/60), 10) // 60 req/min, burst=10
 	rls.limiters[ip] = &rateLimiterEntry{lim: lim, lastSeen: time.Now()}
 	return lim
 }
@@ -613,6 +632,12 @@ func rateLimitMiddleware(store *rateLimiterStore, log *logging.Logger) middlewar
 			ip, _, err := net.SplitHostPort(r.RemoteAddr)
 			if err != nil {
 				ip = r.RemoteAddr // fallback if SplitHostPort fails
+			}
+
+			// Exempt localhost from rate limiting (development convenience)
+			if isLocalhost(ip) {
+				next.ServeHTTP(w, r)
+				return
 			}
 
 			lim := store.getLimiter(ip)

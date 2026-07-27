@@ -28,4 +28,4 @@ producing a formal gate verdict and release recommendation.
 ## Gate Verdict
 
 - Verdict: `PASS`
-- Gate artifact: `docs/archive/artifacts/gate-v0.4.1-hardening-2026-06-18.md`
+- Gate artifact: `docs/artifacts/gate-v0.4.1-hardening-2026-06-18.md`

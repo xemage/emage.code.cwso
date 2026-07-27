@@ -138,8 +138,8 @@ func (m *Manager) Close() {
 	if m.closed.Swap(true) {
 		return
 	}
-	m.rootCancel()
 	m.cancelQueuedJobsOnClose()
+	m.rootCancel()
 	m.wg.Wait()
 }
 
