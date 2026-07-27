@@ -2,6 +2,7 @@ package rollout
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 )
@@ -186,6 +187,7 @@ func (nr *NodeRegistry) NodeCount() int {
 }
 
 // getActiveNodesLocked returns active nodes without acquiring the lock (for internal use).
+// The slice is sorted by NodeID to guarantee stable ordering for round-robin selection.
 func (nr *NodeRegistry) getActiveNodesLocked() []*RegistryNode {
 	var active []*RegistryNode
 	for _, node := range nr.nodes {
@@ -193,6 +195,7 @@ func (nr *NodeRegistry) getActiveNodesLocked() []*RegistryNode {
 			active = append(active, node)
 		}
 	}
+	sort.Slice(active, func(i, j int) bool { return active[i].NodeID < active[j].NodeID })
 	return active
 }
 
