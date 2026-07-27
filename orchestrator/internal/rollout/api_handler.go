@@ -19,6 +19,7 @@ func NewHTTPHandler(svc *Service) http.Handler {
 	mux.HandleFunc("POST /callbacks/session_result", h.sessionResult)
 	mux.HandleFunc("POST /nodes/register", h.registerNode)
 	mux.HandleFunc("POST /nodes/{id}/heartbeat", h.heartbeatNode)
+	mux.HandleFunc("GET /nodes/{id}/tasks", h.getNodeTasks)
 	mux.HandleFunc("POST /v1/chat/completions", h.proxyNotConfigured)
 	return mux
 }
@@ -124,6 +125,49 @@ func (h *apiHandler) heartbeatNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *apiHandler) getNodeTasks(w http.ResponseWriter, r *http.Request) {
+	nodeID := r.PathValue("id")
+	if nodeID == "" {
+		writeError(w, http.StatusBadRequest, "node_id required")
+		return
+	}
+
+	// Fetch assigned tasks for this node
+	if h.svc == nil || h.svc.nodeRegistry == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"assigned_tasks": []interface{}{},
+		})
+		return
+	}
+
+	assignments := h.svc.nodeRegistry.GetAssignedTasks(nodeID)
+
+	// Build response with task specs
+	type taskInfo struct {
+		TaskID     string   `json:"task_id"`
+		SessionID  string   `json:"session_id"`
+		TaskSpec   TaskSpec `json:"task_spec"`
+		AssignedAt string   `json:"assigned_at"`
+	}
+
+	var tasks []taskInfo
+	for _, assignment := range assignments {
+		// Look up the task in the service to get the task spec
+		if task, err := h.svc.getTaskLocked(assignment.TaskID); err == nil {
+			tasks = append(tasks, taskInfo{
+				TaskID:     assignment.TaskID,
+				SessionID:  assignment.SessionID,
+				TaskSpec:   task.Spec,
+				AssignedAt: assignment.AssignedAt.Format("2006-01-02T15:04:05Z"),
+			})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"assigned_tasks": tasks,
+	})
 }
 
 func (h *apiHandler) proxyNotConfigured(w http.ResponseWriter, _ *http.Request) {

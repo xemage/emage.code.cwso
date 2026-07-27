@@ -122,6 +122,9 @@ func TestPhase9RESTTrainerE2E(t *testing.T) {
 		"trajectories": []TrajectoryGroup{{
 			SessionID: sub.TaskID,
 			Chains:    []Chain{{ChainID: "c1", Steps: []Step{{LossMask: []uint8{1}}}}},
+			Metadata: map[string]string{
+				"partial_result": `{"step":0,"reward":0.75,"merge_outcome":"completed"}`,
+			},
 		}},
 	})
 	cbReq := httptest.NewRequest(http.MethodPost, "/callbacks/session_result", bytes.NewReader(cbBody))
@@ -129,6 +132,19 @@ func TestPhase9RESTTrainerE2E(t *testing.T) {
 	h.ServeHTTP(cbRec, cbReq)
 	if cbRec.Code != http.StatusOK {
 		t.Fatalf("callback: %d", cbRec.Code)
+	}
+
+	getReq = httptest.NewRequest(http.MethodGet, "/rollout/task/"+sub.TaskID, nil)
+	getRec = httptest.NewRecorder()
+	h.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("get after callback: %d", getRec.Code)
+	}
+	if err := json.Unmarshal(getRec.Body.Bytes(), &status); err != nil {
+		t.Fatalf("decode status after callback: %v", err)
+	}
+	if len(status.PartialResults) != 1 || status.PartialResults[0].MergeOutcome != "completed" {
+		t.Fatalf("expected callback-derived partial result, got %+v", status)
 	}
 }
 

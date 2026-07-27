@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -134,6 +135,7 @@ type Service struct {
 	mu           sync.RWMutex
 	tasks        map[string]*Task
 	nodes        map[string]*Node
+	nodeRegistry *NodeRegistry // for task assignment to executors (Phase 3.1)
 	rewards      RewardReader
 	client       trajectoryClient
 	prefixRouter *PrefixRouter
@@ -151,6 +153,7 @@ func NewService(rewards RewardReader, client *Client, prefixRouter *PrefixRouter
 	return &Service{
 		tasks:        make(map[string]*Task),
 		nodes:        make(map[string]*Node),
+		nodeRegistry: NewNodeRegistry(),
 		rewards:      rewards,
 		client:       trajectorySvc,
 		prefixRouter: prefixRouter,
@@ -447,7 +450,7 @@ func (s *Service) resolvePrefixKey(ctx context.Context, workspaceID string) (str
 	return s.prefixRouter.Prewarm(ctx, workspaceID)
 }
 
-// RegisterNode records a rollout worker node.
+// RegisterNode records a rollout worker node and registers it in the node registry for task assignment.
 func (s *Service) RegisterNode(nodeID string) error {
 	if nodeID == "" {
 		return fmt.Errorf("node id required")
@@ -455,10 +458,12 @@ func (s *Service) RegisterNode(nodeID string) error {
 	s.mu.Lock()
 	s.nodes[nodeID] = &Node{ID: nodeID, LastHeartbeat: time.Now().UTC()}
 	s.mu.Unlock()
-	return nil
+
+	// Also register in the node registry for task assignment
+	return s.nodeRegistry.RegisterNode(nodeID)
 }
 
-// HeartbeatNode updates node liveness.
+// HeartbeatNode updates node liveness in both the legacy nodes map and the node registry.
 func (s *Service) HeartbeatNode(nodeID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -467,7 +472,35 @@ func (s *Service) HeartbeatNode(nodeID string) error {
 		return errNotFound
 	}
 	n.LastHeartbeat = time.Now().UTC()
-	return nil
+
+	// Also update in the node registry
+	return s.nodeRegistry.HeartbeatNode(nodeID)
+}
+
+// StartStaleNodeReaper starts a background goroutine that deregisters nodes which
+// have not sent a heartbeat within maxAge (Phase 3.2). The goroutine stops when ctx
+// is cancelled. Typical values: interval=30s, maxAge=90s.
+func (s *Service) StartStaleNodeReaper(ctx context.Context, interval, maxAge time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				removed := s.nodeRegistry.DeregisterStaleNodes(maxAge)
+				if len(removed) > 0 {
+					s.mu.Lock()
+					for _, id := range removed {
+						delete(s.nodes, id)
+					}
+					s.mu.Unlock()
+					log.Printf("[rollout] stale-reaper: deregistered %d node(s): %v", len(removed), removed)
+				}
+			}
+		}
+	}()
 }
 
 // CompleteSession marks a task or individual session completed from trainer callback.
@@ -490,6 +523,23 @@ func (s *Service) CompleteSession(taskID, sessionID string, group *TrajectoryGro
 	task, ok = s.tasks[taskID]
 	if !ok {
 		return errNotFound
+	}
+	if partial, ok := partialResultFromGroup(group); ok {
+		if task.NumSamples > 1 {
+			replaced := false
+			for i, existing := range task.PartialResults {
+				if existing.Step == partial.Step {
+					task.PartialResults[i] = partial
+					replaced = true
+					break
+				}
+			}
+			if !replaced {
+				task.PartialResults = append(task.PartialResults, partial)
+			}
+		} else {
+			task.PartialResults = []PartialResult{partial}
+		}
 	}
 	if task.NumSamples <= 1 {
 		task.Status = TaskCompleted
@@ -514,6 +564,21 @@ func (s *Service) CompleteSession(taskID, sessionID string, group *TrajectoryGro
 	}
 	task.UpdatedAt = time.Now().UTC()
 	return nil
+}
+
+func partialResultFromGroup(group *TrajectoryGroup) (PartialResult, bool) {
+	if group == nil || len(group.Metadata) == 0 {
+		return PartialResult{}, false
+	}
+	raw := group.Metadata["partial_result"]
+	if raw == "" {
+		return PartialResult{}, false
+	}
+	var partial PartialResult
+	if err := json.Unmarshal([]byte(raw), &partial); err != nil {
+		return PartialResult{}, false
+	}
+	return partial, true
 }
 
 func (s *Service) collectRewardsForTask(task *Task) []RewardEvent {
@@ -574,6 +639,9 @@ func (s *Service) collectRewards(sessionID string) []RewardEvent {
 }
 
 func (s *Service) mergePartialResults(task *Task, rewards []RewardEvent) []PartialResult {
+	if len(task.PartialResults) > 0 {
+		return task.PartialResults
+	}
 	if len(rewards) == 0 {
 		return task.PartialResults
 	}
@@ -656,6 +724,18 @@ func (s *Service) BuildTrajectoryFromDrain(ctx context.Context, taskID, sessionI
 	client := s.client
 	s.mu.RUnlock()
 	return client.BuildFromDrainWithConfig(ctx, sessionID, limit, builder, strategy)
+}
+
+// getTaskLocked returns a task by ID without holding the lock (caller is responsible for lock management).
+// Used by API handlers that need to return task info without double-locking.
+func (s *Service) getTaskLocked(taskID string) (*Task, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	task, ok := s.tasks[taskID]
+	if !ok {
+		return nil, errNotFound
+	}
+	return task, nil
 }
 
 func normalizeBuilderStrategy(strategy BuilderStrategy) (BuilderStrategy, error) {
