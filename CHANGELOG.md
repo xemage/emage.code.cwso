@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.5.0 - 2026-07-27
+
+### Phase 3.1 and transport hardening
+- **Executor node registry** with round-robin task assignment (Phase 3.1, T235.1). Nodes
+  register and receive tasks distributed deterministically across available executors.
+- Transport **SSE `WriteTimeout` disabled** — long-lived event streams no longer severed
+  by the Go HTTP server timeout (fix(transport)).
+- **MCP rate limiting** burst raised to 10 with localhost exemption; HTTP 429 documented.
+- **Jobs manager close-path fix** — `Manager.Close()` drains the queued-job channel before
+  cancelling the root context, so queued jobs reach `cancelled` reliably.
+- **Deterministic round-robin** — node ordering is now stable across Go runs (T164).
+
+### Security
+- Go toolchain raised to **1.25.12** — remediates **GO-2026-5856** (`crypto/tls` ECH
+  privacy leak). All three CI job images updated.
+- `crossbeam-epoch` pinned to **0.9.20** — remediates **RUSTSEC-2026-0204** (invalid
+  pointer dereference in `fmt::Pointer` for `Atomic`/`Shared`). Transitive path:
+  `wasmtime → rayon-core → crossbeam-deque → crossbeam-epoch`.
+
+### Operations
+- `main` branch integrated into `develop` (MR !74); production and integration lines back
+  in sync.
+
+### Documentation
+- Release artifact: [`docs/artifacts/release-v0.5.0.md`](docs/artifacts/release-v0.5.0.md).
+
 ## v0.4.0 - 2026-06-09
 
 ### Polar parity and operator readiness
