@@ -268,25 +268,53 @@ func TestRateLimitMiddleware_EnforcesLimit(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// First request should succeed
-	req1 := httptest.NewRequest(http.MethodPost, "/mcp", nil)
-	req1.RemoteAddr = "127.0.0.1:8000"
-	w1 := httptest.NewRecorder()
-	handler.ServeHTTP(w1, req1)
-	if w1.Code != http.StatusOK {
-		t.Fatalf("expected first request to succeed with 200, got %d", w1.Code)
+	// Use a remote IP so the localhost exemption does not apply.
+	const remoteIP = "203.0.113.1:8000" // TEST-NET-3 (RFC 5737), never routable
+
+	// Exhaust the burst capacity (10 tokens) — all should succeed.
+	for i := 0; i < 10; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+		req.RemoteAddr = remoteIP
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("request %d: expected 200, got %d", i+1, w.Code)
+		}
 	}
 
-	// Second request should be rate limited (burst=1)
-	req2 := httptest.NewRequest(http.MethodPost, "/mcp", nil)
-	req2.RemoteAddr = "127.0.0.1:8000"
-	w2 := httptest.NewRecorder()
-	handler.ServeHTTP(w2, req2)
-	if w2.Code != http.StatusTooManyRequests {
-		t.Fatalf("expected second request to be rate limited with 429, got %d", w2.Code)
+	// 11th request exceeds burst — must be rate limited.
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.RemoteAddr = remoteIP
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 11th request to be rate limited with 429, got %d", w.Code)
 	}
-	if w2.Header().Get("Retry-After") != "60" {
-		t.Fatalf("expected Retry-After header, got: %s", w2.Header().Get("Retry-After"))
+	if w.Header().Get("Retry-After") != "60" {
+		t.Fatalf("expected Retry-After header, got: %s", w.Header().Get("Retry-After"))
+	}
+}
+
+func TestRateLimitMiddleware_LocalhostExempt(t *testing.T) {
+	store := newRateLimiterStore(context.Background())
+	log := logging.New("debug")
+	limiter := rateLimitMiddleware(store, log)
+
+	handler := limiter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Localhost addresses must never be rate limited regardless of request count.
+	for _, addr := range []string{"127.0.0.1:8000", "[::1]:8000"} {
+		for i := 0; i < 20; i++ {
+			req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+			req.RemoteAddr = addr
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("addr %s request %d: localhost should be exempt, got %d", addr, i+1, w.Code)
+			}
+		}
 	}
 }
 

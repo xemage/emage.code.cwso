@@ -18,16 +18,18 @@ with semantic AST-based merging.
 
 | Phase | Scope | Milestone | State |
 |-------|-------|-----------|-------|
-| 0–5 | MCP core → sandbox + merge | M0–M5 | ✅ closed |
-| 6–9 | Next-Gen HAL, sparse, rollout/Polar | M6 | ✅ RC [`v0.3.0-rc1`](https://gitlab.com/em-age/emage.code.cwso/-/releases/v0.3.0-rc1) |
+| Initial plan | MCP core → sandbox + merge | M0–M5 | Closed |
+| Updated plan | Next-Gen HAL, sparse, rollout/Polar | M6 | RC [v0.3.0-rc1](https://gitlab.com/em-age/emage.code.cwso/-/releases/v0.3.0-rc1) |
+| Current state | v0.4.1 GA plus follow-on planning | v0.4.1 | Released; Phase 6+ remains planned |
 
-See [docs/plans/plan-cwso-nextgen-phase6plus.md](docs/plans/plan-cwso-nextgen-phase6plus.md) and
-[docs/tasks/active-tasks.md](docs/tasks/active-tasks.md) for Phase 6+ status.
+Current release artifacts and planning docs live in [docs/plans/plan-cwso-nextgen-phase6plus.md](docs/plans/plan-cwso-nextgen-phase6plus.md)
+and [docs/tasks/active-tasks.md](docs/tasks/active-tasks.md).
 
 ## What CWSO is
 
-CWSO is an orchestration engine for AI coding swarms where each agent works in
-its own isolated workspace and outputs are merged with deterministic policies.
+CWSO is a deterministic MCP orchestration platform for AI coding workflows.
+It runs a Go-based orchestrator, uses shadow workspaces for isolated agent
+edits, and merges results with explicit conflict policies and sidecar services.
 At runtime, CWSO provides:
 
 - An MCP server surface for tool calls over stdio or Streamable HTTP.
@@ -36,14 +38,15 @@ At runtime, CWSO provides:
   and TypeScript.
 - A merge sidecar (`cwso-merge-engine`) that enforces deterministic conflict
   classes and reason codes.
-- Tiered execution routing for sandboxed workloads.
+- Tiered execution routing for sandboxed workloads and optional rollout /
+  Polar capture flows.
 
 ## How to use CWSO
 
-See **[docs/user/installation-v2.md](docs/user/installation-v2.md)** for the comprehensive v0.4.0 guide, or
-**[installation-v1.md](docs/user/installation-v1.md)** for v0.3.0 quick reference (JWT,
-MCP HTTP, Phase 4 / Next-Gen flags, troubleshooting). For **Cursor / VS Code** MCP wiring see
-**[docs/user/ide-integration-v1.md](docs/user/ide-integration-v1.md)**.
+See **[docs/user/installation-v3.md](docs/user/installation-v3.md)** for the Linux + VS Code setup guide,
+or **[docs/user/installation-v2.md](docs/user/installation-v2.md)** for the comprehensive v0.4.0 reference.
+For **Cursor / VS Code** MCP wiring and troubleshooting, see
+**[docs/user/ide-integration-v2.md](docs/user/ide-integration-v2.md)**.
 
 ```bash
 make build
@@ -206,16 +209,18 @@ For Wasm-specific operations guidance, see
 [docs/artifacts/wasm-scoring-runtime-ops-v1.md](docs/artifacts/wasm-scoring-runtime-ops-v1.md).
 
 ## Documentation
-- **[Installation & usage (v2)](docs/user/installation-v2.md)** — comprehensive v0.4.0 guide
+- **[Installation & usage (v3)](docs/user/installation-v3.md)** — Linux + VS Code guide with MCP auth troubleshooting
+- **[Installation & usage (v2)](docs/user/installation-v2.md)** — comprehensive v0.4.0 reference guide
 - **[Installation & usage (v1)](docs/user/installation-v1.md)** — v0.3.0 quick reference
-- **[IDE integration](docs/user/ide-integration-v1.md)** — Cursor / VS Code + CWSO MCP
-- [Requirements](docs/artifacts/requirements-v1.md)
+- **[IDE integration (v2)](docs/user/ide-integration-v2.md)** — Cursor / VS Code + CWSO MCP troubleshooting
+- **[IDE integration (v1)](docs/user/ide-integration-v1.md)** — legacy reference
+- [Requirements (v2, current)](docs/artifacts/requirements-v2.md) · [Requirements v1 (archived)](docs/archive/artifacts/requirements-v1.md)
 - [Next-Gen blueprint](docs/artifacts/cwso-nextgen-blueprint-v1.md)
 - [Rollout / Polar architecture](docs/artifacts/rollout-architecture-v1.md)
 - [Polar gap analysis](docs/artifacts/polar-gap-analysis-v1.md)
 - [Release v0.3.0-rc1](docs/artifacts/release-v0.3.0-rc1.md)
-- [Architecture](docs/artifacts/architecture-v1.md)
-- [Security Baseline](docs/artifacts/security-baseline-v1.md)
+- [Architecture (v1, current)](docs/artifacts/architecture-v1.md)
+- [Security Baseline (v2, current)](docs/artifacts/security-baseline-v2.md) · [Security Baseline v1 (archived)](docs/archive/artifacts/security-baseline-v1.md)
 - [ADR Index](docs/decisions/)
 - [Active Tasks](docs/tasks/active-tasks.md) · [Completed Tasks](docs/tasks/completed-tasks.md)
 - [Technical debt register](TECHNICAL-DEBT.md) · [Archived PoC scorecards](docs/archive/debt/)
@@ -224,7 +229,7 @@ For Wasm-specific operations guidance, see
 
 No secrets in repository. All untrusted code runs in Firecracker microVMs
 (Phase 4). See [SECURITY.md](SECURITY.md) and
-[docs/artifacts/security-baseline-v1.md](docs/artifacts/security-baseline-v1.md).
+[docs/artifacts/security-baseline-v2.md](docs/artifacts/security-baseline-v2.md).
 
 ## License
 
