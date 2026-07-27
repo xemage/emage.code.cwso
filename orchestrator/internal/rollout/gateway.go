@@ -144,9 +144,23 @@ func (g *Gateway) dispatchReady() {
 				return
 			}
 			j := job
+			// Phase 3.1 assignment is best-effort. Legacy gateway flows must still
+			// progress to RUNNING even when no executor node is available.
+			_ = g.assignTaskToNode(j)
 			g.runPool.submit(g.rootCtx, func() { g.runRunning(j) })
 		}
 	}
+}
+
+// assignTaskToNode assigns a task to an available executor node.
+// Returns an error if no nodes are available.
+func (g *Gateway) assignTaskToNode(job sessionJob) error {
+	if g.svc == nil || g.svc.nodeRegistry == nil {
+		// No executor integration available; skip assignment and proceed
+		return nil
+	}
+	_, err := g.svc.nodeRegistry.AssignTask(job.state.TaskID, job.state.SessionID)
+	return err
 }
 
 // PoolDepths exposes queue depths for observability tests.

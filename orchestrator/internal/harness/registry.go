@@ -15,6 +15,7 @@ const (
 	IDCodex        ID = "codex"
 	IDClaudeCode   ID = "claude_code"
 	IDQwenCode     ID = "qwen_code"
+	IDSIATarget    ID = "sia_target"
 )
 
 // AdapterConfig describes how to launch a harness unchanged except for model base_url.
@@ -71,6 +72,23 @@ func DefaultRegistry() *Registry {
 			Image:       "alpine:3.20",
 			Command:     []string{"/bin/sh", "-lc", `echo "qwen_code harness stub; set OPENAI_BASE_URL=${OPENAI_BASE_URL}"`},
 			BaseURLEnv:  map[string]string{"openai": "OPENAI_BASE_URL"},
+		},
+		{
+			ID:          IDSIATarget,
+			DisplayName: "SIA Target Agent (Claude or OpenHands)",
+			Image:       "emage/cwso-sia-target:latest",
+			Command:     []string{"/usr/local/bin/python", "/app/harness-entrypoint.py"},
+			BaseURLEnv: map[string]string{
+				"anthropic": "ANTHROPIC_BASE_URL",
+				"openai":    "OPENAI_BASE_URL",
+				"gemini":    "LLM_BASE_URL",
+			},
+			ExtraEnv: map[string]string{
+				"SIA_BACKEND":      "claude",
+				"SIA_MODEL":        "haiku",
+				"SIA_MAX_TURNS":    "10",
+				"PYTHONUNBUFFERED": "1",
+			},
 		},
 	} {
 		registry.adapters[cfg.ID] = cfg
