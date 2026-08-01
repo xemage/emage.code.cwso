@@ -2,11 +2,11 @@
 
 **ID:** T169
 **Owner:** backend-developer
-**Status:** pending
+**Status:** done
 **Priority:** P1
 **Depends on:** —
 **Created:** 2026-07-31
-**Completed:** —
+**Completed:** 2026-08-01
 **Based on:** docs/plans/plan-fix-cwso-rollout-healthcheck-and-trajectory-store.md
 
 ## Objective

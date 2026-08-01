@@ -1,6 +1,7 @@
 # Task T164 - Fix flaky TestNodeRegistry_AssignTask (round-robin non-determinism)
 
-- **Status:** pending
+- **Status:** done
+- **Completed:** 2026-07-27
 - **Owner:** backend-developer
 - **Priority:** P0
 - **Depends on:** —

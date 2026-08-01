@@ -40,12 +40,12 @@ Where `<N>` is a sequential integer starting from `001`.
 ## Completed Tasks
 | ID | Title | Completed |
 |----|-------|-----------|
-| TASK-NNN | ... | YYYY-MM-DD |
+| TNNN | ... | YYYY-MM-DD |
 
 ## Active Tasks
 | ID | Title | Status | Assignee |
 |----|-------|--------|----------|
-| TASK-NNN | ... | in_progress | ... |
+| TNNN | ... | in_progress | ... |
 
 ## Active Blockers
 | Blocker ID | Type | Severity | Impacted Tasks | Description |
@@ -102,7 +102,7 @@ To keep the checkpoint directory manageable and reduce token cost when loading c
 - <decision 2>
 
 ## Completed Tasks
-TASK-001, TASK-002, TASK-003
+T001, T002, T003
 ```
 
 ### 3. Generate a Resume Brief
@@ -151,7 +151,7 @@ After completing Phase 0 (Foundation):
 
 ### Checkpoint Trigger: Mid-Phase Progress
 
-After completing TASK-005, TASK-006, TASK-007 during Phase 1:
+After completing T005, T006, T007 during Phase 1:
 - Write `checkpoint-003.md` covering those task completions.
 - Note any blockers encountered and resolved.
 

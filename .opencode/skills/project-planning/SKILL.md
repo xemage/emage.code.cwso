@@ -209,13 +209,13 @@ When a plan is approved, the sprint backlog tasks MUST be decomposed into entrie
 
 1. For each task in the approved sprint backlog, create an entry in `active-tasks.md`:
    ```markdown
-   ### TASK-{ID}: {Title}
+   ### T{ID}: {Title}
    - **Status:** pending
    - **Assignee:** {role}
    - **Priority:** must | should | could
    - **Points:** {N}
    - **Sprint:** {sprint-name}
-   - **Depends on:** [TASK-{ID}, ...] or none
+   - **Depends on:** [T{ID}, ...] or none
    - **Artifact refs:** [{artifact-version}, ...]
    - **Created:** {YYYY-MM-DD}
    ```

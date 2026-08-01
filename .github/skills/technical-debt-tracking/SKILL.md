@@ -102,7 +102,7 @@ When a PoC transitions to production implementation, debt items must be promoted
 
 | Disposition | Promotion Action |
 |-------------|-----------------|
-| `must_fix_pre_prod` | Create task in `docs/tasks/active-tasks.md` with priority `must` and target sprint = current or next |
+| `must_fix_pre_prod` | Create task in `docs/tasks/active-tasks.md` with priority `P0` and target sprint = current or next |
 | `can_defer_post_ga` | Create task in `docs/tasks/active-tasks.md` with priority `should` and target sprint = post-GA sprint |
 | `monitor_only` | Do not create a task; add to risk register with monitoring criteria |
 
@@ -111,7 +111,7 @@ When a PoC transitions to production implementation, debt items must be promoted
 1. Filter the debt ledger for items with disposition `must_fix_pre_prod` and `can_defer_post_ga`.
 2. For each item, create a task entry:
    ```markdown
-   ### TASK-{ID}: Resolve DEBT-{debt-id} — {title}
+   ### T{ID}: Resolve DEBT-{debt-id} — {title}
    - **Status:** pending
    - **Assignee:** {recommended owner from debt item}
    - **Priority:** {must | should — based on disposition}
@@ -122,7 +122,7 @@ When a PoC transitions to production implementation, debt items must be promoted
    - **Created:** {YYYY-MM-DD}
    ```
 3. Sync promoted tasks to GitLab issues (see gitlab-management skill).
-4. Update the debt ledger to mark promoted items with `promoted_to=TASK-{ID}`.
+4. Update the debt ledger to mark promoted items with `promoted_to=T{ID}`.
 
 **Debt ledger versioning:**
 ```

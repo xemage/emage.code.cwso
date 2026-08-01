@@ -1,0 +1,66 @@
+# Reusable GitLab CI pipeline for Node.js / TypeScript projects.
+# Stages: install -> lint -> test -> build
+#
+# Usage: `include` this file or copy into `.gitlab-ci.yml`.
+
+stages:
+  - install
+  - lint
+  - test
+  - build
+
+variables:
+  NODE_VERSION: "20"
+  npm_config_cache: "$CI_PROJECT_DIR/.npm"
+
+default:
+  image: node:${NODE_VERSION}-alpine
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm/
+      - node_modules/
+
+install:
+  stage: install
+  script:
+    - npm ci --prefer-offline --no-audit --fund=false
+  artifacts:
+    paths:
+      - node_modules/
+    expire_in: 1 hour
+
+lint:
+  stage: lint
+  needs: ["install"]
+  script:
+    - npm run lint
+
+test:
+  stage: test
+  needs: ["install"]
+  script:
+    - npm test -- --ci --reporters=default --reporters=jest-junit
+  coverage: '/All files[^|]*\|[^|]*\s+([\d\.]+)/'
+  artifacts:
+    when: always
+    reports:
+      junit: junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/cobertura-coverage.xml
+    paths:
+      - coverage/
+    expire_in: 1 week
+
+build:
+  stage: build
+  needs: ["lint", "test"]
+  script:
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week

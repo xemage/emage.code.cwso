@@ -1,6 +1,7 @@
 # Task T150 — KV differential prompting (proxy hot path)
 
-- **Status:** pending
+- **Status:** done
+- **Completed:** 2026-06-19
 - **Owner:** backend-developer
 - **Priority:** P2
 - **Depends on:** T135, T147

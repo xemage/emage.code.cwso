@@ -45,7 +45,10 @@ After creating the bug report:
 1. **Create a TASK entry** for tracking this bug:
    - Add to `docs/tasks/active-tasks.md` with state `pending`
    - Assign severity-appropriate priority
-   - Format: `| BUG-<id> | <title> | pending | <owner> | <severity> | <blocker-ids> |`
+   - Use the NEXT sequential `T<NNN>` ID. NEVER invent a `BUG-` prefix — non-`T` rows are silently deleted by `install.sh --update`.
+   - Format (7 columns, exact order):
+     `| T<NNN> | BUG: <title> | <owner-slug> | pending | P0\|P1\|P2 | <dep-ids or —> | YYYY-MM-DD |`
+   - Map severity → priority: critical→P0, high→P0, medium→P1, low→P2
 2. Reference any related task IDs or artifact versions affected
 
 ### Blocker Classification

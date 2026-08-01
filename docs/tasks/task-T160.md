@@ -1,6 +1,7 @@
 # Task T160 - Reconcile v0.4.0 GA documentation drift
 
-- **Status:** pending
+- **Status:** done
+- **Completed:** 2026-06-19
 - **Owner:** technical-writer
 - **Priority:** P1
 - **Depends on:** T157

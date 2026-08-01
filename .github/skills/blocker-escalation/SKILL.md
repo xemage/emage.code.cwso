@@ -37,7 +37,7 @@ When filing a blocker, create a report with this structure:
 - **Severity:** critical | high | medium | low
 - **Reporter:** <agent-name>
 - **Date:** YYYY-MM-DD
-- **Impacted Tasks:** TASK-NNN, TASK-MMM
+- **Impacted Tasks:** TNNN, TMMM
 - **Description:** <clear description of what is blocked and why>
 - **What Was Tried:**
   1. <attempt 1 and result>
@@ -145,7 +145,7 @@ Present the blocker to the user with full context:
 - **Type:** technical
 - **Severity:** high
 - **Reporter:** backend-dev
-- **Impacted Tasks:** TASK-021
+- **Impacted Tasks:** T021
 - **Description:** Token bucket implementation fails under concurrent access. Race condition in counter decrement.
 - **What Was Tried:**
   1. Added mutex lock — deadlock under high load
@@ -161,7 +161,7 @@ Present the blocker to the user with full context:
 - **Type:** unclear_requirements
 - **Severity:** medium
 - **Reporter:** frontend-dev
-- **Impacted Tasks:** TASK-030
+- **Impacted Tasks:** T030
 - **Description:** Design spec does not specify behavior when user has no profile photo. Should we show initials, a default avatar, or leave blank?
 - **What Was Tried:**
   1. Checked design system docs — no guidance

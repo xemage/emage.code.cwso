@@ -1,6 +1,7 @@
 # Task T161 - Clean active/completed task board hygiene
 
-- **Status:** pending
+- **Status:** done
+- **Completed:** 2026-06-19
 - **Owner:** scrum-master
 - **Priority:** P1
 - **Depends on:** T160
