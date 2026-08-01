@@ -61,3 +61,4 @@ Append-only log. Entries move here after the orchestrator marks a task `done`.
 | T148 | Evaluator registry + SWE-bench hook | backend-developer | 2026-06-09 | Migrated from active-tasks.md board cleanup |
 | T156 | Comprehensive installation guide v2 (v0.4.0) | technical-writer | 2026-06-09 | Migrated from active-tasks.md board cleanup |
 | T157 | v0.4.0 release readiness | release-manager | 2026-06-09 | Migrated from active-tasks.md board cleanup |
+| T171 | Bump/patch git2 and memmap2 to clear rust:audit RUSTSEC findings | backend-developer | 2026-08-01 | `docs/tasks/task-T171.md` execution notes — memmap2 0.9.10→0.9.11 (RUSTSEC-2026-0186, fixed); git2 fix blocked by Rust 1.87 MSRV requirement, reverted, scoped `cargo audit --ignore RUSTSEC-2026-0183 RUSTSEC-2026-0184` added to `.gitlab-ci.yml` pending T172; bonus fixes for anyhow (RUSTSEC-2026-0190) and wasmtime (RUSTSEC-2026-0222), both discovered live during this task. Final `cargo audit` exit 0. |
