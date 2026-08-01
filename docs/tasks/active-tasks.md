@@ -15,6 +15,7 @@
 | T166 | Cut release/v0.5.0 and merge to main | release-manager | pending | P0 | T165 | 2026-07-27 |
 | T167 | Tag v0.5.0 and publish GitLab release | release-manager | pending | P0 | T166 | 2026-07-27 |
 | T168 | Back-merge main into develop and clean up | release-manager | pending | P0 | T167 | 2026-07-27 |
+| T172 | Bump Rust toolchain to 1.87+ to unblock git2 RUSTSEC fix | devops-engineer | pending | P2 | — | 2026-08-01 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)

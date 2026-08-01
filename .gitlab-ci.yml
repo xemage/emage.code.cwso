@@ -145,7 +145,12 @@ rust:audit:
   script:
     - cargo install cargo-audit --locked --version 0.22.1
     - cd services
-    - cargo audit
+    # RUSTSEC-2026-0183/0184 (git2 <0.21.0, cwso-git-shadow): the only fix is git2 0.21.0,
+    # which requires Rust >=1.87 (uses the `inherent_str_constructors` feature, stabilized in
+    # 1.87) and this project pins rust:1.86 across every Rust Dockerfile/CI job. Ignored here
+    # pending a dedicated Rust-toolchain-bump task (T172); do not widen this ignore list without
+    # the same toolchain check. See docs/tasks/task-T171.md.
+    - cargo audit --ignore RUSTSEC-2026-0183 --ignore RUSTSEC-2026-0184
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "develop"
