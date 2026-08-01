@@ -1,9 +1,10 @@
 # Task T177 - Fix develop/main ancestry break (redo v0.5.0 back-merge as a real merge)
 
-- **Status:** in_progress
+- **Status:** done
 - **Owner:** release-manager
 - **Priority:** P0
 - **Depends on:** —
+- **Completed:** 2026-08-01
 - **Based on:** `.claude/rules/git-workflow.md` (GitFlow), discovered while executing T174
 
 ## Context
@@ -70,3 +71,32 @@ Report blockers as: type + severity + one proposed mitigation. Max 2 retries.
 - Using `-X ours` (or any strategy that lets git auto-merge machine-generated files like
   `Cargo.lock` line-by-line) instead of `-s ours`
 - Squash-merging the fix MR
+
+## Execution notes
+
+Completed 2026-08-01, two attempts:
+
+- **MR !87** (first attempt): local `-s ours` merge verified correct (tree byte-identical to
+  `develop`, `main` a real ancestor) and pushed clean. Merged via `glab mr merge --squash=false`,
+  but GitLab **silently squash-merged it anyway** — this project's `squash_option` is
+  `default_on`, and the MR had inherited `squash: true` at creation time; the `glab` CLI flag did
+  not override the MR's own stored attribute. Result: `develop`'s new tip had a single-parent
+  squash commit (`113b4ca`), `main`'s tip (`dd6fbb4`) was dropped again, recreating the exact
+  break this task exists to fix. No content was lost (tree hashes matched), only the ancestry
+  link. **This is almost certainly how T168's original back-merge became a flat commit too.**
+- **MR !88** (retry, from the post-!87 `develop` tip): same `-s ours` fix, but this time `squash`
+  was explicitly patched to `false` via a direct `PUT /merge_requests/88` API call before merging,
+  and the merge itself was executed via a direct `PUT /merge_requests/88/merge` call with
+  `squash=false` in the body — bypassing `glab mr merge`'s flag translation entirely. Verified
+  post-merge: `merge_commit_sha` present, `squash_commit_sha: null`, `git merge-base
+  --is-ancestor origin/main origin/develop` succeeds, tree byte-identical to pre-merge `develop`.
+- CI on MR !88 failed once on `go:test` (`TestRetentionEvictionOldestFirst` in
+  `orchestrator/internal/memorybroker`) — confirmed unrelated to this change (this MR touches zero
+  Go source; the same test passed clean on the three immediately prior pipelines) and confirmed
+  flaky by retry (passed clean on rerun, same commit).
+
+**Process note for future GitLab merges on this project:** because `squash_option` is
+`default_on`, any merge intended to preserve two-parent ancestry (release merges, back-merges)
+must explicitly patch the MR's `squash` attribute to `false` via the API and merge via a direct
+API call with `squash=false` in the body — the `glab mr merge --squash=false` CLI flag is not
+sufficient.
