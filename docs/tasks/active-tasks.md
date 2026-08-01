@@ -2,10 +2,9 @@
 
 | ID | Title | Owner | Status | Priority | Depends on | Last update |
 |----|-------|-------|--------|----------|-----------|-------------|
-| T165 | Author v0.5.0 changelog and release artifact | technical-writer | pending | P0 | T164 (done) | 2026-07-27 |
-| T166 | Cut release/v0.5.0 and merge to main | release-manager | pending | P0 | T165 | 2026-07-27 |
-| T167 | Tag v0.5.0 and publish GitLab release | release-manager | pending | P0 | T166 | 2026-07-27 |
-| T168 | Back-merge main into develop and clean up | release-manager | pending | P0 | T167 | 2026-07-27 |
+| T174 | Cut release/v0.5.1 and merge to main | release-manager | pending | P0 | T173 (done) | 2026-08-01 |
+| T175 | Tag v0.5.1 and publish GitLab release | release-manager | pending | P0 | T174 | 2026-08-01 |
+| T176 | Back-merge main into develop and clean up | release-manager | pending | P0 | T175 | 2026-08-01 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)

@@ -2,6 +2,53 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.5.1 - 2026-08-01
+
+### Bug Fixes (T170)
+- **`fix(rollout)`**: Added a `GET /healthz` liveness route in `cwso-rollout`
+  (`services/cwso-rollout/src/proxy.rs`), placed ahead of the existing global POST-only
+  gate — pure static `200 {"status":"ok"}`, no upstream/provider dispatch.
+  `deploy/Dockerfile.rollout` now carries a `HEALTHCHECK` instruction targeting it
+  (`--interval=10s --timeout=3s --retries=5`). `/v1/models` behavior deliberately
+  unchanged (still 405 GET / 404 POST — no route exists there).
+- **`fix(rollout)`**: `StoreConfig::from_env` (`services/cwso-rollout/src/store.rs`) now
+  resolves the trajectory store path via `CWSO_ROLLOUT_TRAJECTORY_STORE_PATH` first,
+  falling back to the canonical `CWSO_ROLLOUT_STORE_PATH`, then `./rollout_store` — fixes
+  a name-drift bug where `deploy/Dockerfile.rollout`'s own env var was never read by the
+  store.
+- Both fixes carry new regression tests
+  (`healthz_returns_200_and_v1_models_is_unchanged`;
+  `from_env_prefers_trajectory_alias_then_canonical_then_default`) and were verified with
+  real `cargo build`/`cargo test` (35/35 pass) and real `docker build`/`docker run`
+  (sustained container `(healthy)`, 5/5 probes, `FailingStreak:0`).
+- Root cause documented in T169:
+  `docs/artifacts/root-cause-analysis-cwso-rollout-v1.md`.
+
+### Security
+- **`memmap2`** 0.9.10 → 0.9.11 — resolves **RUSTSEC-2026-0186** (unchecked pointer
+  offset), affects `cwso-sparse`.
+- **`anyhow`** 1.0.102 → 1.0.104 — resolves **RUSTSEC-2026-0190**
+  (`Error::downcast_mut()`), discovered live during T171, affects all Rust crates using
+  `anyhow = "1"`.
+- **`wasmtime`** 36.0.10 → 36.0.13 — resolves **RUSTSEC-2026-0222**, discovered live
+  during T171, affects `cwso-sparse`.
+- **`git2`** RUSTSEC-2026-0183/0184 (unsound `Remote::list()` / `BlameHunk` signature UB)
+  were temporarily scoped-ignored in CI pending a Rust toolchain bump (blocked on Rust
+  ≥1.87 MSRV for `git2 0.21.0`) — resolved fully by the toolchain bump below; no ignore
+  remains on `develop`.
+- Rust toolchain bumped **1.86 → 1.87** across all three Rust Dockerfiles
+  (`git-shadow`, `merge-engine`, `rollout`) and all three Rust CI job images
+  (`rust:lint`, `rust:test`, `rust:audit`).
+- `git2` bumped 0.20.4 → 0.21.0 in `cwso-git-shadow`, resolving RUSTSEC-2026-0183/0184 and
+  removing the scoped `cargo audit --ignore` flags added in T171.
+
+### Operations
+- `cargo audit` now exits 0 with zero ignore flags. Full workspace build+test verified
+  clean across all 5 Rust crates; `cargo fmt --check` clean.
+
+### Documentation
+- Release artifact: [`docs/artifacts/release-v0.5.1.md`](docs/artifacts/release-v0.5.1.md).
+
 ## v0.5.0 - 2026-07-27
 
 ### Phase 3.1 and transport hardening
