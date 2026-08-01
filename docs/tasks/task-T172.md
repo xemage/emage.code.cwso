@@ -1,6 +1,6 @@
 # Task T172 - Bump Rust toolchain to 1.87+ to unblock git2 RUSTSEC fix
 
-- **Status:** pending
+- **Status:** done
 - **Owner:** devops-engineer
 - **Priority:** P2
 - **Depends on:** —
@@ -77,4 +77,21 @@ Report blockers as: type (`technical` | `dependency` | `unclear_requirements` | 
 
 ## Execution notes
 
-<filled during execution>
+**Outcome: done, no blockers.** Full evidence in
+`docs/artifacts/rust-toolchain-1.87-bump-verification-v1.md`.
+
+- Confirmed empirically (not just from the tracking issue) that `rust:1.87` is sufficient:
+  `git2 0.21.0` builds cleanly there (`error[E0658]` from `rust:1.86` is gone).
+- Bumped `FROM rust:1.86-slim` → `FROM rust:1.87-slim` in all three Rust Dockerfiles
+  (`git-shadow`, `merge-engine`, `rollout`), and the matching `image:` tags in
+  `.gitlab-ci.yml`'s `rust:lint`/`rust:test`/`rust:audit` jobs.
+- Bumped `git2` to `0.21.0` in `cwso-git-shadow/Cargo.toml` + `Cargo.lock`.
+- Removed the `--ignore RUSTSEC-2026-0183 --ignore RUSTSEC-2026-0184` flags and their
+  justification comment from `.gitlab-ci.yml`'s `rust:audit` job — no longer needed.
+- Verified for real (all in a `rust:1.87` container matching CI, or real `docker build`):
+  full workspace build + test across all 5 crates (0 failures), `cargo fmt --all -- --check`
+  (exit 0), `cargo audit` with zero ignore flags (exit 0 — only the two pre-existing
+  `unmaintained` warnings remain, same as T171 left them), and real `docker build` for all
+  three affected Dockerfiles.
+- Did not touch any Cargo.toml/lock entries beyond `git2` — `memmap2`/`anyhow`/`wasmtime` stay
+  at the versions T171 already fixed.
