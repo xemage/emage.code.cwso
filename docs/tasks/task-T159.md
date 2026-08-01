@@ -1,6 +1,7 @@
 # Task T159 - Add deterministic one-command local smoke target
 
-- **Status:** pending
+- **Status:** done
+- **Completed:** 2026-06-19
 - **Owner:** devops-engineer
 - **Priority:** P1
 - **Depends on:** T158

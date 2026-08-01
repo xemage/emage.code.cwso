@@ -53,6 +53,7 @@
     "prompts/skillify.prompt.md",
     "prompts/sprint-status.prompt.md",
     "prompts/team-status.prompt.md",
+    "prompts/validate-tasks.prompt.md",
     "prompts/validate-workflow.prompt.md",
     "skills/api-design/SKILL.md",
     "skills/blocker-escalation/SKILL.md",

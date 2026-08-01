@@ -1,6 +1,7 @@
 # Task T162 - Remediate high-value reliability/security technical debt
 
-- **Status:** pending
+- **Status:** done
+- **Completed:** 2026-06-19
 - **Owner:** backend-developer
 - **Priority:** P1
 - **Depends on:** T158

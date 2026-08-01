@@ -28,7 +28,7 @@ Build and visualize task dependency graphs as Mermaid DAGs. Identify critical pa
 ### 2. Generate Mermaid DAG
 
 1. Start the graph with `graph TD` (top-down) or `graph LR` (left-right).
-2. For each task, create a node: `TASK_NNN["TASK-NNN: Title"]`.
+2. For each task, create a node: `TASK_NNN["TNNN: Title"]`.
 3. For each dependency edge, create an arrow: `TASK_NNN --> TASK_MMM`.
 4. Apply styling based on status:
    - `pending` → default style
@@ -41,11 +41,11 @@ Build and visualize task dependency graphs as Mermaid DAGs. Identify critical pa
 
 ```mermaid
 graph TD
-    TASK_001["TASK-001: Design API schema"]
-    TASK_002["TASK-002: Implement auth"]
-    TASK_003["TASK-003: Build endpoints"]
-    TASK_004["TASK-004: Integration tests"]
-    TASK_005["TASK-005: Deploy to staging"]
+    TASK_001["T001: Design API schema"]
+    TASK_002["T002: Implement auth"]
+    TASK_003["T003: Build endpoints"]
+    TASK_004["T004: Integration tests"]
+    TASK_005["T005: Deploy to staging"]
 
     TASK_001 --> TASK_003
     TASK_002 --> TASK_003
@@ -118,10 +118,10 @@ graph TD
 3. Output a lane diagram:
 
 ```
-Lane 0: TASK-001, TASK-002  (parallel)
-Lane 1: TASK-003             (depends on Lane 0)
-Lane 2: TASK-004             (depends on Lane 1)
-Lane 3: TASK-005             (depends on Lane 2)
+Lane 0: T001, T002  (parallel)
+Lane 1: T003             (depends on Lane 0)
+Lane 2: T004             (depends on Lane 1)
+Lane 3: T005             (depends on Lane 2)
 ```
 
 ## Examples
@@ -132,23 +132,23 @@ Given active tasks:
 
 | ID | Title | Blocks | BlockedBy |
 |----|-------|--------|-----------|
-| TASK-001 | Design schema | TASK-003 | — |
-| TASK-002 | Setup CI | TASK-004 | — |
-| TASK-003 | Implement API | TASK-004 | TASK-001 |
-| TASK-004 | Run tests | TASK-005 | TASK-002, TASK-003 |
-| TASK-005 | Deploy | — | TASK-004 |
+| T001 | Design schema | T003 | — |
+| T002 | Setup CI | T004 | — |
+| T003 | Implement API | T004 | T001 |
+| T004 | Run tests | T005 | T002, T003 |
+| T005 | Deploy | — | T004 |
 
 Output:
 
 ```mermaid
 graph TD
-    TASK_001["TASK-001: Design schema"] --> TASK_003["TASK-003: Implement API"]
-    TASK_002["TASK-002: Setup CI"] --> TASK_004["TASK-004: Run tests"]
+    TASK_001["T001: Design schema"] --> TASK_003["T003: Implement API"]
+    TASK_002["T002: Setup CI"] --> TASK_004["T004: Run tests"]
     TASK_003 --> TASK_004
-    TASK_004 --> TASK_005["TASK-005: Deploy"]
+    TASK_004 --> TASK_005["T005: Deploy"]
 ```
 
-Critical path: `TASK-001 → TASK-003 → TASK-004 → TASK-005` (length 4).
+Critical path: `T001 → T003 → T004 → T005` (length 4).
 
 ## Guidelines
 

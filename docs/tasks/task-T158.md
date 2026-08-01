@@ -1,6 +1,7 @@
 # Task T158 - Fix local Phase 2 integration auth mismatch
 
-- **Status:** pending
+- **Status:** done
+- **Completed:** 2026-06-19
 - **Owner:** backend-developer
 - **Priority:** P0
 - **Depends on:** T157

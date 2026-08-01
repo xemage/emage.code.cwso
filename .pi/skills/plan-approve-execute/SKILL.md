@@ -54,7 +54,7 @@ The orchestrator or lead agent produces a plan document covering what will be bu
 ## Task Breakdown
 | ID | Title | Assignee | Priority | BlockedBy | Estimated Effort |
 |----|-------|----------|----------|-----------|-----------------|
-| TASK-NNN | ... | ... | ... | ... | S/M/L |
+| TNNN | ... | ... | ... | ... | S/M/L |
 
 ## Dependency Graph
 ```mermaid
@@ -162,10 +162,10 @@ Add rate limiting to the public API to prevent abuse.
 ## Task Breakdown
 | ID | Title | Assignee | Priority | BlockedBy | Estimated Effort |
 |----|-------|----------|----------|-----------|-----------------|
-| TASK-020 | Research rate limit strategies | backend-dev | high | — | S |
-| TASK-021 | Implement token bucket | backend-dev | high | TASK-020 | M |
-| TASK-022 | Add rate limit headers | backend-dev | medium | TASK-021 | S |
-| TASK-023 | Write rate limit tests | qa-agent | high | TASK-021 | M |
+| T020 | Research rate limit strategies | backend-dev | high | — | S |
+| T021 | Implement token bucket | backend-dev | high | T020 | M |
+| T022 | Add rate limit headers | backend-dev | medium | T021 | S |
+| T023 | Write rate limit tests | qa-agent | high | T021 | M |
 
 ## Success Criteria
 - [ ] Rate limiting active on all public endpoints

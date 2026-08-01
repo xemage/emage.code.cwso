@@ -11,7 +11,9 @@ pending → in_progress → blocked → in_review → done | cancelled
 ```
 
 ## Task Protocol
-- Task list: `docs/tasks/active-tasks.md` (table: ID, status, owner, dependencies)
+- Task list: `docs/tasks/active-tasks.md` — columns: `ID | Title | Owner | Status | Priority | Depends on | Last update`
+- **INVARIANT:** `active-tasks.md` MUST NEVER hold a `done` or `cancelled` row. Terminal rows move to `docs/tasks/completed-tasks.md` (columns: `ID | Title | Owner | Done on | Outcome / artifact`) in the same edit.
+- Archival is orchestrator-only and immediate. See skill `task-management` § "Complete a Task".
 - Task briefs: `docs/tasks/task-<ID>.md` (objective, inputs, outputs, acceptance criteria)
 - Only orchestrators create/transition tasks. Agents report completion and blockers.
 - Sequential IDs: `T001`, `T002`, … Priorities: `P0` (critical path), `P1`, `P2`.
@@ -55,7 +57,7 @@ pending → in_progress → blocked → in_review → done | cancelled
 ## Skill Workflow (mandatory)
 
 Before implementation, debugging, review response, or completion claims, agents
-MUST check applicable skills in the active platform projection (`.github/skills/`, `.cursor/skills/`, `.gemini/skills/`, `.opencode/skills/`, `.pi/skills/`) (or invoke `/discover-skills`).
+MUST check applicable skills in the active platform projection (`.github/skills/`, `.cursor/skills/`, `.gemini/skills/`, `.opencode/skills/`, `.pi/skills/`, `.claude/skills/`) (or invoke `/discover-skills`).
 
 | Situation | Required skill |
 |-----------|----------------|
@@ -63,18 +65,19 @@ MUST check applicable skills in the active platform projection (`.github/skills/
 | Code review feedback to implement | `receiving-code-review` |
 | Marking work done, commit, MR, release | `verification-before-completion` |
 | Phase or validation transition | `validation-gates`, `checkpoint-protocol` |
+| Before any checkpoint, release, or after `install --update` | run `/validate-tasks` |
 
 Skipping a mandatory skill requires orchestrator approval and a logged exception
 in the task brief or checkpoint.
 
 ## Code Standards
-- See platform instruction projections: `.github/instructions/coding-standards.instructions.md`, `.cursor/rules/coding-standards.mdc`, `.gemini/instructions/coding-standards.md`, `.opencode/instructions/coding-standards.md`, `.pi/instructions/coding-standards.md`.
+- See platform instruction projections: `.github/instructions/coding-standards.instructions.md`, `.cursor/rules/coding-standards.mdc`, `.gemini/instructions/coding-standards.md`, `.opencode/instructions/coding-standards.md`, `.pi/instructions/coding-standards.md`, `.claude/rules/coding-standards.md`.
 - Max 50-line functions, max 4 parameters, early returns.
 - Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
 - GitFlow: `main`, `develop`, `feature/*`, `bugfix/*`, `release/*`, `hotfix/*`.
 
 ## Security
-- See platform security instruction projections: `.github/instructions/security-guidelines.instructions.md`, `.cursor/rules/security-guidelines.mdc`, `.gemini/instructions/security-guidelines.md`, `.opencode/instructions/security-guidelines.md`, `.pi/instructions/security-guidelines.md`, and `implementation/SECURITY.md`.
+- See platform security instruction projections: `.github/instructions/security-guidelines.instructions.md`, `.cursor/rules/security-guidelines.mdc`, `.gemini/instructions/security-guidelines.md`, `.opencode/instructions/security-guidelines.md`, `.pi/instructions/security-guidelines.md`, `.claude/rules/security-guidelines.md`, and `implementation/SECURITY.md`.
 - OWASP Top 10 compliance required.
 - No secrets in code — use environment variables or vault. **Never commit live API keys.**
 - Parameterized queries only.
@@ -83,10 +86,10 @@ in the task brief or checkpoint.
 ## Knowledge Base
 - Source knowledge lives in the emage.code repository under `implementation/knowledge/`; this target uses installed platform projections.
 - Per-platform folders (`.github/`, `.gemini/`, `.opencode/`, `.cursor/`, `.pi/`) are **generated** by `scripts/sync.mjs`. **Do not edit them by hand.**
-- Use the installed platform folders (`.github/`, `.cursor/`, `.gemini/`, `.opencode/`, `.pi/`) as runtime references in this target project.
+- Use the installed platform folders (`.github/`, `.cursor/`, `.gemini/`, `.opencode/`, `.pi/`, `.claude/`) as runtime references in this target project.
 
 ## MCP Servers
-Declared in platform MCP configs (`.vscode/mcp.json`, `.cursor/mcp.json`, `.gemini/settings.json`, `.opencode/opencode.json`, `.pi/mcp.json`). Each server is tagged:
+Declared in platform MCP configs (`.vscode/mcp.json`, `.cursor/mcp.json`, `.gemini/settings.json`, `.opencode/opencode.json`, `.pi/mcp.json`, `.mcp.json`). Each server is tagged:
 
 | Tag | Emitted to |
 |-----|-----------|

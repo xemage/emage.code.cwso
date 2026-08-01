@@ -35,10 +35,10 @@ agent/<agent-name>/<task-id>
 
 ### Examples
 ```
-agent/backend-engineer/TASK-042
-agent/frontend-engineer/TASK-058
-agent/security-engineer/TASK-101
-agent/devops-engineer/TASK-033
+agent/backend-engineer/T042
+agent/frontend-engineer/T058
+agent/security-engineer/T101
+agent/devops-engineer/T033
 ```
 
 ### Rules

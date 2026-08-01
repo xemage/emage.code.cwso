@@ -1,6 +1,7 @@
 # Task T151 — Offline SFT data generation mode
 
-- **Status:** pending
+- **Status:** done
+- **Completed:** 2026-06-19
 - **Owner:** backend-developer
 - **Priority:** P2
 - **Depends on:** T134, T144

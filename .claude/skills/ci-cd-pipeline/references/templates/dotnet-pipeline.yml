@@ -1,0 +1,75 @@
+# Reusable GitLab CI pipeline for .NET projects (.NET 8+).
+# Stages: restore -> build -> test -> publish
+
+stages:
+  - restore
+  - build
+  - test
+  - publish
+
+variables:
+  DOTNET_VERSION: "8.0"
+  NUGET_PACKAGES: "$CI_PROJECT_DIR/.nuget"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+
+default:
+  image: mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION}
+  cache:
+    key:
+      files:
+        - "**/*.csproj"
+        - "**/packages.lock.json"
+    paths:
+      - .nuget/
+
+restore:
+  stage: restore
+  script:
+    - dotnet restore --locked-mode
+  artifacts:
+    paths:
+      - .nuget/
+    expire_in: 1 hour
+
+build:
+  stage: build
+  needs: ["restore"]
+  script:
+    - dotnet build --configuration Release --no-restore
+  artifacts:
+    paths:
+      - "**/bin/Release/"
+    expire_in: 1 hour
+
+test:
+  stage: test
+  needs: ["build"]
+  script:
+    - dotnet test --configuration Release --no-build
+        --logger "junit;LogFilePath=$CI_PROJECT_DIR/test-results/{assembly}.xml"
+        --collect:"XPlat Code Coverage"
+        --results-directory $CI_PROJECT_DIR/test-results
+  coverage: '/Total.*\|\s+(\d+(?:\.\d+)?%)/'
+  artifacts:
+    when: always
+    reports:
+      junit: test-results/*.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: test-results/**/coverage.cobertura.xml
+    paths:
+      - test-results/
+    expire_in: 1 week
+
+publish:
+  stage: publish
+  needs: ["test"]
+  script:
+    - dotnet publish --configuration Release --no-build --output ./publish
+  artifacts:
+    paths:
+      - publish/
+    expire_in: 1 week
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_TAG'
