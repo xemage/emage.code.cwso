@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.6
 # cwso-rollout — Phase 2/9 rollout proxy with Parquet trajectory capture
-FROM rust:1.86-slim AS builder
+FROM rust:1.87-slim AS builder
 LABEL cwso=dev
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential pkg-config cmake ca-certificates && \
