@@ -1,9 +1,10 @@
 # Task T174 - Cut release/v0.5.1 and merge to main
 
-- **Status:** pending
+- **Status:** done
 - **Owner:** release-manager
 - **Priority:** P0
-- **Depends on:** T173 (done — docs merged to `develop` first; see T173's own "Next steps")
+- **Depends on:** T173 (done), T177 (done)
+- **Completed:** 2026-08-02
 - **Based on:** `.claude/rules/git-workflow.md` (GitFlow), `docs/tasks/task-T166.md` (v0.5.0
   precedent)
 
@@ -58,3 +59,23 @@ severity (`critical` | `major` | `minor`) + one proposed mitigation. Max 2 retri
 - `git push --force` / `git reset --hard` on `main` or `develop`
 - Creating the `v0.5.1` tag (reserved for T175)
 - Proceeding without explicit user authorization to touch `main`
+
+## Execution notes
+
+Completed 2026-08-02, two attempts:
+
+- **First attempt**: `release/v0.5.1` cut from `develop` (MR !86) hit **292 false conflicts**
+  against `main` — discovered `main` was never a real git ancestor of `develop` (T168's original
+  back-merge was a flat commit). Filed and completed T177 to fix this properly before continuing.
+- **Second attempt** (this task, post-T177): deleted the stale branch/MR, re-cut
+  `release/v0.5.1` from the corrected `develop`, pushed, CI green (11/11, mirroring the v0.5.0
+  precedent). Opened MR !90 → `main` — confirmed **zero conflicts** this time
+  (`has_conflicts: false`), proving the T177 fix. Merged via a direct GitLab API call with
+  `squash=false` explicitly in the body (this project's `squash_option: default_on` silently
+  squash-merged an earlier attempt at the T177 fix despite the `glab` CLI flag — see
+  `docs/tasks/task-T177.md` execution notes — so every merge in this release now uses the
+  direct-API method instead of relying on the CLI flag).
+- `main` HEAD is now `8e1a479` ("Merge branch 'release/v0.5.1' into 'main'"), parents
+  `dd6fbb4` (previous `main` tip) and `d55335a` (`release/v0.5.1`/`develop` tip at merge time) —
+  a real two-parent merge, `merge_commit_sha` set, `squash_commit_sha: null`.
+- Did not tag (T175's job) and did not touch `develop` directly beyond what T177 required.
