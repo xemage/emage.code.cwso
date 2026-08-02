@@ -26,21 +26,23 @@ When enabled, include:
 
 ```mermaid
 graph TD
-    TASK-001[Task 001: Description] -->|depends on| TASK-002[Task 002: Description]
-    TASK-003[Task 003: Description] -->|blocked by| TASK-004[Task 004: Description]
-    
+  T001[Task 001: Description] -->|depends on| T002[Task 002: Description]
+  T003[Task 003: Description] -->|blocked by| T004[Task 004: Description]
+
     classDef done fill:#90EE90
     classDef inProgress fill:#FFD700
     classDef blocked fill:#FF6347
     classDef pending fill:#D3D3D3
-    
-    class TASK-001 done
-    class TASK-002 inProgress
-    class TASK-003 blocked
-    class TASK-004 pending
+
+    class T001 done
+    class T002 inProgress
+    class T003 blocked
+    class T004 pending
 ```
 
-- Read from `docs/tasks/active-tasks.md` for current task states
+  - Read `docs/tasks/active-tasks.md` for pending/in_progress/blocked/in_review nodes
+  - Read `docs/tasks/completed-tasks.md` for `done` nodes — `active-tasks.md` NEVER contains `done`
+  - Reconstruct dependency edges for done nodes from the `Depends on` cells of active rows
 - Show cross-stream dependencies
 
 ## Checkpoint Metrics

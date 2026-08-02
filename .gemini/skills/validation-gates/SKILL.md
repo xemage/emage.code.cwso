@@ -151,7 +151,7 @@ Each gate must achieve at least CONDITIONAL_PASS before the next gate can start.
 **Gate:** implementation
 **Executor:** tech-lead
 **Date:** 2025-03-25
-**Target:** TASK-021 (Token Bucket Rate Limiting)
+**Target:** T021 (Token Bucket Rate Limiting)
 
 ### Verdict: CONDITIONAL_PASS
 

@@ -67,22 +67,22 @@ Build the changelog from completed tasks and artifacts since the last release.
 **Previous Version:** v<PREV_VERSION>
 
 ## Breaking Changes
-- <description> (TASK-NNN)
+- <description> (TNNN)
 
 ## New Features
-- <description> (TASK-NNN)
+- <description> (TNNN)
 
 ## Bug Fixes
-- <description> (TASK-NNN)
+- <description> (TNNN)
 
 ## Improvements
-- <description> (TASK-NNN)
+- <description> (TNNN)
 
 ## Documentation
-- <description> (TASK-NNN)
+- <description> (TNNN)
 
 ## Internal
-- <description> (TASK-NNN)
+- <description> (TNNN)
 ```
 
 #### Changelog Generation Steps
@@ -208,7 +208,7 @@ Hotfixes use a fast-track gate process:
 ```
 Version: 1.3.0 (was 1.2.0)
 Reason: 3 new features added, no breaking changes
-Tasks completed: TASK-040 through TASK-052
+Tasks completed: T040 through T052
 All gates passed
 Changelog: 3 new features, 2 bug fixes, 1 improvement
 ```

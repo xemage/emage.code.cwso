@@ -43,6 +43,18 @@ async fn handle_request(
     req: Request<Incoming>,
     pipeline: Arc<CapturePipeline>,
 ) -> Result<BoxResponse, Infallible> {
+    // T170 fix for root-cause-analysis-cwso-rollout-v1.md Issue 1 (confirmed): cwso-rollout has
+    // no liveness route at all, so `curl -f http://127.0.0.1:8787/v1/models` always hit the
+    // global POST-only gate below and returned 405. Add a dedicated `GET /healthz` liveness
+    // route (mirroring cwso-orchestrator's `/healthz` pattern) that is checked before the
+    // POST-only gate, bypasses it entirely, and requires no upstream/provider dispatch.
+    // `/v1/models` itself is intentionally left untouched (still 405 for non-POST, still 404 for
+    // POST) — it is reserved for future OpenAI-compatible model-listing semantics per T169's
+    // recommendation, and T169 confirmed no in-repo caller/test depends on its current behavior.
+    if req.method() == Method::GET && req.uri().path() == "/healthz" {
+        return Ok(healthz_response());
+    }
+
     if req.method() != Method::POST {
         return Ok(error_response(
             StatusCode::METHOD_NOT_ALLOWED,
@@ -80,6 +92,16 @@ async fn handle_request(
             Ok(error_response(StatusCode::BAD_GATEWAY, &error.to_string()))
         }
     }
+}
+
+fn healthz_response() -> BoxResponse {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(full_body(br#"{"status":"ok"}"#.to_vec()))
+        .unwrap_or_else(|_| {
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, "response build failed")
+        })
 }
 
 fn json_response(status: StatusCode, body: Vec<u8>, content_type: &str) -> BoxResponse {
@@ -200,5 +222,83 @@ mod tests {
             .expect("body")
             .to_bytes();
         assert!(String::from_utf8_lossy(&bytes).contains("proxy-ok"));
+    }
+
+    /// T170 regression test for root-cause-analysis-cwso-rollout-v1.md Issue 1: `GET /healthz`
+    /// must bypass the POST-only gate and return 200 without touching the provider pipeline,
+    /// and `/v1/models` must remain untouched (still 405 for GET, still 404 for POST) since
+    /// T169 found no callers/tests depend on it and it is reserved for future use.
+    #[tokio::test]
+    async fn healthz_returns_200_and_v1_models_is_unchanged() {
+        let upstream = spawn_mock_upstream().await;
+        let store = Arc::new(CaptureStore::new(8));
+        let config = ProxyConfig {
+            http_bind: "127.0.0.1:0".to_string(),
+            upstream_url: upstream,
+            upstream_api_key: None,
+            capture_enabled: false,
+            kv_differential_prompting_enabled: false,
+            capture_queue_capacity: 8,
+            http_timeout_ms: 5_000,
+            allow_insecure_endpoints: false,
+        };
+        let pipeline = Arc::new(CapturePipeline::new(
+            config,
+            store,
+            Arc::new(PrefixCache::new(8)),
+        ));
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind proxy");
+        let proxy_addr = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.expect("accept");
+                let io = TokioIo::new(stream);
+                let pipeline = Arc::clone(&pipeline);
+                tokio::spawn(async move {
+                    let service = service_fn(move |req| {
+                        let pipeline = Arc::clone(&pipeline);
+                        async move { handle_request(req, pipeline).await }
+                    });
+                    let _ = hyper::server::conn::http1::Builder::new()
+                        .serve_connection(io, service)
+                        .await;
+                });
+            }
+        });
+
+        let client = hyper_util::client::legacy::Client::builder(TokioExecutor::new())
+            .build_http::<Full<Bytes>>();
+
+        let healthz_request = Request::builder()
+            .method(Method::GET)
+            .uri(format!("http://{proxy_addr}/healthz"))
+            .body(Full::new(Bytes::new()))
+            .expect("healthz request");
+        let healthz_response = client.request(healthz_request).await.expect("response");
+        assert_eq!(healthz_response.status(), StatusCode::OK);
+        let healthz_bytes = healthz_response
+            .into_body()
+            .collect()
+            .await
+            .expect("body")
+            .to_bytes();
+        assert!(String::from_utf8_lossy(&healthz_bytes).contains("\"status\":\"ok\""));
+
+        let models_get_request = Request::builder()
+            .method(Method::GET)
+            .uri(format!("http://{proxy_addr}/v1/models"))
+            .body(Full::new(Bytes::new()))
+            .expect("v1/models GET request");
+        let models_get_response = client.request(models_get_request).await.expect("response");
+        assert_eq!(models_get_response.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+        let models_post_request = Request::builder()
+            .method(Method::POST)
+            .uri(format!("http://{proxy_addr}/v1/models"))
+            .header("content-type", "application/json")
+            .body(Full::new(Bytes::from_static(b"{}")))
+            .expect("v1/models POST request");
+        let models_post_response = client.request(models_post_request).await.expect("response");
+        assert_eq!(models_post_response.status(), StatusCode::NOT_FOUND);
     }
 }

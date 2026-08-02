@@ -57,7 +57,7 @@ go:lint:
 
 rust:lint:
   stage: lint
-  image: rust:1.86
+  image: rust:1.87
   cache:
     key: cargo-$CI_COMMIT_REF_SLUG
     paths: [.cargo, services/target]
@@ -97,7 +97,7 @@ go:test:
 
 rust:test:
   stage: test
-  image: rust:1.86-slim
+  image: rust:1.87-slim
   cache:
     key: cargo-$CI_COMMIT_REF_SLUG
     paths: [.cargo, services/target]
@@ -138,7 +138,7 @@ go:audit:
 
 rust:audit:
   stage: audit
-  image: rust:1.86
+  image: rust:1.87
   cache:
     key: cargo-$CI_COMMIT_REF_SLUG
     paths: [.cargo, services/target]

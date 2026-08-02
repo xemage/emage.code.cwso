@@ -23,9 +23,9 @@ agent/<agent-name>/<task-id>
 ```
 
 Examples:
-- `agent/backend-dev/TASK-021`
-- `agent/frontend-dev/TASK-030`
-- `agent/qa-agent/TASK-025`
+- `agent/backend-dev/T021`
+- `agent/frontend-dev/T030`
+- `agent/qa-agent/T025`
 
 ## Procedures
 
@@ -42,7 +42,7 @@ This creates:
 
 Example:
 ```bash
-git worktree add ../worktrees/backend-dev-TASK-021 -b agent/backend-dev/TASK-021
+git worktree add ../worktrees/backend-dev-T021 -b agent/backend-dev/T021
 ```
 
 ### 2. Assign File Ownership
@@ -52,10 +52,10 @@ Each worktree should have a clear scope of files that the agent is allowed to mo
 ```markdown
 ## Worktree Assignment
 
-- **Worktree:** ../worktrees/backend-dev-TASK-021
-- **Branch:** agent/backend-dev/TASK-021
+- **Worktree:** ../worktrees/backend-dev-T021
+- **Branch:** agent/backend-dev/T021
 - **Agent:** backend-dev
-- **Task:** TASK-021
+- **Task:** T021
 - **Owned Files:**
   - `src/api/rate-limiter.ts`
   - `src/api/middleware/rate-limit.ts`
@@ -70,11 +70,11 @@ Agents MUST NOT modify files outside their ownership scope without coordination.
 
 ```bash
 # Navigate to the worktree
-cd ../worktrees/backend-dev-TASK-021
+cd ../worktrees/backend-dev-T021
 
 # Work normally — all git operations are scoped to this worktree's branch
 git add .
-git commit -m "feat(TASK-021): implement token bucket rate limiter"
+git commit -m "feat(T021): implement token bucket rate limiter"
 ```
 
 ### 4. Merge After Task Completion
@@ -87,7 +87,7 @@ cd /path/to/main/repo
 git checkout main
 
 # Merge the agent's branch
-git merge agent/backend-dev/TASK-021 --no-ff -m "merge: TASK-021 token bucket rate limiter"
+git merge agent/backend-dev/T021 --no-ff -m "merge: T021 token bucket rate limiter"
 
 # If conflicts arise, resolve them and commit
 ```
@@ -95,9 +95,9 @@ git merge agent/backend-dev/TASK-021 --no-ff -m "merge: TASK-021 token bucket ra
 For batch merges with multiple agents:
 ```bash
 # Merge in dependency order (use dependency graph from dependency-graphing skill)
-git merge agent/backend-dev/TASK-020 --no-ff
-git merge agent/backend-dev/TASK-021 --no-ff
-git merge agent/qa-agent/TASK-022 --no-ff
+git merge agent/backend-dev/T020 --no-ff
+git merge agent/backend-dev/T021 --no-ff
+git merge agent/qa-agent/T022 --no-ff
 ```
 
 ### 5. Clean Up Worktree
@@ -106,10 +106,10 @@ After a successful merge:
 
 ```bash
 # Remove the worktree
-git worktree remove ../worktrees/backend-dev-TASK-021
+git worktree remove ../worktrees/backend-dev-T021
 
 # Delete the branch (it's been merged)
-git branch -d agent/backend-dev/TASK-021
+git branch -d agent/backend-dev/T021
 ```
 
 ### 6. List Active Worktrees
@@ -121,8 +121,8 @@ git worktree list
 Output:
 ```
 /path/to/main/repo          abc1234 [main]
-/path/to/worktrees/backend-dev-TASK-021  def5678 [agent/backend-dev/TASK-021]
-/path/to/worktrees/qa-agent-TASK-025     ghi9012 [agent/qa-agent/TASK-025]
+/path/to/worktrees/backend-dev-T021  def5678 [agent/backend-dev/T021]
+/path/to/worktrees/qa-agent-T025     ghi9012 [agent/qa-agent/T025]
 ```
 
 ## Example: Batch Parallel Execution Workflow
@@ -131,17 +131,17 @@ Output:
 
 ```bash
 # Orchestrator creates worktrees for all parallel tasks
-git worktree add ../worktrees/backend-dev-TASK-020 -b agent/backend-dev/TASK-020
-git worktree add ../worktrees/frontend-dev-TASK-030 -b agent/frontend-dev/TASK-030
-git worktree add ../worktrees/qa-agent-TASK-025 -b agent/qa-agent/TASK-025
+git worktree add ../worktrees/backend-dev-T020 -b agent/backend-dev/T020
+git worktree add ../worktrees/frontend-dev-T030 -b agent/frontend-dev/T030
+git worktree add ../worktrees/qa-agent-T025 -b agent/qa-agent/T025
 ```
 
 ### Execution Phase
 
 Each agent works independently in their worktree:
-- `backend-dev` works in `../worktrees/backend-dev-TASK-020/`
-- `frontend-dev` works in `../worktrees/frontend-dev-TASK-030/`
-- `qa-agent` works in `../worktrees/qa-agent-TASK-025/`
+- `backend-dev` works in `../worktrees/backend-dev-T020/`
+- `frontend-dev` works in `../worktrees/frontend-dev-T030/`
+- `qa-agent` works in `../worktrees/qa-agent-T025/`
 
 ### Merge Phase
 
@@ -150,21 +150,21 @@ Each agent works independently in their worktree:
 cd /path/to/main/repo
 
 # Merge in dependency order
-git merge agent/backend-dev/TASK-020 --no-ff
-git merge agent/frontend-dev/TASK-030 --no-ff
-git merge agent/qa-agent/TASK-025 --no-ff
+git merge agent/backend-dev/T020 --no-ff
+git merge agent/frontend-dev/T030 --no-ff
+git merge agent/qa-agent/T025 --no-ff
 ```
 
 ### Cleanup Phase
 
 ```bash
-git worktree remove ../worktrees/backend-dev-TASK-020
-git worktree remove ../worktrees/frontend-dev-TASK-030
-git worktree remove ../worktrees/qa-agent-TASK-025
+git worktree remove ../worktrees/backend-dev-T020
+git worktree remove ../worktrees/frontend-dev-T030
+git worktree remove ../worktrees/qa-agent-T025
 
-git branch -d agent/backend-dev/TASK-020
-git branch -d agent/frontend-dev/TASK-030
-git branch -d agent/qa-agent/TASK-025
+git branch -d agent/backend-dev/T020
+git branch -d agent/frontend-dev/T030
+git branch -d agent/qa-agent/T025
 ```
 
 ## Guidelines

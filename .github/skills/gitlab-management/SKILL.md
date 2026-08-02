@@ -130,7 +130,7 @@ The canonical task list lives in `docs/tasks/active-tasks.md`. GitLab issues are
 **Source of truth:** `docs/tasks/active-tasks.md` is the primary task register. GitLab issues mirror it for visibility and team collaboration.
 
 **Sync procedure:**
-1. When a task is added to `active-tasks.md`, create a corresponding GitLab issue with the same ID in the title (e.g., `[TASK-007] Implement auth middleware`).
+1. When a task is added to `active-tasks.md`, create a corresponding GitLab issue with the same ID in the title (e.g., `[T007] Implement auth middleware`).
 2. When a task status changes in `active-tasks.md`, update the GitLab issue labels to match.
 3. When a task is moved to `completed-tasks.md`, close the corresponding GitLab issue.
 4. When a GitLab issue is updated externally (e.g., by a human team member), sync the change back to `active-tasks.md` at the next checkpoint.
@@ -143,13 +143,13 @@ Every merge request MUST reference the task ID it addresses:
 
 **MR title format:**
 ```
-feat(scope): description [TASK-{ID}]
+feat(scope): description [T{ID}]
 ```
 
 **MR description format:**
 ```markdown
 ## Task Reference
-Addresses: TASK-{ID}
+Addresses: T{ID}
 Artifact refs: [api-contract-v2, architecture-decision-v1]
 
 ## Changes

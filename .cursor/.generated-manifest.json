@@ -47,6 +47,7 @@
     "commands/skillify.mdc",
     "commands/sprint-status.mdc",
     "commands/team-status.mdc",
+    "commands/validate-tasks.mdc",
     "commands/validate-workflow.mdc",
     "mcp.json",
     "rules/coding-standards.mdc",

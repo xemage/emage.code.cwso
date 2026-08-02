@@ -151,7 +151,7 @@ After consolidation:
 
 ### Promotion Example
 
-MCP Memory entry referenced in TASK-005, TASK-008, and TASK-012:
+MCP Memory entry referenced in T005, T008, and T012:
 ```
 [convention] All service classes use constructor injection for dependencies
 ```

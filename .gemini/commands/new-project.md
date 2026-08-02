@@ -50,7 +50,8 @@ I have a new project idea. Please orchestrate the full team to turn this into a 
     - Store in `docs/artifacts/`
     - Include artifact manifest in checkpoint summaries
 19. Build an initial task dependency graph with lifecycle states
-    - Track states: `pending → in_progress → review → done` (or `blocked`)
+    - Track states: `pending → in_progress → blocked → in_review → done | cancelled`
+    - The state is spelled `in_review`, NOT `review`.
     - Write active tasks to `docs/tasks/active-tasks.md`
 
 Here's my idea:

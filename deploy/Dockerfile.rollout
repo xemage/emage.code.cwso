@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.6
 # cwso-rollout — Phase 2/9 rollout proxy with Parquet trajectory capture
-FROM rust:1.86-slim AS builder
+FROM rust:1.87-slim AS builder
 LABEL cwso=dev
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential pkg-config cmake ca-certificates && \
@@ -27,4 +27,9 @@ ENV CWSO_ROLLOUT_HTTP_BIND=0.0.0.0:8787 \
     CWSO_ROLLOUT_TRAJECTORY_STORE_PATH=/data/parquet-store \
     RUST_LOG=info
 EXPOSE 8787
+# T170 fix for root-cause-analysis-cwso-rollout-v1.md Issue 1: own the healthcheck contract at
+# the image level via the new GET /healthz liveness route (proxy.rs) instead of relying on a
+# consuming project's compose file to probe the non-existent /v1/models endpoint.
+HEALTHCHECK --interval=10s --timeout=3s --retries=5 \
+    CMD curl -f http://127.0.0.1:8787/healthz || exit 1
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/cwso-rollout"]

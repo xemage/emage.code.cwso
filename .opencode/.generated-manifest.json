@@ -47,6 +47,7 @@
     "commands/skillify.md",
     "commands/sprint-status.md",
     "commands/team-status.md",
+    "commands/validate-tasks.md",
     "commands/validate-workflow.md",
     "instructions/coding-standards.md",
     "instructions/git-workflow.md",

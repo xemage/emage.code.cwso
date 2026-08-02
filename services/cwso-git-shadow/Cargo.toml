@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 # Vendored libgit2 so the build container does not need libgit2-dev.
-git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
+git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"

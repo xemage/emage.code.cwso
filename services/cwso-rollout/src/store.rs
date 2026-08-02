@@ -43,7 +43,17 @@ impl StoreConfig {
             return Ok(None);
         }
 
-        let store_path = std::env::var("CWSO_ROLLOUT_STORE_PATH")
+        // T170 fix for root-cause-analysis-cwso-rollout-v1.md Issue 2 (confirmed): the source
+        // and its own architecture doc (rollout-architecture-v1.md:194) treat
+        // CWSO_ROLLOUT_STORE_PATH as canonical, but deploy/Dockerfile.rollout (and the known
+        // external emage.code consumer) set CWSO_ROLLOUT_TRAJECTORY_STORE_PATH instead, which
+        // this crate never read, so the writer silently fell back to "./rollout_store" and
+        // failed to create it. Per T169's recommended option (b), check the
+        // _TRAJECTORY_-prefixed name first for backward compatibility with the known external
+        // consumer, then fall back to the canonical name, then the historical default — this
+        // fixes the wiring without requiring any change to deploy/Dockerfile.rollout.
+        let store_path = std::env::var("CWSO_ROLLOUT_TRAJECTORY_STORE_PATH")
+            .or_else(|_| std::env::var("CWSO_ROLLOUT_STORE_PATH"))
             .unwrap_or_else(|_| "./rollout_store".to_string());
         let session_id = std::env::var("CWSO_ROLLOUT_DEFAULT_SESSION_ID")
             .unwrap_or_else(|_| "default".to_string());
@@ -567,5 +577,70 @@ mod tests {
         assert!(start.elapsed() < Duration::from_millis(50));
         drop(handle.sender);
         join.join().expect("join");
+    }
+
+    /// T170 regression test for root-cause-analysis-cwso-rollout-v1.md Issue 2: verifies the
+    /// env-var precedence chosen for `StoreConfig::from_env` — `CWSO_ROLLOUT_TRAJECTORY_STORE_PATH`
+    /// (the name set by deploy/Dockerfile.rollout and the known external emage.code consumer)
+    /// takes priority, falling back to the canonical `CWSO_ROLLOUT_STORE_PATH`, then the
+    /// historical `./rollout_store` default.
+    #[test]
+    fn from_env_prefers_trajectory_alias_then_canonical_then_default() {
+        // Serialize against other tests/processes touching these env vars; std::env is
+        // process-global, and this crate's other tests never set these keys.
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+
+        let keys = [
+            "CWSO_ROLLOUT_TRAJECTORY_STORE_ENABLED",
+            "CWSO_ROLLOUT_TRAJECTORY_STORE_PATH",
+            "CWSO_ROLLOUT_STORE_PATH",
+        ];
+        let saved: Vec<(&str, Option<String>)> = keys
+            .iter()
+            .map(|key| (*key, std::env::var(key).ok()))
+            .collect();
+
+        unsafe {
+            std::env::set_var("CWSO_ROLLOUT_TRAJECTORY_STORE_ENABLED", "true");
+            std::env::remove_var("CWSO_ROLLOUT_TRAJECTORY_STORE_PATH");
+            std::env::remove_var("CWSO_ROLLOUT_STORE_PATH");
+        }
+        let default_config = StoreConfig::from_env()
+            .expect("from_env default")
+            .expect("store enabled");
+        assert_eq!(default_config.store_path, PathBuf::from("./rollout_store"));
+
+        unsafe {
+            std::env::set_var("CWSO_ROLLOUT_STORE_PATH", "/tmp/canonical-only");
+        }
+        let canonical_only = StoreConfig::from_env()
+            .expect("from_env canonical")
+            .expect("store enabled");
+        assert_eq!(
+            canonical_only.store_path,
+            PathBuf::from("/tmp/canonical-only")
+        );
+
+        unsafe {
+            std::env::set_var("CWSO_ROLLOUT_TRAJECTORY_STORE_PATH", "/data/parquet-store");
+        }
+        let both_set = StoreConfig::from_env()
+            .expect("from_env both set")
+            .expect("store enabled");
+        assert_eq!(
+            both_set.store_path,
+            PathBuf::from("/data/parquet-store"),
+            "the _TRAJECTORY_-suffixed alias must win when both env vars are set"
+        );
+
+        unsafe {
+            for (key, value) in saved {
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
     }
 }

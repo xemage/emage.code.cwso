@@ -1,6 +1,7 @@
 # Task T163 - Hardening and Polar parity validation gate
 
 - **Status:** done
+- **Completed:** 2026-06-18
 - **Owner:** qa-engineer / security-engineer / tech-lead
 - **Priority:** P0
 - **Depends on:** T159, T161, T162, T150, T151
