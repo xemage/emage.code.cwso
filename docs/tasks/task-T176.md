@@ -1,9 +1,10 @@
 # Task T176 - Back-merge main into develop and clean up
 
-- **Status:** pending
+- **Status:** done
 - **Owner:** release-manager
 - **Priority:** P0
-- **Depends on:** T175
+- **Depends on:** T175 (done)
+- **Completed:** 2026-08-02
 - **Based on:** `.claude/rules/git-workflow.md` (GitFlow), `docs/tasks/task-T168.md` (v0.5.0
   precedent, commit `677f9db`)
 
@@ -58,3 +59,20 @@ Report blockers as: type + severity + one proposed mitigation. Max 2 retries.
 - `git push --force` / `git reset --hard` on `main` or `develop`
 - Deleting `release/v0.5.1` before the back-merge lands
 - Deleting any tag
+
+## Execution notes
+
+Completed 2026-08-02, no blockers. GitLab accepted `main` directly as a source branch (no
+fallback intermediate branch needed).
+
+- MR !93 (`main` → `develop`) opened, zero conflicts (develop already contained everything in
+  `main`'s content via T177 + the release branch lineage — only the ancestry link was missing).
+  As with every merge in this release chain, this project's `squash_option: default_on` would
+  have silently squashed it; `squash` was explicitly patched to `false` via direct API before
+  merging, and the merge itself was executed via a direct API call with `squash=false` in the
+  body. `merge_commit_sha` set, `squash_commit_sha: null`.
+- Verified: `git merge-base --is-ancestor origin/main origin/develop` succeeds; `develop`'s
+  post-merge pipeline (triggered by the merge commit `e021262`) green 11/11.
+- `release/v0.5.1` was already gone from `origin` (GitLab's `force_remove_source_branch` auto-
+  deleted it when MR !90 merged into `main`); deleted the stale local branch ref.
+- This closes the full T169-T176 chain for the v0.5.1 patch release.

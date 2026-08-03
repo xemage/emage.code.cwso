@@ -2,9 +2,6 @@
 
 | ID | Title | Owner | Status | Priority | Depends on | Last update |
 |----|-------|-------|--------|----------|-----------|-------------|
-| T174 | Cut release/v0.5.1 and merge to main | release-manager | pending | P0 | T173 (done), T177 (done) | 2026-08-01 |
-| T175 | Tag v0.5.1 and publish GitLab release | release-manager | pending | P0 | T174 | 2026-08-01 |
-| T176 | Back-merge main into develop and clean up | release-manager | pending | P0 | T175 | 2026-08-01 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)

@@ -1,9 +1,10 @@
 # Task T175 - Tag v0.5.1 and publish GitLab release
 
-- **Status:** pending
+- **Status:** done
 - **Owner:** release-manager
 - **Priority:** P0
-- **Depends on:** T174
+- **Depends on:** T174 (done)
+- **Completed:** 2026-08-02
 - **Based on:** `.claude/rules/git-workflow.md`, orchestrator Release Workflow Preflights,
   `docs/tasks/task-T167.md` (v0.5.0 precedent)
 
@@ -60,3 +61,16 @@ Report blockers as: type + severity + one proposed mitigation. Max 2 retries.
 - Tagging before T174's merge commit is confirmed on `origin/main`
 - Passing ad-hoc `--notes` instead of `-F docs/artifacts/release-v0.5.1.md`
 - Proceeding without explicit user authorization
+
+## Execution notes
+
+Completed 2026-08-02, no blockers. Preconditions verified (`main` HEAD = `8e1a479`, the T174
+release-merge commit; `docs/artifacts/release-v0.5.1.md` and `CHANGELOG.md`'s `## v0.5.1` section
+both present). User gave explicit go-ahead before tagging/publishing.
+
+- Tagged `v0.5.1` (annotated) on `main` HEAD (`8e1a479`), pushed to `origin`.
+- Published GitLab release from `docs/artifacts/release-v0.5.1.md` only (`-F`, no inline
+  `--notes`): https://gitlab.com/em-age/emage.code.cwso/-/releases/v0.5.1
+- RELEASE VERDICT: **PASS** — reported to user in full (CI 11/11 on `release/v0.5.1` → `main`
+  MR !90, Tech Lead PASS on T170/T171 per checkpoint-018, T172 clean audit/build, T177 ancestry
+  fix verified, zero open blockers).
