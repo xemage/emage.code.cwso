@@ -192,6 +192,16 @@ build:merge-engine:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_TAG
 
+build:rollout:
+  extends: .docker-base
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE/rollout:$CI_COMMIT_SHORT_SHA -f deploy/Dockerfile.rollout .
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
 # -----------------------------------------------------------------------------
 # End-to-end integration tests
 # -----------------------------------------------------------------------------
@@ -242,6 +252,8 @@ deploy:registry:
   needs:
     - job: build:orchestrator
     - job: build:git-shadow
+    - job: build:merge-engine
+    - job: build:rollout
     - job: e2e:phase2
       optional: true   # T153: e2e excluded on tag pipelines; develop/main still gate deploy
   before_script:
@@ -264,10 +276,17 @@ deploy:registry:
       }
       ensure_local_image orchestrator deploy/Dockerfile.orchestrator
       ensure_local_image git-shadow deploy/Dockerfile.git-shadow
-    - docker tag $CI_REGISTRY_IMAGE/orchestrator:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE/orchestrator:latest
-    - docker tag $CI_REGISTRY_IMAGE/git-shadow:$CI_COMMIT_SHORT_SHA   $CI_REGISTRY_IMAGE/git-shadow:latest
-    - docker push $CI_REGISTRY_IMAGE/orchestrator:latest
-    - docker push $CI_REGISTRY_IMAGE/git-shadow:latest
+      ensure_local_image merge-engine deploy/Dockerfile.merge-engine
+      ensure_local_image rollout deploy/Dockerfile.rollout
+    - |
+      for svc in orchestrator git-shadow merge-engine rollout; do
+        docker tag $CI_REGISTRY_IMAGE/${svc}:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE/${svc}:latest
+        docker push $CI_REGISTRY_IMAGE/${svc}:latest
+        if [ -n "$CI_COMMIT_TAG" ]; then
+          docker tag $CI_REGISTRY_IMAGE/${svc}:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE/${svc}:$CI_COMMIT_TAG
+          docker push $CI_REGISTRY_IMAGE/${svc}:$CI_COMMIT_TAG
+        fi
+      done
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_TAG
