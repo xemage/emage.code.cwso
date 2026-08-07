@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.5.2 - 2026-08-03
+
+### CI and Registry Publishing
+- Added `build:rollout` to CI so `deploy/Dockerfile.rollout` is built in MR/develop/main/tag pipelines.
+- Expanded `deploy:registry` to process all four services: `orchestrator`, `git-shadow`, `merge-engine`, and `rollout`.
+- Registry deploy now pushes `:latest` tags on `main` and also pushes `:$CI_COMMIT_TAG` tags on tag pipelines for all four services.
+
+### Integration
+- Unblocks downstream pull-only composition workflows by ensuring all required CWSO images are publishable from CI.
+
+### Documentation
+- Added release artifact: [docs/artifacts/release-v0.5.2.md](docs/artifacts/release-v0.5.2.md).
+
 ## v0.5.1 - 2026-08-01
 
 ### Bug Fixes (T170)
