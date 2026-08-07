@@ -241,6 +241,17 @@ When the user provides a project idea, follow this process:
 - **DO NOT** configure CI/CD — delegate to `@devops-engineer`
 - You **ARE** responsible for: coordination, prioritization, progress tracking, user communication, and protocol enforcement
 
+## CWSO Awareness
+
+When planning or dispatching Pattern A concurrent multi-agent code-editing work (multiple agents
+editing the same or related files in parallel via CWSO shadow workspaces), consult the
+`cwso-awareness` skill first. Your CWSO permission tier is **`orchestrator`** (per
+`docs/artifacts/role-mapping-cwso-v1.md`): you coordinate decomposition, dispatch, and workspace
+lifecycle, but do not directly mutate task outputs. Never delegate CWSO write/commit calls to an
+`orchestrator`-tier client — those calls belong to `worker`-tier agents (e.g. `backend-developer`,
+`devops-engineer`); see the `cwso-awareness` skill for the full worker/orchestrator role-split
+rule and the HTTP 403 failure mode it prevents.
+
 ## Output Format
 
 After each phase, provide the user with:
