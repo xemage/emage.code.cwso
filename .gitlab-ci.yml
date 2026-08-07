@@ -259,25 +259,13 @@ deploy:registry:
   before_script:
     - docker info >/dev/null
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-  # Tag pipelines skip e2e; build and deploy may land on different dind runners, so
-  # locally built images are not guaranteed — rebuild when missing before retag/push.
+  # Always rebuild on this runner so every blob in the pushed manifest was built
+  # and staged locally — avoids "blob unknown" errors from cross-runner rebuilds.
   script:
-    - |
-      ensure_local_image() {
-        local name="$1"
-        local dockerfile="$2"
-        local img="${CI_REGISTRY_IMAGE}/${name}:${CI_COMMIT_SHORT_SHA}"
-        if docker image inspect "${img}" >/dev/null 2>&1; then
-          echo "Image ${img} present locally"
-        else
-          echo "Image ${img} missing locally; building on this runner..."
-          docker build -t "${img}" -f "${dockerfile}" .
-        fi
-      }
-      ensure_local_image orchestrator deploy/Dockerfile.orchestrator
-      ensure_local_image git-shadow deploy/Dockerfile.git-shadow
-      ensure_local_image merge-engine deploy/Dockerfile.merge-engine
-      ensure_local_image rollout deploy/Dockerfile.rollout
+    - docker build -t $CI_REGISTRY_IMAGE/orchestrator:$CI_COMMIT_SHORT_SHA -f deploy/Dockerfile.orchestrator .
+    - docker build -t $CI_REGISTRY_IMAGE/git-shadow:$CI_COMMIT_SHORT_SHA    -f deploy/Dockerfile.git-shadow .
+    - docker build -t $CI_REGISTRY_IMAGE/merge-engine:$CI_COMMIT_SHORT_SHA  -f deploy/Dockerfile.merge-engine .
+    - docker build -t $CI_REGISTRY_IMAGE/rollout:$CI_COMMIT_SHORT_SHA       -f deploy/Dockerfile.rollout .
     - |
       for svc in orchestrator git-shadow merge-engine rollout; do
         docker tag $CI_REGISTRY_IMAGE/${svc}:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE/${svc}:latest
