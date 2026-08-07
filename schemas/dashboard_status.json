@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CWSO Dashboard Status",
+  "description": "Response schema for GET /dashboard/status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "timestamp", "overall", "system", "sidecars", "config", "jobs", "clients", "rollout"],
+  "properties": {
+    "version": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "overall": { "type": "string", "enum": ["healthy", "degraded", "unhealthy"] },
+    "system": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uptime_seconds"],
+      "properties": {
+        "uptime_seconds": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "sidecars": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["connected", "socket"],
+        "properties": {
+          "connected": { "type": "boolean" },
+          "socket":    { "type": "string" }
+        }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transport", "sandbox_runner", "feature_flags", "warnings"],
+      "properties": {
+        "transport":     { "type": "string" },
+        "sandbox_runner":{ "type": "string" },
+        "feature_flags": {
+          "type": "object",
+          "additionalProperties": { "type": "boolean" }
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "jobs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workers", "queue_capacity", "queue_depth", "active", "total_completed", "total_failed"],
+      "properties": {
+        "workers":         { "type": "integer", "minimum": 0 },
+        "queue_capacity":  { "type": "integer", "minimum": 0 },
+        "queue_depth":     { "type": "integer", "minimum": 0 },
+        "active":          { "type": "integer", "minimum": 0 },
+        "total_completed": { "type": "integer", "minimum": 0 },
+        "total_failed":    { "type": "integer", "minimum": 0 }
+      }
+    },
+    "clients": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total_requests", "auth_failures", "rate_limit_hits", "tool_calls"],
+      "properties": {
+        "total_requests":  { "type": "integer", "minimum": 0 },
+        "auth_failures":   { "type": "integer", "minimum": 0 },
+        "rate_limit_hits": { "type": "integer", "minimum": 0 },
+        "tool_calls": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "rollout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled":                  { "type": "boolean" },
+        "active_tasks":             { "type": "integer", "minimum": 0 },
+        "trajectory_capture_rate":  { "type": "number",  "minimum": 0 },
+        "capture_drops":            { "type": "integer", "minimum": 0 },
+        "last_reward_signal":       { "type": ["string", "null"] }
+      }
+    }
+  }
+}

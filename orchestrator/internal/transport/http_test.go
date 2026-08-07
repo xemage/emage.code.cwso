@@ -243,7 +243,7 @@ func TestOriginHostAllowed(t *testing.T) {
 func TestRateLimitMiddleware_AllowsFirstRequest(t *testing.T) {
 	store := newRateLimiterStore(context.Background())
 	log := logging.New("debug")
-	limiter := rateLimitMiddleware(store, log)
+	limiter := rateLimitMiddleware(store, log, nil)
 
 	handler := limiter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -262,7 +262,7 @@ func TestRateLimitMiddleware_AllowsFirstRequest(t *testing.T) {
 func TestRateLimitMiddleware_EnforcesLimit(t *testing.T) {
 	store := newRateLimiterStore(context.Background())
 	log := logging.New("debug")
-	limiter := rateLimitMiddleware(store, log)
+	limiter := rateLimitMiddleware(store, log, nil)
 
 	handler := limiter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -298,7 +298,7 @@ func TestRateLimitMiddleware_EnforcesLimit(t *testing.T) {
 func TestRateLimitMiddleware_LocalhostExempt(t *testing.T) {
 	store := newRateLimiterStore(context.Background())
 	log := logging.New("debug")
-	limiter := rateLimitMiddleware(store, log)
+	limiter := rateLimitMiddleware(store, log, nil)
 
 	handler := limiter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -321,7 +321,7 @@ func TestRateLimitMiddleware_LocalhostExempt(t *testing.T) {
 func TestRateLimitMiddleware_PerIP(t *testing.T) {
 	store := newRateLimiterStore(context.Background())
 	log := logging.New("debug")
-	limiter := rateLimitMiddleware(store, log)
+	limiter := rateLimitMiddleware(store, log, nil)
 
 	handler := limiter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -349,7 +349,7 @@ func TestRateLimitMiddleware_PerIP(t *testing.T) {
 func TestRateLimitMiddleware_SkipsGET(t *testing.T) {
 	store := newRateLimiterStore(context.Background())
 	log := logging.New("debug")
-	limiter := rateLimitMiddleware(store, log)
+	limiter := rateLimitMiddleware(store, log, nil)
 
 	handler := limiter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -852,7 +852,7 @@ func TestAuthMiddleware_UnknownRole_Returns403(t *testing.T) {
 	}
 	tok := makeJWT(secret, claims)
 
-	mw := authMiddleware(cfg, log)
+	mw := authMiddleware(cfg, log, nil)
 	called := false
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true

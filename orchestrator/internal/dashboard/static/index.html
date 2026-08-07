@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CWSO Operator Dashboard</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh;padding:1.5rem}
+h1{font-size:1.4rem;font-weight:700;margin-bottom:1.25rem;color:#7dd3fc}
+h2{font-size:.85rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#94a3b8;margin-bottom:.6rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;margin-bottom:1rem}
+.card{background:#1e2433;border:1px solid #2d3748;border-radius:.5rem;padding:1rem}
+.badge{display:inline-block;padding:.15rem .55rem;border-radius:9999px;font-size:.7rem;font-weight:600}
+.ok{background:#065f46;color:#6ee7b7}.warn{background:#78350f;color:#fcd34d}.err{background:#7f1d1d;color:#fca5a5}
+.row{display:flex;justify-content:space-between;align-items:center;padding:.3rem 0;border-bottom:1px solid #2d3748;font-size:.82rem}
+.row:last-child{border-bottom:none}
+.num{font-weight:600;font-variant-numeric:tabular-nums}
+#overall{font-size:1rem;font-weight:700;padding:.35rem .9rem}
+#ts{font-size:.72rem;color:#64748b;margin-left:.75rem}
+.header-row{display:flex;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:.5rem}
+#err{background:#7f1d1d;color:#fca5a5;padding:.5rem 1rem;border-radius:.4rem;font-size:.8rem;margin-bottom:1rem;display:none}
+.tools-list{font-size:.8rem;line-height:1.8}
+</style>
+</head>
+<body>
+<div class="header-row">
+  <h1>CWSO Operator Dashboard</h1>
+  <span id="overall" class="badge">…</span>
+  <span id="ts"></span>
+</div>
+<div id="err"></div>
+<div class="grid" id="sidecars-card">
+  <div class="card">
+    <h2>Sidecars</h2>
+    <div id="sidecars">Loading…</div>
+  </div>
+  <div class="card">
+    <h2>Jobs</h2>
+    <div id="jobs">Loading…</div>
+  </div>
+  <div class="card">
+    <h2>Clients</h2>
+    <div id="clients">Loading…</div>
+  </div>
+  <div class="card">
+    <h2>Config &amp; Flags</h2>
+    <div id="config">Loading…</div>
+  </div>
+  <div class="card">
+    <h2>Rollout / Learning</h2>
+    <div id="rollout">Loading…</div>
+  </div>
+  <div class="card">
+    <h2>System</h2>
+    <div id="system">Loading…</div>
+  </div>
+</div>
+<script>
+function badge(v){return v==='healthy'?'ok':v==='degraded'?'warn':'err'}
+function row(label,val){return`<div class="row"><span>${label}</span><span class="num">${val}</span></div>`}
+function yesno(b){return b?'<span class="badge ok">yes</span>':'<span class="badge err">no</span>'}
+
+async function load(){
+  try{
+    const r=await fetch('/dashboard/status',{headers:{Authorization:`Bearer ${window.__CWSO_TOKEN||''}`}});
+    if(r.status===401){showErr('Auth failed – check Authorization header');return}
+    if(!r.ok){showErr('HTTP '+r.status);return}
+    const d=await r.json();
+    render(d);
+    document.getElementById('err').style.display='none';
+  }catch(e){showErr(String(e))}
+}
+
+function showErr(msg){
+  const el=document.getElementById('err');
+  el.textContent=msg;
+  el.style.display='block';
+}
+
+function render(d){
+  const ob=document.getElementById('overall');
+  ob.textContent=d.overall||'?';
+  ob.className='badge '+(badge(d.overall));
+  document.getElementById('ts').textContent='as of '+d.timestamp;
+
+  // Sidecars
+  const sc=d.sidecars||{};
+  document.getElementById('sidecars').innerHTML=
+    Object.entries(sc).map(([k,v])=>
+      row(k,v.connected?'<span class="badge ok">up</span>':'<span class="badge err">down</span>')
+    ).join('')||'none configured';
+
+  // Jobs
+  const j=d.jobs||{};
+  document.getElementById('jobs').innerHTML=[
+    row('Workers',j.workers??'—'),
+    row('Queue depth',`${j.queue_depth??0} / ${j.queue_capacity??0}`),
+    row('Active',j.active??0),
+    row('Completed',j.total_completed??0),
+    row('Failed',j.total_failed??0),
+  ].join('');
+
+  // Clients
+  const c=d.clients||{};
+  const tc=c.tool_calls||{};
+  const toolHtml=Object.entries(tc).length
+    ?'<div class="tools-list">'+Object.entries(tc).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${k}: <strong>${v}</strong>`).join('<br>')+'</div>'
+    :'<span style="color:#64748b;font-size:.8rem">no calls yet</span>';
+  document.getElementById('clients').innerHTML=[
+    row('Total requests',c.total_requests??0),
+    row('Auth failures',c.auth_failures??0),
+    row('Rate-limit hits',c.rate_limit_hits??0),
+  ].join('')+'<div style="margin-top:.5rem"><h2 style="margin-bottom:.3rem">Tool calls</h2>'+toolHtml+'</div>';
+
+  // Config
+  const cfg=d.config||{};
+  const flags=cfg.feature_flags||{};
+  const warns=cfg.warnings||[];
+  document.getElementById('config').innerHTML=[
+    row('Transport',cfg.transport||'—'),
+    row('Sandbox runner',cfg.sandbox_runner||'—'),
+    ...Object.entries(flags).map(([k,v])=>row(k.replace(/_/g,' '),yesno(v))),
+    ...(warns.length?[`<div style="margin-top:.4rem;font-size:.78rem;color:#fcd34d">⚠ `+warns.join(', ')+'</div>']:[]),
+  ].join('');
+
+  // Rollout
+  const ro=d.rollout||{};
+  document.getElementById('rollout').innerHTML=ro.enabled
+    ?[
+      row('Active tasks',ro.active_tasks??0),
+      row('Capture rate',((ro.trajectory_capture_rate||0).toFixed(1)+' /min')),
+      row('Capture drops',ro.capture_drops??0),
+      row('Last reward',ro.last_reward_signal||'—'),
+    ].join('')
+    :'<span style="color:#64748b;font-size:.8rem">rollout disabled</span>';
+
+  // System
+  const sys=d.system||{};
+  const uptime=sys.uptime_seconds||0;
+  const h=Math.floor(uptime/3600),m=Math.floor((uptime%3600)/60),s=uptime%60;
+  document.getElementById('system').innerHTML=[
+    row('Uptime',`${h}h ${m}m ${s}s`),
+    row('Version',d.version||'—'),
+  ].join('');
+}
+
+load();
+setInterval(load,10000);
+</script>
+</body>
+</html>

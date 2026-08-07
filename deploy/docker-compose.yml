@@ -25,6 +25,7 @@ services:
       CWSO_WORKSPACE: "/workspace"
       CWSO_GIT_SHADOW_SOCKET: "/run/cwso/git-shadow.sock"
       CWSO_MERGE_ENGINE_SOCKET: "/run/cwso/merge-engine.sock"
+      CWSO_DASHBOARD_TOKEN: "${CWSO_DASHBOARD_TOKEN:-}"
     secrets:
       - jwt_secret
     volumes:
