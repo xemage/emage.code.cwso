@@ -259,22 +259,22 @@ deploy:registry:
   before_script:
     - docker info >/dev/null
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-  # Always rebuild on this runner so every blob in the pushed manifest was built
-  # and staged locally — avoids "blob unknown" errors from cross-runner rebuilds.
+  # Use buildx --push to upload all blobs atomically during build.
+  # --provenance=false avoids attestation manifests that cause "blob unknown"
+  # errors when the tag-then-push path is used with the containerd image store.
   script:
-    - docker build -t $CI_REGISTRY_IMAGE/orchestrator:$CI_COMMIT_SHORT_SHA -f deploy/Dockerfile.orchestrator .
-    - docker build -t $CI_REGISTRY_IMAGE/git-shadow:$CI_COMMIT_SHORT_SHA    -f deploy/Dockerfile.git-shadow .
-    - docker build -t $CI_REGISTRY_IMAGE/merge-engine:$CI_COMMIT_SHORT_SHA  -f deploy/Dockerfile.merge-engine .
-    - docker build -t $CI_REGISTRY_IMAGE/rollout:$CI_COMMIT_SHORT_SHA       -f deploy/Dockerfile.rollout .
     - |
-      for svc in orchestrator git-shadow merge-engine rollout; do
-        docker tag $CI_REGISTRY_IMAGE/${svc}:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE/${svc}:latest
-        docker push $CI_REGISTRY_IMAGE/${svc}:latest
-        if [ -n "$CI_COMMIT_TAG" ]; then
-          docker tag $CI_REGISTRY_IMAGE/${svc}:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE/${svc}:$CI_COMMIT_TAG
-          docker push $CI_REGISTRY_IMAGE/${svc}:$CI_COMMIT_TAG
-        fi
-      done
+      push_image() {
+        local svc="$1"
+        local dockerfile="$2"
+        local tags="-t ${CI_REGISTRY_IMAGE}/${svc}:latest"
+        [ -n "$CI_COMMIT_TAG" ] && tags="${tags} -t ${CI_REGISTRY_IMAGE}/${svc}:${CI_COMMIT_TAG}"
+        docker buildx build ${tags} -f "${dockerfile}" --provenance=false --push .
+      }
+      push_image orchestrator deploy/Dockerfile.orchestrator
+      push_image git-shadow   deploy/Dockerfile.git-shadow
+      push_image merge-engine deploy/Dockerfile.merge-engine
+      push_image rollout      deploy/Dockerfile.rollout
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_TAG
