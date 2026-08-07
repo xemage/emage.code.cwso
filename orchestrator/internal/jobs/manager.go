@@ -81,6 +81,16 @@ type record struct {
 	cancel    context.CancelFunc
 }
 
+// JobsSnapshot is a point-in-time read of job manager state.
+type JobsSnapshot struct {
+	Workers        int
+	QueueCapacity  int
+	QueueDepth     int
+	Active         int
+	TotalCompleted uint64
+	TotalFailed    uint64
+}
+
 // Manager executes jobs using a bounded queue and bounded worker pool.
 type Manager struct {
 	queue     chan *record
@@ -92,6 +102,12 @@ type Manager struct {
 	rootCancel context.CancelFunc
 	closed     atomic.Bool
 	idSeq      atomic.Uint64
+
+	totalCompleted atomic.Uint64
+	totalFailed    atomic.Uint64
+
+	workers  int
+	queueCap int
 
 	mu   sync.RWMutex
 	jobs map[string]*record
@@ -123,6 +139,8 @@ func NewManager(cfg Config, publisher Publisher) (*Manager, error) {
 		rootCtx:    rootCtx,
 		rootCancel: rootCancel,
 		jobs:       make(map[string]*record),
+		workers:    cfg.Workers,
+		queueCap:   cfg.QueueSize,
 	}
 
 	for i := 0; i < cfg.Workers; i++ {
@@ -353,8 +371,35 @@ func (m *Manager) transitionWithResult(id string, next State, errMsg, result str
 	snapshot := r.job
 	m.mu.Unlock()
 
+	switch next {
+	case StateCompleted:
+		m.totalCompleted.Add(1)
+	case StateFailed:
+		m.totalFailed.Add(1)
+	}
+
 	m.publishTransition(snapshot, prev)
 	return true
+}
+
+// Stats returns a point-in-time snapshot of job manager state.
+func (m *Manager) Stats() JobsSnapshot {
+	m.mu.RLock()
+	active := 0
+	for _, r := range m.jobs {
+		if r.job.State == StateRunning {
+			active++
+		}
+	}
+	m.mu.RUnlock()
+	return JobsSnapshot{
+		Workers:        m.workers,
+		QueueCapacity:  m.queueCap,
+		QueueDepth:     len(m.queue),
+		Active:         active,
+		TotalCompleted: m.totalCompleted.Load(),
+		TotalFailed:    m.totalFailed.Load(),
+	}
 }
 
 func (m *Manager) publishTransition(job Job, previous State) {

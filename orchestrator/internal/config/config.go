@@ -115,7 +115,7 @@ type Config struct {
 	HHDWasmScoringTimeoutMS              int      // per-call timeout budget for wasm score adjustments
 	HHDWasmScoringMemoryPages            uint32   // max wasm memory pages for scoring module runtime
 	HHDWasmScoringHostCalls              []string // deny-by-default host-call allowlist for wasm runtime
-
+	DashboardToken                       string   // raw bearer token for /dashboard routes; empty disables dashboard (T-dashboard)
 }
 
 // Load reads configuration, applying env-var overrides over defaults.
@@ -236,6 +236,7 @@ func Load(_ string) (*Config, error) {
 		HHDWasmScoringTimeoutMS:              envInt("CWSO_HHD_WASM_SCORING_TIMEOUT_MS", 20),
 		HHDWasmScoringMemoryPages:            uint32(envInt("CWSO_HHD_WASM_SCORING_MEMORY_LIMIT_PAGES", 64)),
 		HHDWasmScoringHostCalls:              splitCSV(os.Getenv("CWSO_HHD_WASM_SCORING_HOST_CALL_ALLOWLIST")),
+		DashboardToken:                       strings.TrimSpace(os.Getenv("CWSO_DASHBOARD_TOKEN")),
 	}
 
 	if c.Transport == "http" && c.JWTSecret == "" {
