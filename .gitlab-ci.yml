@@ -259,34 +259,22 @@ deploy:registry:
   before_script:
     - docker info >/dev/null
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-  # Tag pipelines skip e2e; build and deploy may land on different dind runners, so
-  # locally built images are not guaranteed — rebuild when missing before retag/push.
+  # Use buildx --push to upload all blobs atomically during build.
+  # --provenance=false avoids attestation manifests that cause "blob unknown"
+  # errors when the tag-then-push path is used with the containerd image store.
   script:
     - |
-      ensure_local_image() {
-        local name="$1"
+      push_image() {
+        local svc="$1"
         local dockerfile="$2"
-        local img="${CI_REGISTRY_IMAGE}/${name}:${CI_COMMIT_SHORT_SHA}"
-        if docker image inspect "${img}" >/dev/null 2>&1; then
-          echo "Image ${img} present locally"
-        else
-          echo "Image ${img} missing locally; building on this runner..."
-          docker build -t "${img}" -f "${dockerfile}" .
-        fi
+        local tags="-t ${CI_REGISTRY_IMAGE}/${svc}:latest"
+        [ -n "$CI_COMMIT_TAG" ] && tags="${tags} -t ${CI_REGISTRY_IMAGE}/${svc}:${CI_COMMIT_TAG}"
+        docker buildx build ${tags} -f "${dockerfile}" --provenance=false --push .
       }
-      ensure_local_image orchestrator deploy/Dockerfile.orchestrator
-      ensure_local_image git-shadow deploy/Dockerfile.git-shadow
-      ensure_local_image merge-engine deploy/Dockerfile.merge-engine
-      ensure_local_image rollout deploy/Dockerfile.rollout
-    - |
-      for svc in orchestrator git-shadow merge-engine rollout; do
-        docker tag $CI_REGISTRY_IMAGE/${svc}:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE/${svc}:latest
-        docker push $CI_REGISTRY_IMAGE/${svc}:latest
-        if [ -n "$CI_COMMIT_TAG" ]; then
-          docker tag $CI_REGISTRY_IMAGE/${svc}:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE/${svc}:$CI_COMMIT_TAG
-          docker push $CI_REGISTRY_IMAGE/${svc}:$CI_COMMIT_TAG
-        fi
-      done
+      push_image orchestrator deploy/Dockerfile.orchestrator
+      push_image git-shadow   deploy/Dockerfile.git-shadow
+      push_image merge-engine deploy/Dockerfile.merge-engine
+      push_image rollout      deploy/Dockerfile.rollout
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_TAG

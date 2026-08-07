@@ -37,9 +37,19 @@ type RecordFilter interface {
 // parameter) to its record filter. ok=false means the id is unknown.
 type SubscriptionResolver func(id string) (RecordFilter, bool)
 
+// RequestMetrics records per-request operational counters for the dashboard.
+type RequestMetrics interface {
+	RecordRequest()
+	RecordAuthFailure()
+	RecordRateLimitHit()
+	RecordToolCall(name string)
+}
+
 type httpOptions struct {
 	resolveSub SubscriptionResolver
 	rollout    http.Handler
+	dashboard  http.Handler
+	metrics    RequestMetrics
 }
 
 // HTTPOption configures optional HTTP transport behaviour without growing the
@@ -55,6 +65,16 @@ func WithSubscriptionResolver(r SubscriptionResolver) HTTPOption {
 // WithRolloutAPI mounts Polar REST routes (/rollout/*, /callbacks/*, /nodes/*) when set.
 func WithRolloutAPI(h http.Handler) HTTPOption {
 	return func(o *httpOptions) { o.rollout = h }
+}
+
+// WithDashboardHandler mounts the operator dashboard at /dashboard and /dashboard/status.
+func WithDashboardHandler(h http.Handler) HTTPOption {
+	return func(o *httpOptions) { o.dashboard = h }
+}
+
+// WithRequestMetrics wires in a RequestMetrics implementation to track client activity.
+func WithRequestMetrics(m RequestMetrics) HTTPOption {
+	return func(o *httpOptions) { o.metrics = m }
 }
 
 // RunHTTP starts the Streamable HTTP transport per MCP spec 2025-03-26.
@@ -140,7 +160,8 @@ func newHTTPHandler(ctx context.Context, cfg *config.Config, log *logging.Logger
 		requestIDMiddleware(),
 		originMiddleware(originSet, log),
 		securityHeadersMiddleware(),
-		rateLimitMiddleware(rateLimiter, log),
+		rateLimitMiddleware(rateLimiter, log, o.metrics),
+		countRequestsMiddleware(o.metrics),
 	)
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -148,10 +169,10 @@ func newHTTPHandler(ctx context.Context, cfg *config.Config, log *logging.Logger
 		_, _ = io.WriteString(w, "ok")
 	})
 
-	mux.Handle("/mcp", mw(authMiddleware(cfg, log)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/mcp", mw(authMiddleware(cfg, log, o.metrics)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
-			handlePOST(w, r, log, samplePublisher, h)
+			handlePOST(w, r, log, samplePublisher, h, o.metrics)
 		case http.MethodGet:
 			ip, _, _ := strings.Cut(r.RemoteAddr, ":")
 			if !rateLimiter.sseConns.acquire(ip) {
@@ -166,14 +187,33 @@ func newHTTPHandler(ctx context.Context, cfg *config.Config, log *logging.Logger
 	}))))
 
 	if o.rollout != nil {
-		mux.Handle("/", mw(authMiddleware(cfg, log)(o.rollout)))
+		mux.Handle("/", mw(authMiddleware(cfg, log, o.metrics)(o.rollout)))
+	}
+
+	if o.dashboard != nil {
+		mux.Handle("/dashboard", mw(o.dashboard))
+		mux.Handle("/dashboard/status", mw(o.dashboard))
 	}
 
 	return mux
 }
 
+// countRequestsMiddleware increments TotalRequests for every non-healthz request.
+func countRequestsMiddleware(m RequestMetrics) middleware {
+	return func(next http.Handler) http.Handler {
+		if m == nil {
+			return next
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			m.RecordRequest()
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger, publisher eventPublisher,
 	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
+	m RequestMetrics,
 ) {
 	const maxBody = 8 << 20
 	contentType := r.Header.Get("Content-Type")
@@ -198,6 +238,9 @@ func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger, pub
 		Method string `json:"method"`
 	}
 	_ = json.Unmarshal(body, &reqMeta)
+	if m != nil && reqMeta.Method != "" {
+		m.RecordToolCall(reqMeta.Method)
+	}
 	requestID, _ := r.Context().Value(requestIDCtxKey{}).(string)
 
 	sess, _ := r.Context().Value(sessionCtxKey{}).(*Session)
@@ -620,7 +663,7 @@ func (rls *rateLimiterStore) getLimiter(ip string) *rate.Limiter {
 	return lim
 }
 
-func rateLimitMiddleware(store *rateLimiterStore, log *logging.Logger) middleware {
+func rateLimitMiddleware(store *rateLimiterStore, log *logging.Logger, m RequestMetrics) middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Only rate-limit /mcp POST (not GET SSE)
@@ -643,6 +686,9 @@ func rateLimitMiddleware(store *rateLimiterStore, log *logging.Logger) middlewar
 			lim := store.getLimiter(ip)
 			if !lim.Allow() {
 				log.Warn().Str("ip", ip).Msg("rate limit exceeded")
+				if m != nil {
+					m.RecordRateLimitHit()
+				}
 				w.Header().Set("Retry-After", "60")
 				http.Error(w, "too many requests", http.StatusTooManyRequests)
 				return
@@ -662,12 +708,15 @@ type jwtClaims struct {
 	jwt.RegisteredClaims
 }
 
-func authMiddleware(cfg *config.Config, log *logging.Logger) middleware {
+func authMiddleware(cfg *config.Config, log *logging.Logger, m RequestMetrics) middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authz := r.Header.Get("Authorization")
 			const prefix = "Bearer "
 			if !strings.HasPrefix(authz, prefix) {
+				if m != nil {
+					m.RecordAuthFailure()
+				}
 				http.Error(w, "missing bearer token", http.StatusUnauthorized)
 				return
 			}
@@ -675,6 +724,9 @@ func authMiddleware(cfg *config.Config, log *logging.Logger) middleware {
 			claims, err := verifyJWT(token, cfg, log)
 			if err != nil {
 				log.Warn().Err(err).Msg("jwt rejected")
+				if m != nil {
+					m.RecordAuthFailure()
+				}
 				http.Error(w, "invalid token", http.StatusUnauthorized)
 				return
 			}
