@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/emage/cwso/orchestrator/internal/config"
+	"github.com/emage/cwso/orchestrator/internal/dashboard"
 	"github.com/emage/cwso/orchestrator/internal/dispatch"
 	"github.com/emage/cwso/orchestrator/internal/eventbus"
 	"github.com/emage/cwso/orchestrator/internal/hal"
@@ -31,21 +32,22 @@ const (
 
 // Server is the top-level orchestrator handle.
 type Server struct {
-	cfg          *config.Config
-	log          *logging.Logger
-	registry     *tools.Registry
-	bus          *eventbus.Bus
-	memory       *memorybroker.Broker
-	publisher    *memorybroker.TeePublisher
-	jobs         *jobs.Manager
-	runner       sandbox.RunnerInterface
-	caps         *dispatch.CapabilityRegistry
-	emitter      *dispatch.DecisionEmitter
-	capSyncer    *dispatch.CapabilitySyncer
-	spikeSubs    *dispatch.SpikeSubscriptionRegistry
-	sparseAgents *dispatch.SparseAgentRegistry
-	astSink      dispatch.WriteEventSink
-	rolloutSvc   *rollout.Service
+	cfg           *config.Config
+	log           *logging.Logger
+	registry      *tools.Registry
+	bus           *eventbus.Bus
+	memory        *memorybroker.Broker
+	publisher     *memorybroker.TeePublisher
+	jobs          *jobs.Manager
+	runner        sandbox.RunnerInterface
+	caps          *dispatch.CapabilityRegistry
+	emitter       *dispatch.DecisionEmitter
+	capSyncer     *dispatch.CapabilitySyncer
+	spikeSubs     *dispatch.SpikeSubscriptionRegistry
+	sparseAgents  *dispatch.SparseAgentRegistry
+	astSink       dispatch.WriteEventSink
+	rolloutSvc    *rollout.Service
+	clientMetrics *dashboard.ClientMetrics
 }
 
 // New constructs and initializes a Server with all Phase 1 tools registered.
@@ -329,6 +331,7 @@ func New(cfg *config.Config, log *logging.Logger) (*Server, error) {
 		cfg: cfg, log: log, registry: tools.NewRegistry(), bus: bus, memory: broker,
 		publisher: publisher, jobs: jobMgr, runner: baselineRunner, caps: capRegistry, emitter: telemetryEmitter,
 		spikeSubs: spikeSubs, sparseAgents: sparseAgents, astSink: astSink, rolloutSvc: rolloutSvc,
+		clientMetrics: &dashboard.ClientMetrics{},
 	}
 	if err := s.registerBaselineTools(); err != nil {
 		jobMgr.Close()
@@ -687,10 +690,92 @@ func (s *Server) Run(ctx context.Context) error {
 		if s.rolloutSvc != nil {
 			httpOpts = append(httpOpts, transport.WithRolloutAPI(rollout.NewHTTPHandler(s.rolloutSvc)))
 		}
+		httpOpts = append(httpOpts, transport.WithRequestMetrics(s.clientMetrics))
+		if dh := s.buildDashboardHandler(); dh != nil {
+			httpOpts = append(httpOpts, transport.WithDashboardHandler(dh))
+		}
 		return transport.RunHTTP(ctx, s.cfg, s.log, s.bus, s.memory, s.publisher, s.Handle, httpOpts...)
 	default:
 		return fmt.Errorf("unsupported transport: %s", s.cfg.Transport)
 	}
+}
+
+// buildDashboardHandler constructs the dashboard handler. Returns nil if token is unset.
+func (s *Server) buildDashboardHandler() *dashboard.Handler {
+	sidecars := map[string]string{
+		"git_shadow":   s.cfg.ShadowSocket,
+		"merge_engine": s.cfg.MergeEngineSocket,
+		"hal":          s.cfg.HALSocket,
+		"rollout":      s.cfg.RolloutSocket,
+		"sparse":       s.cfg.SparseSocket,
+	}
+
+	flags := map[string]bool{
+		"hhd_capability_registry": s.cfg.HHDCapabilityRegistry,
+		"hhd_decision_telemetry":  s.cfg.HHDDecisionTelemetry,
+		"ast_spike_monitor":       s.cfg.ASTSpikeMonitorEnabled,
+		"sparse_agents":           s.cfg.SparseAgentsEnabled,
+		"rollout_api":             s.cfg.RolloutAPIEnabled,
+		"rollout_reward":          s.cfg.RolloutRewardEnabled,
+	}
+
+	warnings := s.configWarnings()
+
+	jobStats := func() dashboard.JobsSnapshotRaw {
+		snap := s.jobs.Stats()
+		return dashboard.JobsSnapshotRaw{
+			Workers:        snap.Workers,
+			QueueCapacity:  snap.QueueCapacity,
+			QueueDepth:     snap.QueueDepth,
+			Active:         snap.Active,
+			TotalCompleted: snap.TotalCompleted,
+			TotalFailed:    snap.TotalFailed,
+		}
+	}
+
+	rolloutSnap := func() dashboard.RolloutSnapshot {
+		if s.rolloutSvc == nil || !s.cfg.RolloutAPIEnabled {
+			return dashboard.RolloutSnapshot{Enabled: false}
+		}
+		fleet := s.rolloutSvc.FleetStatus(context.Background())
+		return dashboard.RolloutSnapshot{
+			Enabled:     true,
+			ActiveTasks: fleet.RunningSessions + fleet.PendingSessions,
+		}
+	}
+
+	h := dashboard.New(dashboard.Config{
+		Token:     s.cfg.DashboardToken,
+		Sidecars:  sidecars,
+		Metrics:   s.clientMetrics,
+		ClientMet: s.clientMetrics,
+		ConfigSnap: dashboard.ConfigSnapshot{
+			Transport:     s.cfg.Transport,
+			SandboxRunner: s.cfg.SandboxRunner,
+			FeatureFlags:  flags,
+			Warnings:      warnings,
+		},
+		JobStats: jobStats,
+		Rollout:  rolloutSnap,
+	})
+	// Zero the raw token from config after hashing to limit its heap lifetime (F5).
+	s.cfg.DashboardToken = ""
+	return h
+}
+
+// configWarnings returns non-fatal operator warnings derived from the current config.
+func (s *Server) configWarnings() []string {
+	var w []string
+	if s.cfg.Transport == "http" && s.cfg.JWTSecret == "" {
+		w = append(w, "CWSO_JWT_SECRET not set")
+	}
+	if s.cfg.ShadowSocket == "" {
+		w = append(w, "shadow tools disabled (CWSO_GIT_SHADOW_SOCKET not set)")
+	}
+	if s.cfg.MergeEngineSocket == "" {
+		w = append(w, "merge tools disabled (CWSO_MERGE_ENGINE_SOCKET not set)")
+	}
+	return w
 }
 
 // Handle dispatches a single JSON-RPC request to the appropriate handler
