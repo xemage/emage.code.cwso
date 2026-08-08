@@ -204,7 +204,12 @@ func TestIntegrationMultiSubscriberSSEFanout(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- transport.RunHTTP(ctx, cfg, log, bus, nil, nil, handler)
+		errCh <- transport.RunHTTP(ctx, cfg, transport.HTTPHandlerConfig{
+			Log:             log,
+			Bus:             bus,
+			SamplePublisher: nil,
+			Handler:         handler,
+		})
 	}()
 
 	// Wait for the server to be ready
@@ -296,7 +301,13 @@ func TestIntegrationBrokerBackedSSEThrottling(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- transport.RunHTTP(ctx, cfg, log, bus, broker, publisher, handler)
+		errCh <- transport.RunHTTP(ctx, cfg, transport.HTTPHandlerConfig{
+			Log:             log,
+			Bus:             bus,
+			Broker:          broker,
+			SamplePublisher: publisher,
+			Handler:         handler,
+		})
 	}()
 
 	baseURL := "http://" + addr
@@ -400,7 +411,13 @@ func TestIntegrationJobDispatchToSSENotification(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- transport.RunHTTP(ctx, cfg, log, bus, broker, publisher, handler)
+		errCh <- transport.RunHTTP(ctx, cfg, transport.HTTPHandlerConfig{
+			Log:             log,
+			Bus:             bus,
+			Broker:          broker,
+			SamplePublisher: publisher,
+			Handler:         handler,
+		})
 	}()
 
 	baseURL := "http://" + addr
@@ -516,7 +533,13 @@ func TestIntegrationEndToEndSignalPath(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- transport.RunHTTP(ctx, cfg, log, bus, broker, publisher, handler)
+		errCh <- transport.RunHTTP(ctx, cfg, transport.HTTPHandlerConfig{
+			Log:             log,
+			Bus:             bus,
+			Broker:          broker,
+			SamplePublisher: publisher,
+			Handler:         handler,
+		})
 	}()
 
 	baseURL := "http://" + addr
