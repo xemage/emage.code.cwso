@@ -694,7 +694,13 @@ func (s *Server) Run(ctx context.Context) error {
 		if dh := s.buildDashboardHandler(); dh != nil {
 			httpOpts = append(httpOpts, transport.WithDashboardHandler(dh))
 		}
-		return transport.RunHTTP(ctx, s.cfg, s.log, s.bus, s.memory, s.publisher, s.Handle, httpOpts...)
+		return transport.RunHTTP(ctx, s.cfg, transport.HTTPHandlerConfig{
+			Log:             s.log,
+			Bus:             s.bus,
+			Broker:          s.memory,
+			SamplePublisher: s.publisher,
+			Handler:         s.Handle,
+		}, httpOpts...)
 	default:
 		return fmt.Errorf("unsupported transport: %s", s.cfg.Transport)
 	}

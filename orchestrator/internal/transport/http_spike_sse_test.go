@@ -54,8 +54,13 @@ func newScopedSSEServer(t *testing.T, resolver SubscriptionResolver) (*httptest.
 	if resolver != nil {
 		opts = append(opts, WithSubscriptionResolver(resolver))
 	}
-	handler := newHTTPHandler(context.Background(), cfg, log, bus, broker, publisher,
-		func(context.Context, *Session, []byte) ([]byte, error) { return nil, nil }, opts...)
+	handler := newHTTPHandler(context.Background(), cfg, HTTPHandlerConfig{
+		Log:             log,
+		Bus:             bus,
+		Broker:          broker,
+		SamplePublisher: publisher,
+		Handler:         func(context.Context, *Session, []byte) ([]byte, error) { return nil, nil },
+	}, opts...)
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
