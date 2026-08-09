@@ -99,9 +99,10 @@ func (s *subscriber) close() {
 type Broker struct {
 	now func() time.Time
 
-	ingestCh chan pendingEvent
-	closed   chan struct{}
-	wg       sync.WaitGroup
+	closeOnce sync.Once
+	ingestCh  chan pendingEvent
+	closed    chan struct{}
+	wg        sync.WaitGroup
 
 	mu       sync.RWMutex
 	records  []Record
@@ -192,15 +193,14 @@ func New(opts ...Option) *Broker {
 }
 
 // Close stops ingestion workers and makes future ingest calls no-ops.
+// It is safe to call multiple times — only the first invocation performs the
+// close, ensuring race-free double-close protection via sync.Once.
 func (b *Broker) Close() {
-	select {
-	case <-b.closed:
-		return
-	default:
+	b.closeOnce.Do(func() {
 		close(b.closed)
-	}
-	b.closeSubscribers()
-	b.wg.Wait()
+		b.closeSubscribers()
+		b.wg.Wait()
+	})
 }
 
 // Ingest attempts to enqueue an event without blocking.

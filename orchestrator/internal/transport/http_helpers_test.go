@@ -49,7 +49,7 @@ func TestPublishSampleEventsByMethod(t *testing.T) {
 	pub := &capturingPublisher{}
 	log := logging.New("error")
 
-	publishSampleEvents(pub, log, "tools/call", "rid-1", "completed", "")
+	publishSampleEvents(pub, log, sampleEventParams{method: "tools/call", requestID: "rid-1", state: "completed"})
 	if len(pub.topics) != 2 {
 		t.Fatalf("expected two publishes for tools/call, got %v", pub.topics)
 	}
@@ -59,7 +59,7 @@ func TestPublishSampleEventsByMethod(t *testing.T) {
 
 	pub.topics = nil
 	pub.calls = 0
-	publishSampleEvents(pub, log, "ping", "rid-2", "completed", "")
+	publishSampleEvents(pub, log, sampleEventParams{method: "ping", requestID: "rid-2", state: "completed"})
 	if len(pub.topics) != 1 || pub.topics[0] != eventbus.TopicNotificationsLog {
 		t.Fatalf("expected log-only publish for non tools/call, got %v", pub.topics)
 	}
@@ -69,12 +69,12 @@ func TestPublishSampleEventsHandlesPublisherErrors(t *testing.T) {
 	pub := &capturingPublisher{errAt: 1}
 	log := logging.New("error")
 
-	publishSampleEvents(pub, log, "tools/call", "rid-3", "failed", "boom")
+	publishSampleEvents(pub, log, sampleEventParams{method: "tools/call", requestID: "rid-3", state: "failed", errMsg: "boom"})
 	if pub.calls != 2 {
 		t.Fatalf("expected both publish attempts despite first failure, got %d", pub.calls)
 	}
 
-	publishSampleEvents(nil, log, "tools/call", "rid-4", "completed", "")
+	publishSampleEvents(nil, log, sampleEventParams{method: "tools/call", requestID: "rid-4", state: "completed"})
 }
 
 func TestSSEConnectionStoreAcquireRelease(t *testing.T) {
