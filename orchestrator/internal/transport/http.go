@@ -45,6 +45,43 @@ type RequestMetrics interface {
 	RecordToolCall(name string)
 }
 
+// HTTPHandlerConfig groups the required (non-optional) dependencies for the HTTP transport.
+type HTTPHandlerConfig struct {
+	Log             *logging.Logger
+	Bus             *eventbus.Bus
+	Broker          *memorybroker.Broker
+	SamplePublisher eventPublisher
+	Handler         func(ctx context.Context, sess *Session, raw []byte) ([]byte, error)
+}
+
+// postHandlerDeps groups the dependencies required by handlePOST.
+type postHandlerDeps struct {
+	log       *logging.Logger
+	publisher eventPublisher
+	handler   func(ctx context.Context, sess *Session, raw []byte) ([]byte, error)
+	metrics   RequestMetrics
+}
+
+// sseHandlerDeps groups the dependencies required by handleSSE.
+type sseHandlerDeps struct {
+	log        *logging.Logger
+	bus        *eventbus.Bus
+	broker     *memorybroker.Broker
+	resolveSub SubscriptionResolver
+}
+
+// brokerSSEDeps groups the dependencies for the broker-backed SSE path.
+type brokerSSEDeps struct {
+	log    *logging.Logger
+	broker *memorybroker.Broker
+	filter RecordFilter
+}
+
+// sampleEventParams groups the per-call string parameters for publishSampleEvents.
+type sampleEventParams struct {
+	method, requestID, state, errMsg string
+}
+
 type httpOptions struct {
 	resolveSub SubscriptionResolver
 	rollout    http.Handler
@@ -89,25 +126,19 @@ func WithRequestMetrics(m RequestMetrics) HTTPOption {
 //
 //   - Origin allow-list validated on every request (DNS-rebinding protection)
 //   - JWT (HS256) Bearer token required on /mcp endpoints
-func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
-	bus *eventbus.Bus,
-	broker *memorybroker.Broker,
-	samplePublisher eventPublisher,
-	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
-	opts ...HTTPOption,
-) error {
-	if bus == nil {
-		bus = eventbus.New()
+func RunHTTP(ctx context.Context, cfg *config.Config, hcfg HTTPHandlerConfig, opts ...HTTPOption) error {
+	if hcfg.Bus == nil {
+		hcfg.Bus = eventbus.New()
 	}
-	if samplePublisher == nil {
-		if broker != nil {
-			samplePublisher = memorybroker.NewTeePublisher(bus, broker)
+	if hcfg.SamplePublisher == nil {
+		if hcfg.Broker != nil {
+			hcfg.SamplePublisher = memorybroker.NewTeePublisher(hcfg.Bus, hcfg.Broker)
 		} else {
-			samplePublisher = bus
+			hcfg.SamplePublisher = hcfg.Bus
 		}
 	}
 
-	handler := newHTTPHandler(ctx, cfg, log, bus, broker, samplePublisher, h, opts...)
+	handler := newHTTPHandler(ctx, cfg, hcfg, opts...)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -120,7 +151,7 @@ func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info().Str("addr", cfg.HTTPAddr).Msg("http transport listening")
+		hcfg.Log.Info().Str("addr", cfg.HTTPAddr).Msg("http transport listening")
 		err := srv.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
@@ -137,11 +168,7 @@ func RunHTTP(ctx context.Context, cfg *config.Config, log *logging.Logger,
 	}
 }
 
-func newHTTPHandler(ctx context.Context, cfg *config.Config, log *logging.Logger, bus *eventbus.Bus, broker *memorybroker.Broker,
-	samplePublisher eventPublisher,
-	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
-	opts ...HTTPOption,
-) http.Handler {
+func newHTTPHandler(ctx context.Context, cfg *config.Config, hcfg HTTPHandlerConfig, opts ...HTTPOption) http.Handler {
 	var o httpOptions
 	for _, opt := range opts {
 		opt(&o)
@@ -156,11 +183,11 @@ func newHTTPHandler(ctx context.Context, cfg *config.Config, log *logging.Logger
 	rateLimiter := newRateLimiterStore(ctx)
 
 	mw := chain(
-		recoverMiddleware(log),
+		recoverMiddleware(hcfg.Log),
 		requestIDMiddleware(),
-		originMiddleware(originSet, log),
+		originMiddleware(originSet, hcfg.Log),
 		securityHeadersMiddleware(),
-		rateLimitMiddleware(rateLimiter, log, o.metrics),
+		rateLimitMiddleware(rateLimiter, hcfg.Log, o.metrics),
 		countRequestsMiddleware(o.metrics),
 	)
 
@@ -169,10 +196,15 @@ func newHTTPHandler(ctx context.Context, cfg *config.Config, log *logging.Logger
 		_, _ = io.WriteString(w, "ok")
 	})
 
-	mux.Handle("/mcp", mw(authMiddleware(cfg, log, o.metrics)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/mcp", mw(authMiddleware(cfg, hcfg.Log, o.metrics)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
-			handlePOST(w, r, log, samplePublisher, h, o.metrics)
+			handlePOST(w, r, postHandlerDeps{
+				log:       hcfg.Log,
+				publisher: hcfg.SamplePublisher,
+				handler:   hcfg.Handler,
+				metrics:   o.metrics,
+			})
 		case http.MethodGet:
 			ip, _, _ := strings.Cut(r.RemoteAddr, ":")
 			if !rateLimiter.sseConns.acquire(ip) {
@@ -180,14 +212,19 @@ func newHTTPHandler(ctx context.Context, cfg *config.Config, log *logging.Logger
 				return
 			}
 			defer rateLimiter.sseConns.release(ip)
-			handleSSE(w, r, log, bus, broker, o.resolveSub)
+			handleSSE(w, r, sseHandlerDeps{
+				log:        hcfg.Log,
+				bus:        hcfg.Bus,
+				broker:     hcfg.Broker,
+				resolveSub: o.resolveSub,
+			})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	}))))
 
 	if o.rollout != nil {
-		mux.Handle("/", mw(authMiddleware(cfg, log, o.metrics)(o.rollout)))
+		mux.Handle("/", mw(authMiddleware(cfg, hcfg.Log, o.metrics)(o.rollout)))
 	}
 
 	if o.dashboard != nil {
@@ -211,10 +248,7 @@ func countRequestsMiddleware(m RequestMetrics) middleware {
 	}
 }
 
-func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger, publisher eventPublisher,
-	h func(ctx context.Context, sess *Session, raw []byte) ([]byte, error),
-	m RequestMetrics,
-) {
+func handlePOST(w http.ResponseWriter, r *http.Request, deps postHandlerDeps) {
 	const maxBody = 8 << 20
 	contentType := r.Header.Get("Content-Type")
 	mediaType, _, err := mime.ParseMediaType(contentType)
@@ -225,7 +259,7 @@ func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger, pub
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
 	if err != nil {
-		log.Warn().Err(err).Str("handler", "POST /mcp").Msg("failed to read request body")
+		deps.log.Warn().Err(err).Str("handler", "POST /mcp").Msg("failed to read request body")
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -238,59 +272,91 @@ func handlePOST(w http.ResponseWriter, r *http.Request, log *logging.Logger, pub
 		Method string `json:"method"`
 	}
 	_ = json.Unmarshal(body, &reqMeta)
-	if m != nil && reqMeta.Method != "" {
-		m.RecordToolCall(reqMeta.Method)
+	if deps.metrics != nil && reqMeta.Method != "" {
+		deps.metrics.RecordToolCall(reqMeta.Method)
 	}
 	requestID, _ := r.Context().Value(requestIDCtxKey{}).(string)
 
 	sess, _ := r.Context().Value(sessionCtxKey{}).(*Session)
-	resp, err := h(r.Context(), sess, body)
+	resp, err := deps.handler(r.Context(), sess, body)
 	if err != nil {
-		publishSampleEvents(publisher, log, reqMeta.Method, requestID, "failed", err.Error())
-		log.Error().Err(err).Msg("handler error")
+		publishSampleEvents(deps.publisher, deps.log, sampleEventParams{
+			method:    reqMeta.Method,
+			requestID: requestID,
+			state:     "failed",
+			errMsg:    err.Error(),
+		})
+		deps.log.Error().Err(err).Msg("handler error")
 		http.Error(w, "handler error", http.StatusInternalServerError)
 		return
 	}
 	if resp == nil {
-		publishSampleEvents(publisher, log, reqMeta.Method, requestID, "accepted", "")
+		publishSampleEvents(deps.publisher, deps.log, sampleEventParams{
+			method:    reqMeta.Method,
+			requestID: requestID,
+			state:     "accepted",
+		})
 		// Notification — per MCP spec, return 202 Accepted with no body.
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
-	publishSampleEvents(publisher, log, reqMeta.Method, requestID, "completed", "")
+	publishSampleEvents(deps.publisher, deps.log, sampleEventParams{
+		method:    reqMeta.Method,
+		requestID: requestID,
+		state:     "completed",
+	})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(resp)
 }
 
-func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus *eventbus.Bus, broker *memorybroker.Broker, resolve SubscriptionResolver) {
-	// Resolve an optional subscription scope before writing any SSE headers so an unknown
-	// id can still return a clean 404.
+// writeSSEFrame handles the per-message emit logic for the bus-backed SSE stream.
+// It returns false to signal the loop should return (write failure).
+func writeSSEFrame(w http.ResponseWriter, flusher http.Flusher, log *logging.Logger, msg eventbus.Message, filter RecordFilter) bool {
+	if filter != nil && !filter.Allow(msg.Topic, msg.Payload) {
+		return true
+	}
+	envelope, err := marshalJSONRPCNotification(msg.Topic, msg.Payload)
+	if err != nil {
+		log.Warn().Err(err).Str("topic", msg.Topic).Msg("failed to marshal notification envelope")
+		return true
+	}
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", envelope); err != nil {
+		log.Debug().Err(err).Msg("SSE write failed")
+		return false
+	}
+	flusher.Flush()
+	return true
+}
+
+// resolveSSEFilter resolves an optional subscription scope before writing any SSE
+// headers so an unknown id can still return a clean 404. It returns false if an
+// error response was already written.
+func resolveSSEFilter(w http.ResponseWriter, r *http.Request, deps sseHandlerDeps) (RecordFilter, bool) {
 	var filter RecordFilter
 	if id := r.URL.Query().Get("subscription"); id != "" {
-		if resolve == nil {
+		if deps.resolveSub == nil {
 			http.Error(w, "subscriptions not enabled", http.StatusNotFound)
-			return
+			return nil, false
 		}
-		f, ok := resolve(id)
+		f, ok := deps.resolveSub(id)
 		if !ok {
 			http.Error(w, "unknown subscription", http.StatusNotFound)
-			return
+			return nil, false
 		}
 		filter = f
 	}
+	return filter, true
+}
 
-	if broker != nil {
-		handleBrokerSSE(w, r, log, broker, filter)
-		return
-	}
-	if bus == nil {
-		bus = eventbus.New()
-	}
+// setupSSEStream configures the SSE response headers, disables the write deadline,
+// subscribes to the bus, and writes the ready frame. It returns the subscription,
+// ticker, and flusher, or false if the stream could not be set up.
+func setupSSEStream(w http.ResponseWriter, log *logging.Logger, bus *eventbus.Bus) (*eventbus.Subscription, *time.Ticker, http.Flusher, bool) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
-		return
+		return nil, nil, nil, false
 	}
 	// Disable the server-level WriteTimeout for this SSE connection.
 	// WriteTimeout is measured from first byte written and fires at 30 s, which
@@ -305,18 +371,36 @@ func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus 
 	w.WriteHeader(http.StatusOK)
 
 	sub := bus.Subscribe()
-	defer sub.Close()
-
 	ticker := time.NewTicker(heartbeatInterval)
-	defer ticker.Stop()
 
 	_, _ = fmt.Fprintf(w, "event: ready\ndata: {\"protocolVersion\":\"2025-03-26\"}\n\n")
 	flusher.Flush()
 	log.Debug().Msg("SSE client connected")
+	return sub, ticker, flusher, true
+}
+
+func handleSSE(w http.ResponseWriter, r *http.Request, deps sseHandlerDeps) {
+	filter, ok := resolveSSEFilter(w, r, deps)
+	if !ok {
+		return
+	}
+	if deps.broker != nil {
+		handleBrokerSSE(w, r, brokerSSEDeps{log: deps.log, broker: deps.broker, filter: filter})
+		return
+	}
+	if deps.bus == nil {
+		deps.bus = eventbus.New()
+	}
+	sub, ticker, flusher, ok := setupSSEStream(w, deps.log, deps.bus)
+	if !ok {
+		return
+	}
+	defer sub.Close()
+	defer ticker.Stop()
 	defer func() {
 		dropped := sub.Dropped()
 		if dropped > 0 {
-			log.Warn().Int("dropped_events", int(dropped)).Msg("SSE subscriber dropped events due to backpressure")
+			deps.log.Warn().Int("dropped_events", int(dropped)).Msg("SSE subscriber dropped events due to backpressure")
 		}
 	}()
 
@@ -331,49 +415,39 @@ func handleSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, bus 
 			if !ok {
 				return
 			}
-			if filter != nil && !filter.Allow(msg.Topic, msg.Payload) {
-				continue
-			}
-			envelope, err := marshalJSONRPCNotification(msg.Topic, msg.Payload)
-			if err != nil {
-				log.Warn().Err(err).Str("topic", msg.Topic).Msg("failed to marshal notification envelope")
-				continue
-			}
-			if _, err := fmt.Fprintf(w, "data: %s\n\n", envelope); err != nil {
-				log.Debug().Err(err).Msg("SSE write failed")
+			if !writeSSEFrame(w, flusher, deps.log, msg, filter) {
 				return
 			}
-			flusher.Flush()
 		}
 	}
 }
 
-func handleBrokerSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger, broker *memorybroker.Broker, filter RecordFilter) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
-		return
+// writeBrokerSSEFrame handles the per-record emit logic for the broker-backed SSE stream.
+// It returns false to signal the loop should return (write failure).
+func writeBrokerSSEFrame(w http.ResponseWriter, flusher http.Flusher, log *logging.Logger, rec memorybroker.Record, filter RecordFilter, throttle *telemetryThrottle) bool {
+	if filter != nil && !filter.Allow(rec.Topic, rec.Payload) {
+		return true
 	}
-	// Disable the server-level WriteTimeout for this SSE connection (same reason as handleSSE).
-	if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
-		log.Warn().Err(err).Msg("failed to clear broker SSE write deadline")
+	if !throttle.Allow(rec) {
+		return true
 	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.WriteHeader(http.StatusOK)
-
-	sub := broker.Subscribe()
-	defer sub.Close()
-	throttle := newTelemetryThrottle()
-
-	ticker := time.NewTicker(heartbeatInterval)
-	defer ticker.Stop()
-
-	_, _ = fmt.Fprintf(w, "event: ready\ndata: {\"protocolVersion\":\"2025-03-26\"}\n\n")
+	envelope, err := marshalJSONRPCNotification(rec.Topic, rec.Payload)
+	if err != nil {
+		log.Warn().Err(err).Str("topic", rec.Topic).Msg("failed to marshal notification envelope")
+		return true
+	}
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", envelope); err != nil {
+		log.Debug().Err(err).Msg("SSE write failed")
+		return false
+	}
 	flusher.Flush()
-	log.Debug().Msg("SSE client connected")
-	defer func() {
+	return true
+}
+
+// brokerSSETelemetryDefer returns the closure that handleBrokerSSE defers to emit
+// telemetry counts (and a dropped-events warning) when the SSE connection closes.
+func brokerSSETelemetryDefer(log *logging.Logger, sub *memorybroker.Subscription, throttle *telemetryThrottle) func() {
+	return func() {
 		fields := map[string]any{}
 		for topic, counters := range throttle.Snapshot() {
 			fields[topic] = map[string]int{
@@ -386,7 +460,35 @@ func handleBrokerSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger
 			entry = log.Warn().Int("dropped_events", int(dropped)).Any("telemetry_counts", fields)
 		}
 		entry.Msg("SSE telemetry stream closed")
-	}()
+	}
+}
+
+func handleBrokerSSE(w http.ResponseWriter, r *http.Request, deps brokerSSEDeps) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+	// Disable the server-level WriteTimeout for this SSE connection (same reason as handleSSE).
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
+		deps.log.Warn().Err(err).Msg("failed to clear broker SSE write deadline")
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	sub := deps.broker.Subscribe()
+	defer sub.Close()
+	throttle := newTelemetryThrottle()
+
+	ticker := time.NewTicker(heartbeatInterval)
+	defer ticker.Stop()
+
+	_, _ = fmt.Fprintf(w, "event: ready\ndata: {\"protocolVersion\":\"2025-03-26\"}\n\n")
+	flusher.Flush()
+	deps.log.Debug().Msg("SSE client connected")
+	defer brokerSSETelemetryDefer(deps.log, sub, throttle)()
 
 	for {
 		select {
@@ -399,22 +501,9 @@ func handleBrokerSSE(w http.ResponseWriter, r *http.Request, log *logging.Logger
 			if !ok {
 				return
 			}
-			if filter != nil && !filter.Allow(rec.Topic, rec.Payload) {
-				continue
-			}
-			if !throttle.Allow(rec) {
-				continue
-			}
-			envelope, err := marshalJSONRPCNotification(rec.Topic, rec.Payload)
-			if err != nil {
-				log.Warn().Err(err).Str("topic", rec.Topic).Msg("failed to marshal notification envelope")
-				continue
-			}
-			if _, err := fmt.Fprintf(w, "data: %s\n\n", envelope); err != nil {
-				log.Debug().Err(err).Msg("SSE write failed")
+			if !writeBrokerSSEFrame(w, flusher, deps.log, rec, deps.filter, throttle) {
 				return
 			}
-			flusher.Flush()
 		}
 	}
 }
@@ -435,27 +524,27 @@ func marshalJSONRPCNotification(topic string, payload json.RawMessage) ([]byte, 
 	return json.Marshal(env)
 }
 
-func publishSampleEvents(publisher eventPublisher, log *logging.Logger, method, requestID, state, errMsg string) {
+func publishSampleEvents(publisher eventPublisher, log *logging.Logger, p sampleEventParams) {
 	if publisher == nil {
 		return
 	}
 	logPayload := map[string]any{
-		"request_id": requestID,
-		"method":     method,
-		"state":      state,
+		"request_id": p.requestID,
+		"method":     p.method,
+		"state":      p.state,
 	}
-	if errMsg != "" {
-		logPayload["error"] = errMsg
+	if p.errMsg != "" {
+		logPayload["error"] = p.errMsg
 	}
 	if err := publisher.Publish(eventbus.TopicNotificationsLog, logPayload); err != nil {
 		log.Warn().Err(err).Msg("publish notifications/log failed")
 	}
-	if method != "tools/call" {
+	if p.method != "tools/call" {
 		return
 	}
 	jobPayload := map[string]any{
-		"request_id": requestID,
-		"state":      state,
+		"request_id": p.requestID,
+		"state":      p.state,
 	}
 	if err := publisher.Publish(eventbus.TopicNotificationsJobState, jobPayload); err != nil {
 		log.Warn().Err(err).Msg("publish notifications/job-state failed")
@@ -598,9 +687,11 @@ func (s *sseConnectionStore) acquire(ip string) bool {
 func (s *sseConnectionStore) release(ip string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.conns[ip] > 0 {
-		s.conns[ip]--
+	if s.conns[ip] <= 1 {
+		delete(s.conns, ip)
+		return
 	}
+	s.conns[ip]--
 }
 
 type rateLimiterEntry struct {

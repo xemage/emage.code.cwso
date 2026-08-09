@@ -20,6 +20,21 @@ func waitForLen(t *testing.T, b *Broker, want int) {
 	t.Fatalf("timed out waiting for len >= %d (got=%d)", want, b.Len())
 }
 
+// waitForMaxSeq polls until the highest stored sequence reaches want.
+// Use this instead of waitForLen when the broker may overwrite older records
+// before the caller inspects them (ring-buffer eviction race).
+func waitForMaxSeq(t *testing.T, b *Broker, want uint64) {
+	t.Helper()
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if recs := b.Query(QueryOptions{}); len(recs) > 0 && recs[len(recs)-1].Sequence >= want {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for max sequence >= %d", want)
+}
+
 func TestSequenceMonotonicity(t *testing.T) {
 	b := New(WithCapacity(16), WithIngressQueueSize(64))
 	defer b.Close()
@@ -55,7 +70,10 @@ func TestRetentionEvictionOldestFirst(t *testing.T) {
 		}
 	}
 
-	waitForLen(t, b, 3)
+	// Wait until all 5 events have been processed and the ring settled at capacity.
+	// waitForLen(b,3) is insufficient: Len hits 3 after the 3rd event, before events
+	// 4 and 5 overwrite the oldest slots in the ring buffer.
+	waitForMaxSeq(t, b, 5)
 	records := b.Query(QueryOptions{})
 	if len(records) != 3 {
 		t.Fatalf("expected retained size 3, got %d", len(records))

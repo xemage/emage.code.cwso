@@ -218,6 +218,17 @@ When updating pipeline or infrastructure configuration:
 2. Document what changed and why in the artifact header
 3. Reference the prior version for rollback context
 
+## CWSO Awareness
+
+If your work involves deploying or operating the CWSO stack, or Pattern A concurrent
+multi-agent code editing (parallel agents editing shared/related files via CWSO shadow
+workspaces), consult the `cwso-awareness` skill before calling any
+`implementation/runtime/cwso` client code. Your CWSO permission tier is **`worker`** (per
+`docs/artifacts/role-mapping-cwso-v1.md`): you write CI/CD and infra artifacts requiring
+workspace mutation (`create_shadow_workspace`, `write_shadow_file`, `commit_shadow`, `query_ast`,
+`drop_shadow_workspace`) but are blocked from calling `merge_concurrent_results` — that call is
+`orchestrator`-tier only. Using the wrong role for a tool call fails with HTTP 403.
+
 ## Protocol Awareness
 
 ### Task Completion

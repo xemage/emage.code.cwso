@@ -58,6 +58,16 @@ func New(levelStr string) *Logger {
 	}
 }
 
+// NewWithWriter returns a Logger writing to w at the given text level.
+// Use in tests to capture structured log output.
+func NewWithWriter(levelStr string, w io.Writer) *Logger {
+	return &Logger{
+		w:     w,
+		level: parseLevel(levelStr),
+		base:  map[string]any{},
+	}
+}
+
 // Event is a fluent log builder.
 type Event struct {
 	logger *Logger
