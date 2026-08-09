@@ -407,7 +407,12 @@ func TestHandlePOST_RejectsUnsupportedMediaType(t *testing.T) {
 	businessHandler := func(ctx context.Context, sess *Session, raw []byte) ([]byte, error) {
 		return []byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`), nil
 	}
-	handler := newHTTPHandler(context.Background(), cfg, log, eventbus.New(), nil, nil, businessHandler)
+	handler := newHTTPHandler(context.Background(), cfg, HTTPHandlerConfig{
+		Log:             log,
+		Bus:             eventbus.New(),
+		SamplePublisher: nil,
+		Handler:         businessHandler,
+	})
 
 	claims := &jwtClaims{
 		Role: "worker",
@@ -499,7 +504,7 @@ func newSSETestServer(t *testing.T, bus *eventbus.Bus,
 		JWTAudience:    "cwso-mcp",
 		AllowedOrigins: []string{"http://localhost"},
 	}
-	log := logging.New("error")
+	log := logging.New("debug")
 	broker := memorybroker.New(
 		memorybroker.WithCapacity(128),
 		memorybroker.WithIngressQueueSize(128),
@@ -507,7 +512,13 @@ func newSSETestServer(t *testing.T, bus *eventbus.Bus,
 	t.Cleanup(broker.Close)
 	publisher := memorybroker.NewTeePublisher(bus, broker)
 
-	handler := newHTTPHandler(context.Background(), cfg, log, bus, broker, publisher, h)
+	handler := newHTTPHandler(context.Background(), cfg, HTTPHandlerConfig{
+		Log:             log,
+		Bus:             bus,
+		Broker:          broker,
+		SamplePublisher: publisher,
+		Handler:         h,
+	})
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
@@ -827,6 +838,21 @@ func TestVerifyJWT_NoExpiry_Rejected(t *testing.T) {
 	_, err := verifyJWT(tok, cfg, log)
 	if err == nil {
 		t.Fatal("expected error for token without exp claim, got nil")
+	}
+}
+
+func TestSSEConnectionStoreEviction(t *testing.T) {
+	s := &sseConnectionStore{conns: make(map[string]int)}
+	ok := s.acquire("1.2.3.4")
+	if !ok {
+		t.Fatal("expected acquire to succeed")
+	}
+	s.release("1.2.3.4")
+	s.mu.Lock()
+	_, present := s.conns["1.2.3.4"]
+	s.mu.Unlock()
+	if present {
+		t.Error("expected map entry to be evicted after release to zero")
 	}
 }
 
