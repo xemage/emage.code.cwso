@@ -123,6 +123,10 @@ Performed by the ORCHESTRATOR ONLY. Other agents report completion; they never m
        **Status:** done
        **Completed:** YYYY-MM-DD
 
+Land these edits via a branch and MR, never a direct commit to `main`/`develop` — even
+though this is a ledger-only change, see `git-workflow.md` § "Protected Branches — No
+Direct Commits, Ever" (no exceptions for docs/ledger-only edits, including this one).
+
 Never do step 3 without step 2. Never do step 2 without step 4.
 
 ### 5. Cancel a Task
