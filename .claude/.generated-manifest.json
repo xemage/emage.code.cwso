@@ -4,6 +4,7 @@
   "generatedAt": "<deterministic>",
   "files": [
     "../.mcp.json",
+    "../.mcp.json.provenance.json",
     "agents/backend-developer.md",
     "agents/data-mockup-agent.md",
     "agents/database-engineer.md",

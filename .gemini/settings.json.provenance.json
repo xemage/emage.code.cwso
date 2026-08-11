@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "generatorOwnedKeys": [
+    "brave",
+    "context7",
+    "docker",
+    "fetch",
+    "filesystem",
+    "git",
+    "github",
+    "gitlab",
+    "hf-mcp-server",
+    "memory",
+    "playwright",
+    "postgresql",
+    "sequential-thinking",
+    "supabase",
+    "toolradar"
+  ]
+}

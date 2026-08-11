@@ -57,7 +57,7 @@ pending → in_progress → blocked → in_review → done | cancelled
 ## Skill Workflow (mandatory)
 
 Before implementation, debugging, review response, or completion claims, agents
-MUST check applicable skills in the active platform projection (`.github/skills/`, `.cursor/skills/`, `.gemini/skills/`, `.opencode/skills/`, `.pi/skills/`, `.claude/skills/`) (or invoke `/discover-skills`).
+MUST check applicable skills in the active platform projection (`.github/skills/`, `.cursor/skills/`, `.gemini/skills/`, `.opencode/skills/`, `.pi/skills/`, `.claude/skills/`, `.cline/skills/`) (or invoke `/discover-skills`).
 
 | Situation | Required skill |
 |-----------|----------------|
@@ -71,13 +71,13 @@ Skipping a mandatory skill requires orchestrator approval and a logged exception
 in the task brief or checkpoint.
 
 ## Code Standards
-- See platform instruction projections: `.github/instructions/coding-standards.instructions.md`, `.cursor/rules/coding-standards.mdc`, `.gemini/instructions/coding-standards.md`, `.opencode/instructions/coding-standards.md`, `.pi/instructions/coding-standards.md`, `.claude/rules/coding-standards.md`.
+- See platform instruction projections: `.github/instructions/coding-standards.instructions.md`, `.cursor/rules/coding-standards.mdc`, `.gemini/instructions/coding-standards.md`, `.opencode/instructions/coding-standards.md`, `.pi/instructions/coding-standards.md`, `.claude/rules/coding-standards.md`, `.clinerules/coding-standards.md`.
 - Max 50-line functions, max 4 parameters, early returns.
 - Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
 - GitFlow: `main`, `develop`, `feature/*`, `bugfix/*`, `release/*`, `hotfix/*`.
 
 ## Security
-- See platform security instruction projections: `.github/instructions/security-guidelines.instructions.md`, `.cursor/rules/security-guidelines.mdc`, `.gemini/instructions/security-guidelines.md`, `.opencode/instructions/security-guidelines.md`, `.pi/instructions/security-guidelines.md`, `.claude/rules/security-guidelines.md`, and `implementation/SECURITY.md`.
+- See platform security instruction projections: `.github/instructions/security-guidelines.instructions.md`, `.cursor/rules/security-guidelines.mdc`, `.gemini/instructions/security-guidelines.md`, `.opencode/instructions/security-guidelines.md`, `.pi/instructions/security-guidelines.md`, `.claude/rules/security-guidelines.md`, `.clinerules/security-guidelines.md`, and `implementation/SECURITY.md`.
 - OWASP Top 10 compliance required.
 - No secrets in code — use environment variables or vault. **Never commit live API keys.**
 - Parameterized queries only.
@@ -85,16 +85,17 @@ in the task brief or checkpoint.
 
 ## Knowledge Base
 - Source knowledge lives in the emage.code repository under `implementation/knowledge/`; this target uses installed platform projections.
-- Per-platform folders (`.github/`, `.gemini/`, `.opencode/`, `.cursor/`, `.pi/`) are **generated** by `scripts/sync.mjs`. **Do not edit them by hand.**
-- Use the installed platform folders (`.github/`, `.cursor/`, `.gemini/`, `.opencode/`, `.pi/`, `.claude/`) as runtime references in this target project.
+- Per-platform folders (`.github/`, `.gemini/`, `.opencode/`, `.cursor/`, `.pi/`, `.clinerules/`, `.cline/`) are **generated** by `scripts/sync.mjs`. **Do not edit them by hand.**
+- Use the installed platform folders (`.github/`, `.cursor/`, `.gemini/`, `.opencode/`, `.pi/`, `.claude/`, `.cline/`, `.clinerules/`) as runtime references in this target project.
+- Cline auto-detects the root `AGENTS.md` natively — no projection is needed for that file itself, it already works as-is. Cline users should also check `.clinerules/` for path-scoped project rules.
 
 ## MCP Servers
-Declared in platform MCP configs (`.vscode/mcp.json`, `.cursor/mcp.json`, `.gemini/settings.json`, `.opencode/opencode.json`, `.pi/mcp.json`, `.mcp.json`). Each server is tagged:
+Declared in platform MCP configs (`.vscode/mcp.json`, `.cursor/mcp.json`, `.gemini/settings.json`, `.opencode/opencode.json`, `.pi/mcp.json`, `.mcp.json`, `.cline/mcp.json`). Each server is tagged:
 
 | Tag | Emitted to |
 |-----|-----------|
 | `core` | every platform |
-| `extended` | platforms whose manifest opts in (`gemini`, `opencode`, `cursor`) |
+| `extended` | platforms whose manifest opts in (all except `github`: `cursor`, `gemini`, `opencode`, `pi`, `claude-code`, `cline`) |
 
 ### Core servers (always available)
 
@@ -109,7 +110,7 @@ Declared in platform MCP configs (`.vscode/mcp.json`, `.cursor/mcp.json`, `.gemi
 | `context7` | Framework/API documentation | Technology Scout, Integration |
 
 ### Extended servers (opt-in)
-`hf-mcp-server`, `filesystem`, `github`, `git`, `supabase`, `e2b`, `docker`, `redis`, `postgresql`, `figma`, `notion`, `toolradar`. Most require additional credentials — see `servers.yaml` for the env-var contract.
+`hf-mcp-server`, `filesystem`, `github`, `git`, `supabase`, `docker`, `postgresql`, `toolradar`. Most require additional credentials — see `servers.yaml` for the env-var contract.
 
 ## Token Governance
 | Phase | Budget |

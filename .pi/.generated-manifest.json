@@ -35,6 +35,7 @@
     "instructions/poc-guidelines.md",
     "instructions/security-guidelines.md",
     "mcp.json",
+    "mcp.json.provenance.json",
     "prompts/batch.md",
     "prompts/bug-report.md",
     "prompts/code-review.md",

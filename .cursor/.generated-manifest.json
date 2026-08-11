@@ -50,6 +50,7 @@
     "commands/validate-tasks.mdc",
     "commands/validate-workflow.mdc",
     "mcp.json",
+    "mcp.json.provenance.json",
     "rules/coding-standards.mdc",
     "rules/git-workflow.mdc",
     "rules/poc-guidelines.mdc",
