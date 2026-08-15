@@ -2,6 +2,63 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.6.1 - 2026-08-08
+
+### Technical Debt Remediation and Test Quality
+- **Reduced function complexity** (TD-01 through TD-03, T180–T184): extracted
+  `writeBrokerSSEFrame()`, `brokerSSETelemetryDefer()`, and `writeSSEFrame()` SSE
+  helpers; `handleBrokerSSE()` reduced from 5 to 3 parameters via a `brokerSSEDeps`
+  struct; `handleSSE()`, `handlePOST()`, and `publishSampleEvents()` all reduced to
+  ≤3 parameters; introduced `HTTPHandlerConfig` struct for cleaner `RunHTTP()` and
+  `newHTTPHandler()` signatures. All functions now comply with the project standard
+  (≤50 lines, ≤4 parameters).
+- **Race-free broker shutdown** (TD-07, T181): replaced racy `select` guard in
+  `Broker.Close()` with `sync.Once`, eliminating concurrent-close goroutine races.
+- **SSE connection pooling** (TD-09, T185): zero-count eviction in
+  `sseConnectionStore.release()` prevents stale connection leaks on mid-transfer
+  client disconnects.
+- **New test helper** (TD-04, T186): `logging.NewWithWriter(levelStr, w)` enables
+  deterministic, race-safe test log capture without OS-level redirection.
+
+### Bug Fixes (Tests)
+- **Fixed flaky tests** (TD-10, TD-11, T188–T189): `TestBrokerSSETelemetryLogOnClose`
+  now uses `logging.NewWithWriter()` buffer injection and `httptest.Server.Close()`
+  synchronization instead of racy `os.Stderr` redirect + `time.Sleep()`;
+  `TestRetentionEvictionOldestFirst` gained a `waitForMaxSeq()` helper. All tests now
+  pass under `go test -race -count=5`.
+
+### Maintenance
+- Removed `TECHNICAL-DEBT.md` (all 11 items resolved).
+- No breaking changes: runtime behavior, API contracts, and CLI signatures are
+  unchanged; drop-in replacement for v0.6.0.
+- Release artifact: [`docs/artifacts/release-v0.6.1.md`](docs/artifacts/release-v0.6.1.md).
+
+## v0.6.0 - 2026-08-06
+
+### New Features (Operator Dashboard, T001–T010)
+- Add operator dashboard with `GET /dashboard/status` (JSON) and `GET /dashboard`
+  (embedded HTML polling every 10 s) endpoints — a read-only observability surface
+  covering sidecar connectivity, config snapshot, job queue, client activity, and
+  rollout pipeline state, with a top-level `overall` health field.
+- Add `Stats()` method to `jobs.Manager` exposing live queue/worker/counter snapshot.
+- Add `ClientMetrics` in-memory counters (requests, auth failures, rate-limit hits,
+  tool calls).
+- Add `SidecarChecker` with UDS connectivity probing and 5 s cache.
+- Add `schemas/dashboard_status.json` JSON Schema with `additionalProperties: false`.
+- Add `CWSO_DASHBOARD_TOKEN` env var support in orchestrator and `docker-compose.yml`;
+  dashboard routes return `501 Not Implemented` when the token is unset and the token
+  (SHA-256 hashed, constant-time compare) is separate from the MCP JWT secret.
+- Add `ADR-011-operator-dashboard.md` documenting all architectural decisions.
+
+### Bug Fixes / CI
+- Complete registry publishing for all four CWSO service images (`fix(ci)` T178/T179
+  — was in v0.5.x develop but now GA).
+
+### No Breaking Changes
+- All existing `/healthz`, `/mcp`, and `/rollout/*` routes are unchanged; no changes
+  to MCP tool contracts or JWT auth flows. Dashboard routes are additive.
+- Release artifact: [`docs/artifacts/release-v0.6.0.md`](docs/artifacts/release-v0.6.0.md).
+
 ## v0.5.2 - 2026-08-03
 
 ### CI and Registry Publishing
