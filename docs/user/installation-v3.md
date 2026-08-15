@@ -23,11 +23,12 @@ python3 --version
 
 From a shell on the machine where CWSO is running:
 
+<!-- NOTE: profiles removed in v0.8.0 (C010); this block must stay identical in README.md and installation-v3.md -->
 ```bash
-cd <repo-root>
-source scripts/cwso-enable-all-features.sh
+make build
 docker compose -f deploy/docker-compose.yml --profile phase2 --profile phase4 up -d
 curl -sS http://127.0.0.1:8080/healthz
+python3 scripts/phase2-integration.py
 ```
 
 Expected health output:
