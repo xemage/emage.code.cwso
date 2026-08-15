@@ -48,9 +48,10 @@ or **[docs/user/installation-v2.md](docs/user/installation-v2.md)** for the comp
 For **Cursor / VS Code** MCP wiring and troubleshooting, see
 **[docs/user/ide-integration-v2.md](docs/user/ide-integration-v2.md)**.
 
+<!-- NOTE: profiles removed in v0.8.0 (C010); this block must stay identical in README.md and installation-v3.md -->
 ```bash
 make build
-docker compose -f deploy/docker-compose.yml --profile phase2 up -d
+docker compose -f deploy/docker-compose.yml --profile phase2 --profile phase4 up -d
 curl -sS http://127.0.0.1:8080/healthz
 python3 scripts/phase2-integration.py
 ```
