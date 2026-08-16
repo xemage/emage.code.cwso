@@ -79,5 +79,51 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # Opt-in Phase 9 rollout/Polar capture sidecar (ADR-010, T132). Genuinely optional per
+  # docs/plans/plan-cwso-v1.0-roadmap.md §2.4 — not part of the default stack. Start
+  # explicitly with: docker compose -f deploy/docker-compose.yml --profile rollout up -d
+  rollout:
+    image: cwso/rollout:dev
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.rollout
+    container_name: cwso-rollout
+    profiles: ["rollout"]
+    ports:
+      - "8787:8787"
+    environment:
+      # deploy/Dockerfile.rollout's baked-in HEALTHCHECK probes GET /healthz, but that
+      # route only exists once the proxy HTTP listener starts (services/cwso-rollout/
+      # src/main.rs) — with CWSO_ROLLOUT_PROXY_ENABLED unset/false the binary runs
+      # IPC-only and parks with no HTTP server at all. Enable it so the opt-in service
+      # is actually health-checkable.
+      CWSO_ROLLOUT_PROXY_ENABLED: "true"
+      # Placeholder upstream for local/dev compose only. Only validated for scheme/host
+      # at process startup (services/cwso-rollout/src/security.rs) — never dialed by
+      # /healthz — so the .invalid TLD is safe here. Override with a real provider URL
+      # to exercise the proxy end-to-end.
+      CWSO_ROLLOUT_UPSTREAM_URL: "${CWSO_ROLLOUT_UPSTREAM_URL:-https://rollout-upstream.invalid/v1}"
+      # UDS control-plane path, matching the name the orchestrator already reads via
+      # CWSO_ROLLOUT_SOCKET (orchestrator/internal/config/config.go) for future
+      # trajectory-drain wiring; not set on the orchestrator service in this task.
+      CWSO_ROLLOUT_SOCKET: "/run/cwso/rollout.sock"
+    volumes:
+      - cwso-runtime:/run/cwso
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=32m
+    # No explicit healthcheck block here: deploy/Dockerfile.rollout already owns the
+    # HEALTHCHECK contract at the image level (T170 fix), so compose defers to it
+    # rather than duplicating/re-probing GET /healthz.
+    # Exception note: unlike orchestrator/git-shadow, this service does NOT mount a
+    # writable path for CWSO_ROLLOUT_TRAJECTORY_STORE_PATH (/data/parquet-store). The
+    # Parquet trajectory store is opt-in via CWSO_ROLLOUT_TRAJECTORY_STORE_ENABLED
+    # (default false, unset here), so no writes are attempted under read_only: true;
+    # enabling that flag would additionally require a persistent named volume at
+    # /data/parquet-store (tmpfs would silently drop captured trajectories on restart).
+
 volumes:
   cwso-runtime:

@@ -108,6 +108,9 @@ make test
 # bring up the Phase 2 stack (orchestrator + git-shadow over a shared UDS)
 docker compose -f deploy/docker-compose.yml --profile phase2 up
 
+# optional: bring up the rollout/Polar capture sidecar (opt-in, off by default)
+docker compose -f deploy/docker-compose.yml --profile rollout up -d
+
 # end-to-end Phase 2 integration test (orchestrator → UDS → libgit2 → AST)
 python3 scripts/phase2-integration.py
 ```

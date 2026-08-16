@@ -4,16 +4,28 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Deployment (C011)
+- **`feat(deploy)`**: Added a `rollout` service to `deploy/docker-compose.yml`, built
+  from `deploy/Dockerfile.rollout`, gated behind an **opt-in** `profiles: ["rollout"]`
+  (default `docker compose up` does not start it). Mirrors the existing services'
+  hardening posture (`read_only`, `cap_drop: ["ALL"]`, `security_opt:
+  no-new-privileges`, non-root, shared `cwso-runtime` UDS volume) with one documented
+  exception: no writable mount for the Parquet trajectory store, since it stays
+  disabled (`CWSO_ROLLOUT_TRAJECTORY_STORE_ENABLED` unset) under this profile. Start
+  with `docker compose -f deploy/docker-compose.yml --profile rollout up -d`.
+
 ### Deployment (C012)
 - **`feat(scripts)`**: Added `scripts/cwso-bootstrap-secrets.sh` to generate the
   dev-only `.env.jwt.dev` file (`JWT_SECRET=<64 hex chars>`, `chmod 600`) consumed
   by `deploy/docker-compose.yml`'s `secrets: jwt_secret` mount, when it is absent.
   Previously a fresh checkout had no `.env.jwt.dev` and the orchestrator container
-  failed to start with a JWT-secret config error until one was hand-created; this
-  closes the release-gating condition tracked against C012 from C010's
-  CONDITIONAL_PASS review (MR !113). Idempotent on repeat runs (`[OK] .env.jwt.dev
-  exists`, content unchanged), verified gitignored via the existing `.env*` pattern,
-  and never prints the secret value to stdout/logs. Wiring this into `make up` is
+  failed to start with a JWT-secret config error until one was hand-created. Note
+  (updated during C012's own Tech Lead review): this closes the *scripting* half of
+  the release-gating condition tracked since C010's CONDITIONAL_PASS review (MR
+  !113); the condition itself remains open and has moved to C016, since nothing
+  calls this script yet. Idempotent on repeat runs (`[OK] .env.jwt.dev exists`,
+  content unchanged), verified gitignored via the existing `.env*` pattern, and
+  never prints the secret value to stdout/logs. Wiring this into `make up` is
   deferred to C016; run the script manually before `docker compose up` until then.
 
 ### Deployment (C010)
