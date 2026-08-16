@@ -2,7 +2,7 @@
 
 **ID:** C010
 **Owner:** devops-engineer
-**Status:** pending
+**Status:** in_progress
 **Priority:** P0
 **Depends on:** C001, C002, C003, C004, C005 (gate CG0)
 **Created:** 2026-08-12

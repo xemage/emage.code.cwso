@@ -43,7 +43,7 @@
 | T187 | TD-03 Residual: Reduce handleBrokerSSE to ≤4 Parameters | backend-developer | pending | P2 | — | 2026-08-13 |
 | T188 | TD-10 Fix SSE Telemetry Test Stderr-Capture Race | qa-engineer | pending | P2 | — | 2026-08-13 |
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
-| C010 | Remove phase2/phase4 compose profile gates | devops-engineer | pending | P0 | C001–C005 (CG0) | 2026-08-12 |
+| C010 | Remove phase2/phase4 compose profile gates | devops-engineer | in_progress | P0 | C001–C005 (CG0) | 2026-08-16 |
 | C011 | Add cwso-rollout behind opt-in profile | devops-engineer | pending | P0 | C010 | 2026-08-12 |
 | C012 | Bootstrap .env.jwt.dev on first run | devops-engineer | pending | P0 | C010 | 2026-08-12 |
 | C013 | scripts/cwso-token.sh replaces JWT heredoc | devops-engineer | pending | P0 | C010 | 2026-08-12 |
