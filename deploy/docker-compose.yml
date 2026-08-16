@@ -26,6 +26,42 @@ services:
       CWSO_GIT_SHADOW_SOCKET: "/run/cwso/git-shadow.sock"
       CWSO_MERGE_ENGINE_SOCKET: "/run/cwso/merge-engine.sock"
       CWSO_DASHBOARD_TOKEN: "${CWSO_DASHBOARD_TOKEN:-}"
+      # --- C014: folded from scripts/cwso-enable-all-features.sh (deprecated) ---
+      # Phase 6: hardware-aware dispatch (orchestrator/internal/config/config.go).
+      # CWSO_HAL_SOCKET points at a cwso-hal sidecar socket path; no such service is
+      # defined in this compose file, so hardware-aware dispatch degrades to shadow
+      # mode (see the field comment on Config.HALSocket) rather than failing startup.
+      CWSO_HAL_SOCKET: "/run/cwso/hal.sock"
+      CWSO_HHD_CAPABILITY_REGISTRY_ENABLED: "${CWSO_HHD_CAPABILITY_REGISTRY_ENABLED:-true}"
+      CWSO_HHD_DECISION_TELEMETRY_ENABLED: "${CWSO_HHD_DECISION_TELEMETRY_ENABLED:-true}"
+      CWSO_HHD_TELEMETRY_REDACTION_ENABLED: "${CWSO_HHD_TELEMETRY_REDACTION_ENABLED:-true}"
+      CWSO_HHD_POLICY_ENGINE_V2_ENABLED: "${CWSO_HHD_POLICY_ENGINE_V2_ENABLED:-true}"
+      CWSO_HHD_HARDWARE_AWARE_DISPATCH_ENABLED: "${CWSO_HHD_HARDWARE_AWARE_DISPATCH_ENABLED:-true}"
+      CWSO_HHD_EVENT_MONITOR_ENABLED: "${CWSO_HHD_EVENT_MONITOR_ENABLED:-true}"
+      # eBPF requires host kernel privileges not granted to this container
+      # (cap_drop: ALL); keep off by default same as the deprecated script.
+      CWSO_HHD_EVENT_MONITOR_EBPF_ENABLED: "${CWSO_HHD_EVENT_MONITOR_EBPF_ENABLED:-false}"
+      # Optional assists — each requires extra assets/backends not provisioned by this
+      # compose file (WASM module path/hash, SSM/quantized backends); off by default
+      # same as the deprecated script.
+      CWSO_HHD_SPARSE_QUANTIZED_ASSIST_ENABLED: "${CWSO_HHD_SPARSE_QUANTIZED_ASSIST_ENABLED:-false}"
+      CWSO_HHD_SSM_ASSIST_ENABLED: "${CWSO_HHD_SSM_ASSIST_ENABLED:-false}"
+      CWSO_HHD_WASM_SCORING_ENABLED: "${CWSO_HHD_WASM_SCORING_ENABLED:-false}"
+      # Phase 7: sparse micro-agents + AST spike monitor.
+      # CWSO_SPARSE_SOCKET has no listening cwso-sparse service in this compose file
+      # (same limitation as CWSO_HAL_SOCKET above); config.go requires it non-empty
+      # whenever CWSO_SPARSE_AGENTS_ENABLED=true, so it must stay paired with it.
+      CWSO_SPARSE_AGENTS_ENABLED: "${CWSO_SPARSE_AGENTS_ENABLED:-true}"
+      CWSO_SPARSE_SOCKET: "/run/cwso/sparse.sock"
+      CWSO_SPARSE_QUALITY_GUARDRAIL_ENABLED: "${CWSO_SPARSE_QUALITY_GUARDRAIL_ENABLED:-true}"
+      CWSO_AST_SPIKE_MONITOR_ENABLED: "${CWSO_AST_SPIKE_MONITOR_ENABLED:-true}"
+      CWSO_AST_SPIKE_RESOURCES_ENABLED: "${CWSO_AST_SPIKE_RESOURCES_ENABLED:-true}"
+      # Phase 9: rollout / Polar (orchestrator-side flags; cwso-rollout sidecar's own
+      # proxy env lives on the `rollout` service block below, unchanged from C011).
+      CWSO_ROLLOUT_API_ENABLED: "${CWSO_ROLLOUT_API_ENABLED:-true}"
+      CWSO_ROLLOUT_REWARD_ENABLED: "${CWSO_ROLLOUT_REWARD_ENABLED:-true}"
+      CWSO_ROLLOUT_KV_PREFIX_ROUTER_ENABLED: "${CWSO_ROLLOUT_KV_PREFIX_ROUTER_ENABLED:-true}"
+      CWSO_ROLLOUT_SOCKET: "/run/cwso/rollout.sock"
     secrets:
       - jwt_secret
     volumes:
@@ -103,9 +139,13 @@ services:
       # /healthz — so the .invalid TLD is safe here. Override with a real provider URL
       # to exercise the proxy end-to-end.
       CWSO_ROLLOUT_UPSTREAM_URL: "${CWSO_ROLLOUT_UPSTREAM_URL:-https://rollout-upstream.invalid/v1}"
-      # UDS control-plane path, matching the name the orchestrator already reads via
-      # CWSO_ROLLOUT_SOCKET (orchestrator/internal/config/config.go) for future
-      # trajectory-drain wiring; not set on the orchestrator service in this task.
+      # HTTP listener bind address for the proxy (services/cwso-rollout/src/config.rs);
+      # default matches the binary's own built-in default (HTTP_BIND_DEFAULT), so this
+      # is documentation + an override point, not a behavior change.
+      CWSO_ROLLOUT_HTTP_BIND: "${CWSO_ROLLOUT_HTTP_BIND:-127.0.0.1:8787}"
+      # UDS control-plane path, matching the name the orchestrator now also reads via
+      # CWSO_ROLLOUT_SOCKET (orchestrator/internal/config/config.go, set on the
+      # orchestrator service as of C014) for future trajectory-drain wiring.
       CWSO_ROLLOUT_SOCKET: "/run/cwso/rollout.sock"
     volumes:
       - cwso-runtime:/run/cwso

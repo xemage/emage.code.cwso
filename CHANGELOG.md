@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Deployment (C014)
+- **`feat(deploy)`**: Folded every consumed variable from
+  `scripts/cwso-enable-all-features.sh` into `deploy/docker-compose.yml`'s
+  `environment:` blocks (20 vars onto `orchestrator`: `CWSO_HAL_SOCKET`,
+  `CWSO_HHD_*` x10, `CWSO_SPARSE_*` x3, `CWSO_AST_SPIKE_*` x2, `CWSO_ROLLOUT_API_ENABLED`,
+  `CWSO_ROLLOUT_REWARD_ENABLED`, `CWSO_ROLLOUT_KV_PREFIX_ROUTER_ENABLED`,
+  `CWSO_ROLLOUT_SOCKET`; 1 var — `CWSO_ROLLOUT_HTTP_BIND` — onto `rollout`), each
+  verified against its consuming code path in `orchestrator/internal/config/config.go`
+  or `services/cwso-rollout/src/config.rs` before moving. Boolean flags use
+  `${VAR:-default}` so operators can still override; socket paths stay literal,
+  matching the existing `CWSO_GIT_SHADOW_SOCKET`/`CWSO_MERGE_ENGINE_SOCKET` pattern
+  since they're tied to the fixed `cwso-runtime` volume mount, not meaningfully
+  user-overridable. Values are unchanged from
+  `scripts/cwso-enable-all-features.env.example` — same behavior, new home. The
+  script itself is marked deprecated (kept for reference, not deleted) and no
+  longer needs to be sourced; `docs/user/installation-v3.md` §10's "Recommended
+  daily workflow" no longer includes the `source` step. One variable from the
+  script's env example — `CWSO_ROLLOUT_UPSTREAM_URL` — was already present on the
+  `rollout` service from C011 and is unchanged here.
+
 ### Scripts (C013)
 - **`feat(scripts)`**: Added `scripts/cwso-token.sh`, replacing the inline Python
   heredoc in `docs/user/installation-v3.md` §3 for minting the dev MCP JWT.

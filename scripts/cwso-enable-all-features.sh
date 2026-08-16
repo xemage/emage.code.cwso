@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# DEPRECATED since v0.8.0 — defaults folded into deploy/docker-compose.yml (C014);
+# kept for reference, will be deleted in a later release
 # Enable all CWSO orchestrator feature flags for local PoC demos (T155).
 # Usage: source scripts/cwso-enable-all-features.sh
 set -euo pipefail
