@@ -43,9 +43,8 @@
 | T187 | TD-03 Residual: Reduce handleBrokerSSE to ≤4 Parameters | backend-developer | pending | P2 | — | 2026-08-13 |
 | T188 | TD-10 Fix SSE Telemetry Test Stderr-Capture Race | qa-engineer | pending | P2 | — | 2026-08-13 |
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
-| C010 | Remove phase2/phase4 compose profile gates | devops-engineer | in_progress | P0 | C001–C005 (CG0) | 2026-08-16 |
 | C011 | Add cwso-rollout behind opt-in profile | devops-engineer | pending | P0 | C010 | 2026-08-12 |
-| C012 | Bootstrap .env.jwt.dev on first run | devops-engineer | pending | P0 | C010 | 2026-08-12 |
+| C012 | Bootstrap .env.jwt.dev on first run **[RELEASE-GATING CONDITION — see note ¹]** | devops-engineer | pending | P0 | C010 | 2026-08-16 |
 | C013 | scripts/cwso-token.sh replaces JWT heredoc | devops-engineer | pending | P0 | C010 | 2026-08-12 |
 | C014 | Fold enable-all-features into compose defaults | devops-engineer | pending | P0 | C010 | 2026-08-12 |
 | C015 | Mount user repo read-write (CWSO_WORKSPACE_HOST) | devops-engineer | pending | P0 | C010, C019 | 2026-08-13 |
@@ -59,7 +58,6 @@
 | C023 | Projection lifecycle + crash safety | backend-developer | pending | P0 | C021 | 2026-08-12 |
 | C024 | Prove projection E2E in CI | qa-engineer | pending | P0 | C022, C023 | 2026-08-12 |
 | C025 | CONDITIONAL: document IPC-only limitation | technical-writer | pending | P0 | C020 (NO-GO) | 2026-08-12 |
-| C030 | MCP gap table (impl vs spec) | backend-developer | in_progress | P1 | C001–C005 (CG0) | 2026-08-16 |
 | C031 | ADR-013: SDK vs conformance suite | solution-architect | pending | P1 | C030 | 2026-08-12 |
 | C032 | Execute ADR-013 decision | backend-developer | pending | P1 | C031 | 2026-08-12 |
 | C033 | Client compatibility matrix (3×2) | qa-engineer | pending | P1 | C032 | 2026-08-12 |
@@ -86,6 +84,15 @@
 > The C-series implements `docs/plans/plan-cwso-v1.0-roadmap.md` (**approved**
 > 2026-08-13, incl. the three open-question decisions; C019 was added by decision 3).
 > C025 activates only on an ADR-012 NO-GO. Gate dependencies (CG0–CG4) are noted inline.
-> First dispatchable set: C001–C005 (parallel) and C030 (depends only on CG0).
+> CG0 (C001–C005, C030) cleared 2026-08-16 — see `docs/tasks/completed-tasks.md`.
+
+> ¹ **Tracked condition (CONDITIONAL_PASS, Tech Lead review of C010/MR !113,
+> 2026-08-16):** C012 must land and be verified against a truly fresh clone before the
+> v1.0 GA/release cut — C010 made the documented `docker compose up -d` quick-start the
+> default path, but that path now fails at the orchestrator container with a
+> JWT-secret config error on any checkout lacking a manually-created `.env.jwt.dev`.
+> This is release-gating, not backlog — see `docs/tasks/task-C012.md` and
+> `docs/tasks/task-C062.md` ("Release v1.0.0"). C010 itself is unaffected: its own
+> diff was reviewed and confirmed correct and complete.
 
 Per-task briefs live alongside this file as `task-T001.md`, `task-T002.md`, …, `task-C001.md`, …

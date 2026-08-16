@@ -2,11 +2,11 @@
 
 **ID:** C030
 **Owner:** backend-developer
-**Status:** in_progress
+**Status:** done
 **Priority:** P1
 **Depends on:** C001–C005 (gate CG0)
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-16
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (B1); docs/plans/plan-cwso-v1.0-phase3-protocol-conformance-v1.md
 
 ## Objective
@@ -87,4 +87,18 @@ ambiguity finding — do not silently switch spec versions.
 
 ## Execution notes
 
-<filled during execution>
+Published `docs/artifacts/mcp-gap-analysis-v1.md` (261 lines): Methods (16 rows, 15
+spec request methods + `notifications/initialized` per the lifecycle-coverage
+instruction, self-checked), Notifications (9 rows, self-checked), Error codes (2
+sub-tables, self-checked) vs MCP spec `2025-03-26` (spec of record, not silently
+switched despite newer versions existing — recorded as Ambiguity #2). 6 Ambiguities
+recorded, none resolved/guessed, including a real dispatch-location correction
+(analysis targeted `server.go`'s dispatch table, not `protocol.go`, since that's where
+implemented-vs-missing is actually decided) and a genuine spec-conformance defect
+(`notifications/resources/list_changed` advertised in `initialize` capabilities but
+never published). No code touched; no adoption recommendation made, per rails
+(deferred to C031).
+
+**VERDICT: PASS** (orchestrator self-review — authorized as proportionate given the
+docs/analysis-only, zero-code-touched scope; brief's verification commands and
+acceptance criteria all confirmed). Merged to `develop` 2026-08-16 (squash), MR !112.
