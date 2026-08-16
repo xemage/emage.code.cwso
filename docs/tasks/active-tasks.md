@@ -43,14 +43,10 @@
 | T187 | TD-03 Residual: Reduce handleBrokerSSE to ≤4 Parameters | backend-developer | pending | P2 | — | 2026-08-13 |
 | T188 | TD-10 Fix SSE Telemetry Test Stderr-Capture Race | qa-engineer | pending | P2 | — | 2026-08-13 |
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
-| C011 | Add cwso-rollout behind opt-in profile | devops-engineer | in_progress | P0 | C010 | 2026-08-16 |
-| C013 | scripts/cwso-token.sh replaces JWT heredoc | devops-engineer | in_progress | P0 | C010 | 2026-08-16 |
-| C014 | Fold enable-all-features into compose defaults | devops-engineer | in_progress | P0 | C010 | 2026-08-16 |
 | C015 | Mount user repo read-write (CWSO_WORKSPACE_HOST) | devops-engineer | pending | P0 | C010, C019 | 2026-08-13 |
 | C016 | make up one-command target **[RELEASE-GATING CONDITION — see note ¹]** | devops-engineer | pending | P0 | C012, C013, C014, C015 | 2026-08-16 |
-| C017 | scripts/cwso-doctor.sh diagnostics | devops-engineer | in_progress | P0 | C010 | 2026-08-16 |
 | C018 | E2E smoke test (v1.0 DoD executable) | qa-engineer | pending | P0 | C016, C017 | 2026-08-12 |
-| C019 | Sandbox trustworthiness, non-KVM default path | backend-developer | pending | P0 | C010 | 2026-08-13 |
+| C019 | Sandbox trustworthiness, non-KVM default path | backend-developer | in_progress | P0 | C010 | 2026-08-16 |
 | C020 | ADR-012: filesystem projection decision | solution-architect | pending | P0 | C010–C018 (CG1) | 2026-08-12 |
 | C021 | Implement filesystem projection | backend-developer | pending | P0 | C020 (GO) | 2026-08-12 |
 | C022 | Write-back into git ODB | backend-developer | pending | P0 | C021 | 2026-08-12 |

@@ -2,11 +2,11 @@
 
 **ID:** C011
 **Owner:** devops-engineer
-**Status:** in_progress
+**Status:** done
 **Priority:** P0
 **Depends on:** C010
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-16
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (B4); docs/plans/plan-cwso-v1.0-phase1-one-command-stack-v2.md
 
 ## Objective
@@ -86,4 +86,25 @@ capture logs and report `technical` / `major`.
 
 ## Execution notes
 
-<filled during execution>
+Implemented per brief: added `rollout` service to `deploy/docker-compose.yml`, built
+from `deploy/Dockerfile.rollout`, gated behind opt-in `profiles: ["rollout"]` only.
+Verified with real Docker: `docker compose config --services` (no flags) excludes
+`rollout`; `--profile rollout config --services` includes it; `--profile rollout up -d
+--build` starts it healthy alongside the default services. Mirrored sibling services'
+hardening posture with one documented compose-comment exception (no writable Parquet
+trajectory-store mount, since that path stays disabled under this profile). Wired only
+orchestrator env vars already read by `orchestrator/internal/config/`; reused the
+existing `jwt_secret` compose secret, no new credentials. README one-liner + CHANGELOG
+entry added.
+
+Independent Tech Lead review (MR !119) returned **PASS, no conditions**: profile
+gating, hardening parity with siblings, env-var provenance (checked against actual
+source, nothing invented), and file ownership all independently verified.
+
+This branch required three separate `develop`-merge conflict-resolution rounds before
+it could land cleanly (`docs/tasks/active-tasks.md`/`CHANGELOG.md` contention from
+C012's and C012's-ledger-archival's concurrent edits to the same files) — resolved
+each time by concatenating both sides' entries rather than dropping either. Merged to
+`develop` 2026-08-16 (squash), unblocking **C014** (dispatched immediately), the
+second task in the sequential `deploy/docker-compose.yml` chain
+(C011 → C014 → C019).

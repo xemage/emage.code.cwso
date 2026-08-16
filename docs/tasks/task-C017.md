@@ -2,11 +2,11 @@
 
 **ID:** C017
 **Owner:** devops-engineer
-**Status:** in_progress
+**Status:** done
 **Priority:** P0
 **Depends on:** C010
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-16
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (C017 row); docs/plans/plan-cwso-v1.0-phase1-one-command-stack-v2.md
 
 ## Objective
@@ -92,4 +92,24 @@ Report blockers as: type + severity + one proposed mitigation. Max 2 retries.
 
 ## Execution notes
 
-<filled during execution>
+Implemented `scripts/cwso-doctor.sh` per the exact required check order (docker/compose
+availability → port 8080 → `/dev/kvm` → vhost-net → `.env.jwt.dev` → sidecar sockets →
+`/healthz` → token acceptance), mirroring `sandbox/router.go`'s `resolveFirecracker()`
+degraded-mode conclusion without reimplementing it. Missing KVM/vhost-net correctly
+`[WARN]`, not `[FAIL]`; exits 0 unless a `[FAIL]` line was printed; a one-line suggested
+fix follows every `[WARN]`/`[FAIL]`; runtime-only checks degrade to an informational
+`[OK]` when the stack isn't running, so it's always safe pre-flight on a clean host.
+Token-acceptance check degrades gracefully to `[WARN]` when C013's `cwso-token.sh`
+isn't present. Never prints secrets or tokens. `make doctor` target added.
+
+Independent Tech Lead review (MR !117) returned **PASS, no conditions**: check order,
+WARN-vs-FAIL severity semantics, exit-code logic, suggested-fix presence, secret
+non-leakage, graceful degradation, and faithful (non-reimplemented) mirroring of the
+sandbox router's conclusion all independently verified, including a live no-KVM
+warn-path test.
+
+This branch required three separate `develop`-merge conflict-resolution rounds before
+it could land cleanly (ledger-file contention from concurrently-landing C012/C011/C012's
+archival) — resolved each time by concatenating both sides' `CHANGELOG.md` entries and
+preserving both sides' `active-tasks.md` status edits. Merged to `develop` 2026-08-16
+(squash).
