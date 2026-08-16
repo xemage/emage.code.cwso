@@ -44,11 +44,10 @@
 | T188 | TD-10 Fix SSE Telemetry Test Stderr-Capture Race | qa-engineer | pending | P2 | — | 2026-08-13 |
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
 | C011 | Add cwso-rollout behind opt-in profile | devops-engineer | pending | P0 | C010 | 2026-08-12 |
-| C012 | Bootstrap .env.jwt.dev on first run **[RELEASE-GATING CONDITION — see note ¹]** | devops-engineer | in_progress | P0 | C010 | 2026-08-16 |
 | C013 | scripts/cwso-token.sh replaces JWT heredoc | devops-engineer | pending | P0 | C010 | 2026-08-12 |
 | C014 | Fold enable-all-features into compose defaults | devops-engineer | pending | P0 | C010 | 2026-08-12 |
 | C015 | Mount user repo read-write (CWSO_WORKSPACE_HOST) | devops-engineer | pending | P0 | C010, C019 | 2026-08-13 |
-| C016 | make up one-command target | devops-engineer | pending | P0 | C012, C013, C014, C015 | 2026-08-12 |
+| C016 | make up one-command target **[RELEASE-GATING CONDITION — see note ¹]** | devops-engineer | pending | P0 | C012, C013, C014, C015 | 2026-08-16 |
 | C017 | scripts/cwso-doctor.sh diagnostics | devops-engineer | pending | P0 | C010 | 2026-08-12 |
 | C018 | E2E smoke test (v1.0 DoD executable) | qa-engineer | pending | P0 | C016, C017 | 2026-08-12 |
 | C019 | Sandbox trustworthiness, non-KVM default path | backend-developer | pending | P0 | C010 | 2026-08-13 |
@@ -86,13 +85,27 @@
 > C025 activates only on an ADR-012 NO-GO. Gate dependencies (CG0–CG4) are noted inline.
 > CG0 (C001–C005, C030) cleared 2026-08-16 — see `docs/tasks/completed-tasks.md`.
 
-> ¹ **Tracked condition (CONDITIONAL_PASS, Tech Lead review of C010/MR !113,
-> 2026-08-16):** C012 must land and be verified against a truly fresh clone before the
-> v1.0 GA/release cut — C010 made the documented `docker compose up -d` quick-start the
-> default path, but that path now fails at the orchestrator container with a
-> JWT-secret config error on any checkout lacking a manually-created `.env.jwt.dev`.
-> This is release-gating, not backlog — see `docs/tasks/task-C012.md` and
-> `docs/tasks/task-C062.md` ("Release v1.0.0"). C010 itself is unaffected: its own
-> diff was reviewed and confirmed correct and complete.
+> ¹ **Tracked condition (originated CONDITIONAL_PASS, Tech Lead review of C010/MR !113,
+> 2026-08-16; refined CONDITIONAL_PASS, Tech Lead review of C012/MR !115, 2026-08-16):**
+> C010 made the documented `docker compose up -d` quick-start the default path, but
+> that path fails at the orchestrator container with a JWT-secret config error on any
+> checkout lacking a manually-created `.env.jwt.dev`. C012 (merged, CONDITIONAL_PASS)
+> built a correct, verified bootstrap script (`scripts/cwso-bootstrap-secrets.sh`) but
+> the C012 review found **nothing currently calls it** — no Makefile `up` target exists
+> yet, so a fresh clone following today's docs still hits the error. The condition
+> therefore moves from C012 to **C016**, which is the task that actually wires the
+> bootstrap script into the one-command path. Closing this condition requires **all
+> three**: (a) C016 lands and its `make up` target invokes
+> `scripts/cwso-bootstrap-secrets.sh` before starting the stack; (b) re-verification on
+> a genuinely fresh clone that the *documented* quick-start succeeds with zero manual
+> file creation; (c) a follow-up update to `README.md` / `docs/user/installation-v3.md`'s
+> quick-start sections once C016 lands, since neither currently mentions the bootstrap
+> script or `make up` — C016's brief has been amended (2026-08-16) to permit this
+> narrow quick-start edit (same precedent as C002/C010/C014), since `C050` ("write the
+> single user guide") is much further downstream and cannot be relied on to close this
+> gap before release. This is release-gating, not backlog — see `docs/tasks/task-C016.md`
+> § "Release-gating condition" and `docs/tasks/task-C062.md` ("Release v1.0.0"). C010 and
+> C012 are both unaffected on their own merits: both diffs were independently reviewed
+> and confirmed correct and complete.
 
 Per-task briefs live alongside this file as `task-T001.md`, `task-T002.md`, …, `task-C001.md`, …
