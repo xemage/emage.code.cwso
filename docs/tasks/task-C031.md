@@ -2,7 +2,7 @@
 
 **ID:** C031
 **Owner:** solution-architect
-**Status:** pending
+**Status:** in_progress
 **Priority:** P1
 **Depends on:** C030
 **Created:** 2026-08-12
