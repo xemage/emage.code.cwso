@@ -2,11 +2,11 @@
 
 **ID:** C012
 **Owner:** devops-engineer
-**Status:** in_progress
+**Status:** done
 **Priority:** P0
 **Depends on:** C010
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-16
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (B5); docs/plans/plan-cwso-v1.0-phase1-one-command-stack-v2.md
 
 ## Objective
@@ -33,6 +33,17 @@ Do not close the v1.0 release gate (see `docs/tasks/task-C062.md`, "Release v1.0
 without confirming this task is `done` and its acceptance criteria (below) have been
 verified on a genuinely fresh clone — not just re-using a developer machine that
 already has `.env.jwt.dev` from earlier work.
+
+**Update (2026-08-16, Tech Lead review of MR !115 — CONDITIONAL_PASS):** this task is
+now `done` and merged; the script itself is verified correct (secret never printed,
+real entropy, mode 600, idempotent, `.gitignore` coverage independently confirmed).
+**The condition is NOT closed** — the review found nothing in the documented
+quick-start (or anywhere else) actually calls `scripts/cwso-bootstrap-secrets.sh` yet;
+that wiring is **C016**'s job (this task's own rails forbid touching the `Makefile`).
+**The tracked release-gating condition has moved to `docs/tasks/task-C016.md` §
+"Release-gating condition"** and to the `active-tasks.md` footnote ¹, now attached to
+C016's row. This section is left in place for history; do not re-attach the condition
+here.
 
 ## Inputs
 
@@ -106,4 +117,18 @@ If `openssl` is unavailable on the host matrix, fall back to `head -c 32 /dev/ur
 
 ## Execution notes
 
-<filled during execution>
+Implemented `scripts/cwso-bootstrap-secrets.sh` per rails: generates a 64-hex-char
+secret via `openssl rand -hex 32` (documented `/dev/urandom` fallback), writes at mode
+600 via umask (no world/group-readable window), idempotent on re-run, never prints the
+secret value. `.gitignore` already covered `.env.jwt.dev` via the existing `.env*`
+pattern — no `.gitignore` change was needed.
+
+Independent Tech Lead review (MR !115) returned **CONDITIONAL_PASS**: the script
+itself passed every check (no leakage to stdout/logs at any code path, real entropy,
+correct permissions, idempotency, `.gitignore` coverage independently confirmed via
+`git check-ignore -v`, file ownership clean). The condition was not closed by this
+task, though — nothing yet calls the script (no `make up` target exists), so a fresh
+clone following today's docs still hits the JWT-secret error. The release-gating
+condition originated on C010's review and has now moved to **C016** (see this brief's
+"Release-gating condition" section above and `docs/tasks/task-C016.md`). Merged to
+`develop` 2026-08-16 (squash).
