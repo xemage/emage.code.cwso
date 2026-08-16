@@ -5,7 +5,7 @@ SHELL := /bin/bash
 COMPOSE := docker compose -f deploy/docker-compose.yml
 
 .PHONY: help build build-orchestrator build-git-shadow build-merge-engine \
-	test test-go test-rust run stop logs inspector demo smoke-local clean lint fmt release-assets
+	test test-go test-rust run stop logs inspector demo smoke-local clean lint fmt release-assets doctor
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -38,6 +38,9 @@ stop: ## docker compose down
 
 logs: ## Tail compose logs
 	$(COMPOSE) logs -f
+
+doctor: ## Run pre-flight/post-flight diagnostics for the one-command stack
+	@bash scripts/cwso-doctor.sh
 
 inspector: ## Launch mcp-inspector against running server
 	docker run --rm -it --network host \

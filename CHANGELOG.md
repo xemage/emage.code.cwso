@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Deployment (C017)
+- **`feat(scripts)`**: Added `scripts/cwso-doctor.sh`, a pre-flight/post-flight
+  diagnostic for the one-command stack. Checks, in order: `docker`/`docker compose`
+  availability, port 8080 free-or-owned-by-`cwso-orchestrator`, `/dev/kvm` and
+  vhost-net presence (mirroring the degraded-mode conclusion already computed by
+  `orchestrator/internal/sandbox/router.go`'s `resolveFirecracker()` —
+  `DEGRADED_FALLBACK_GVISOR` — without reimplementing it), `.env.jwt.dev`
+  existence + gitignore status, sidecar UDS sockets, `/healthz`, and (when
+  `scripts/cwso-token.sh` from C013 is present) freshly-minted-token acceptance
+  against `/mcp`. Prints `[OK]`/`[WARN]`/`[FAIL]` per line with a one-line
+  suggested fix after every `[WARN]`/`[FAIL]`; exits `0` unless a `[FAIL]` was
+  printed. Runtime-only checks (sockets/healthz/token) degrade to a single
+  informational `[OK]` line when the stack isn't running, so the script is
+  always safe pre-flight on a clean host. Never prints secrets or tokens. Added
+  a `make doctor` target that runs it.
+
 ### Deployment (C011)
 - **`feat(deploy)`**: Added a `rollout` service to `deploy/docker-compose.yml`, built
   from `deploy/Dockerfile.rollout`, gated behind an **opt-in** `profiles: ["rollout"]`
