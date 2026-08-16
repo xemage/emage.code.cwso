@@ -73,6 +73,14 @@ services:
       - no-new-privileges:true
     tmpfs:
       - /tmp:size=64m
+    # C019: the orchestrator publishes 8080 and dials the docker socket path
+    # configured by CWSO_DOCKER_HOST when CWSO_SANDBOX_RUNNER is enabled, so
+    # it cannot go network_mode: none like git-shadow/merge-engine. Bound the
+    # pids cgroup instead as defense in depth; 512 covers the Go runtime's
+    # OS-thread usage (GOMAXPROCS + blocking syscalls + net poller) under
+    # normal load with headroom, while still capping a runaway/compromised
+    # process well below unbounded fork territory.
+    pids_limit: 512
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       interval: 10s
@@ -96,6 +104,18 @@ services:
     cap_drop: ["ALL"]
     security_opt:
       - no-new-privileges:true
+    # C019: git-shadow speaks only IPC over the UDS socket in the shared
+    # cwso-runtime volume (see CWSO_GIT_SHADOW_SOCKET on the orchestrator and
+    # merge-engine services) and has no `ports:` entry and no outbound
+    # dependency — no compose service resolves it by DNS name. Denying all
+    # container networking closes off any TCP/UDP egress or lateral movement
+    # path from this process without touching its function.
+    network_mode: "none"
+    # C019: cap process/thread count (cgroup pids controller) as defense in
+    # depth against a runaway/compromised process inside this container;
+    # 128 is well above this single-purpose Rust sidecar's steady-state
+    # thread count (see deploy/Dockerfile.git-shadow — no subprocess spawning).
+    pids_limit: 128
 
   merge-engine:
     image: cwso/merge-engine:dev
@@ -114,6 +134,14 @@ services:
     cap_drop: ["ALL"]
     security_opt:
       - no-new-privileges:true
+    # C019: same rationale as git-shadow above — merge-engine talks to
+    # git-shadow exclusively via the UDS socket on the shared cwso-runtime
+    # volume (CWSO_GIT_SHADOW_SOCKET), publishes no ports, and is not
+    # resolved by DNS name from any other service. No network needed.
+    network_mode: "none"
+    # C019: same rationale as git-shadow above — bound the pids cgroup as
+    # defense in depth for this single-purpose Rust sidecar.
+    pids_limit: 128
 
   # Opt-in Phase 9 rollout/Polar capture sidecar (ADR-010, T132). Genuinely optional per
   # docs/plans/plan-cwso-v1.0-roadmap.md §2.4 — not part of the default stack. Start
@@ -155,6 +183,11 @@ services:
       - no-new-privileges:true
     tmpfs:
       - /tmp:size=32m
+    # C019: rollout is a network-facing proxy (publishes 8787, dials the
+    # upstream provider URL) so it cannot go network_mode: none. Bound the
+    # pids cgroup as defense in depth; 256 is generous headroom for this
+    # single-purpose Rust proxy sidecar.
+    pids_limit: 256
     # No explicit healthcheck block here: deploy/Dockerfile.rollout already owns the
     # HEALTHCHECK contract at the image level (T170 fix), so compose defers to it
     # rather than duplicating/re-probing GET /healthz.
