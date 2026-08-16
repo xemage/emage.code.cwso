@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Deployment (C012)
+- **`feat(scripts)`**: Added `scripts/cwso-bootstrap-secrets.sh` to generate the
+  dev-only `.env.jwt.dev` file (`JWT_SECRET=<64 hex chars>`, `chmod 600`) consumed
+  by `deploy/docker-compose.yml`'s `secrets: jwt_secret` mount, when it is absent.
+  Previously a fresh checkout had no `.env.jwt.dev` and the orchestrator container
+  failed to start with a JWT-secret config error until one was hand-created; this
+  closes the release-gating condition tracked against C012 from C010's
+  CONDITIONAL_PASS review (MR !113). Idempotent on repeat runs (`[OK] .env.jwt.dev
+  exists`, content unchanged), verified gitignored via the existing `.env*` pattern,
+  and never prints the secret value to stdout/logs. Wiring this into `make up` is
+  deferred to C016; run the script manually before `docker compose up` until then.
+
 ### Deployment (C010)
 - **`feat(deploy)`**: Removed the stale `profiles: ["phase2"]` / `["phase4"]` gates on
   `git-shadow` and `merge-engine` in `deploy/docker-compose.yml` — both services are
