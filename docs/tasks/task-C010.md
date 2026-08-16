@@ -2,11 +2,11 @@
 
 **ID:** C010
 **Owner:** devops-engineer
-**Status:** in_progress
+**Status:** done
 **Priority:** P0
 **Depends on:** C001, C002, C003, C004, C005 (gate CG0)
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-16
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (B3); docs/plans/plan-cwso-v1.0-phase1-one-command-stack-v2.md
 
 ## Objective
@@ -88,4 +88,20 @@ re-adding the gate — capture logs and report `technical` / `critical`.
 
 ## Execution notes
 
-<filled during execution>
+Implemented and verified with real Docker (Docker Desktop, WSL integration): removed
+the two `profiles:` lines + stale comment only; `docker compose config --services`
+confirmed all three services with no profile flags; `docker compose up -d` brought up
+all three, `orchestrator` reached `(healthy)`, `/healthz` returned `ok`; torn down
+cleanly. Discovered during verification (not caused by this change, confirmed
+pre-existing): a fresh checkout has no `.env.jwt.dev`, so `orchestrator` fails to
+start with a JWT-secret config error until one is created — out of scope per this
+brief's rails (`secrets:` block off-limits), reserved for C012. A throwaway,
+gitignored, never-committed dev secret was used locally only to unblock verification
+and was deleted before committing.
+
+Independent Tech Lead review (MR !113) returned **CONDITIONAL_PASS**: this task's own
+diff (compose profile removal, quick-start reconciliation, CHANGELOG entry) confirmed
+correct, complete, and scoped to exactly the 4 owned files — no security-relevant
+compose keys touched. The tracked condition from that review attaches to **C012**, not
+to this task — see `docs/tasks/task-C012.md` § "Release-gating condition" and the
+`active-tasks.md` footnote ¹. Merged to `develop` 2026-08-16 (squash).

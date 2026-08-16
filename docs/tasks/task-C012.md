@@ -16,6 +16,24 @@ Today a developer must hand-create `.env.jwt.dev` before `docker compose up` wor
 absent, with a cryptographically random value, so the one-command stack needs zero
 manual file creation.
 
+## Release-gating condition (tracked, from C010's CONDITIONAL_PASS review, 2026-08-16)
+
+**This is not backlog — it blocks the v1.0 GA/release cut.** Tech Lead's review of
+C010 (MR !113, `deploy/docker-compose.yml` profile-gate removal) confirmed C010's own
+diff is correct and complete, but returned CONDITIONAL_PASS on the following tracked
+condition, which attaches to this task rather than to C010:
+
+> C012 ("Bootstrap `.env.jwt.dev` on first run") must land and be verified against a
+> truly fresh clone before the v1.0 GA/release cut. As of C010, the documented
+> `docker compose up -d` quick-start in `README.md` / `docs/user/installation-v3.md`
+> fails at the orchestrator container with a JWT-secret config error on any checkout
+> lacking a manually-created `.env.jwt.dev`.
+
+Do not close the v1.0 release gate (see `docs/tasks/task-C062.md`, "Release v1.0.0")
+without confirming this task is `done` and its acceptance criteria (below) have been
+verified on a genuinely fresh clone — not just re-using a developer machine that
+already has `.env.jwt.dev` from earlier work.
+
 ## Inputs
 
 - `deploy/docker-compose.yml` (`secrets:` block, lines 3–6)

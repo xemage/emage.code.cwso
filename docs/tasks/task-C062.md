@@ -28,6 +28,13 @@ release commit.
 
 ### You MUST
 - Confirm the entry criteria first: C018 green at the release commit, C060/C061/C063 merged — if any is missing, stop
+- Confirm C012 ("Bootstrap `.env.jwt.dev` on first run") is `done` and independently
+  verified against a truly fresh clone (not just re-use of a dev machine that already
+  has `.env.jwt.dev`). This is a tracked condition from C010's CONDITIONAL_PASS review
+  (2026-08-16, MR !113) — see `docs/tasks/task-C012.md`. C012 is already transitively
+  required by C018 (C018 ← C016/C017 ← C012/C013/C014/C015), so this should already be
+  satisfied by the time entry criteria are checked; this line makes that explicit
+  rather than relying solely on the transitive dependency chain
 - Rename the CHANGELOG `## Unreleased` section to `## v1.0.0 - YYYY-MM-DD` and finalize it
 - Produce `docs/artifacts/release-v1.0.0.md` following the established release-artifact pattern (scope vs prior release, evidence, known limitations link)
 - Create annotated tag `v1.0.0`; confirm CI publishes all four service images with the tag
