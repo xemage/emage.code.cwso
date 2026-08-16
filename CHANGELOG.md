@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Deployment (C010)
+- **`feat(deploy)`**: Removed the stale `profiles: ["phase2"]` / `["phase4"]` gates on
+  `git-shadow` and `merge-engine` in `deploy/docker-compose.yml` — both services are
+  fully implemented and CI-built, so a bare `docker compose up` now starts the full
+  stack (`orchestrator` + `git-shadow` + `merge-engine`) instead of the orchestrator
+  alone. Dropped the now-unnecessary `--profile phase2 --profile phase4` flags from
+  the quick-start blocks in `README.md` and `docs/user/installation-v3.md` (kept
+  byte-identical). No compose hardening keys (environment, volumes, healthcheck,
+  security_opt, tmpfs, read_only, cap_drop, secrets) were changed.
+
 ## v0.6.1 - 2026-08-08
 
 ### Technical Debt Remediation and Test Quality
