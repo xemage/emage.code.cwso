@@ -58,7 +58,7 @@ check:version-drift:
 
 go:lint:
   stage: lint
-  image: golang:1.25.12
+  image: golang:1.25.13
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
@@ -91,7 +91,7 @@ rust:lint:
 
 go:test:
   stage: test
-  image: golang:1.25.12
+  image: golang:1.25.13
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
@@ -138,7 +138,7 @@ rust:test:
 
 go:audit:
   stage: audit
-  image: golang:1.25.12
+  image: golang:1.25.13
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
