@@ -3,7 +3,6 @@
 | ID | Title | Owner | Status | Priority | Depends on | Last update |
 |----|-------|-------|--------|----------|-----------|-------------|
 | T010 | SE: Security audit (auth, secret leakage) | security-engineer | in_review | P1 | T008 | 2026-08-06 |
-| T190 | Bump pinned Go CI image to clear govulncheck stdlib advisories | devops-engineer | in_progress | P0 | — | 2026-08-16 |
 | T082 | Rust `cwso-hal` crate + CPU-baseline adapter | backend-developer | in_review | P0 | T081 | 2026-08-13 |
 | T083 | GPU adapter (vLLM/TensorRT-LLM, OpenAI-compatible) | backend-developer | in_review | P0 | T082 | 2026-08-13 |
 | T084 | LPU adapter (Groq-style deterministic low-latency) | backend-developer | in_review | P1 | T082 | 2026-08-13 |
@@ -44,11 +43,6 @@
 | T187 | TD-03 Residual: Reduce handleBrokerSSE to ≤4 Parameters | backend-developer | pending | P2 | — | 2026-08-13 |
 | T188 | TD-10 Fix SSE Telemetry Test Stderr-Capture Race | qa-engineer | pending | P2 | — | 2026-08-13 |
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
-| C001 | README version truth + CI drift guard | devops-engineer | in_progress | P0 | — | 2026-08-13 |
-| C002 | Reconcile quick-start commands | technical-writer | in_progress | P0 | — | 2026-08-13 |
-| C003 | Publish docs/DEBT-REGISTER.md | technical-writer | in_progress | P0 | — | 2026-08-13 |
-| C004 | Reconcile task ledger with briefs | technical-writer | in_progress | P0 | — | 2026-08-13 |
-| C005 | Publish docs/SCOPE-v1.0.md | technical-writer | in_progress | P0 | — | 2026-08-13 |
 | C010 | Remove phase2/phase4 compose profile gates | devops-engineer | pending | P0 | C001–C005 (CG0) | 2026-08-12 |
 | C011 | Add cwso-rollout behind opt-in profile | devops-engineer | pending | P0 | C010 | 2026-08-12 |
 | C012 | Bootstrap .env.jwt.dev on first run | devops-engineer | pending | P0 | C010 | 2026-08-12 |

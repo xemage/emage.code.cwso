@@ -2,11 +2,11 @@
 
 **ID:** C001
 **Owner:** devops-engineer
-**Status:** pending
+**Status:** done
 **Priority:** P0
 **Depends on:** —
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-15
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (B9); docs/plans/plan-cwso-v1.0-phase0-honest-baseline-v1.md
 
 ## Objective
