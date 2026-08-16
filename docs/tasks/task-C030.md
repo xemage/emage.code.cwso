@@ -2,7 +2,7 @@
 
 **ID:** C030
 **Owner:** backend-developer
-**Status:** pending
+**Status:** in_progress
 **Priority:** P1
 **Depends on:** C001–C005 (gate CG0)
 **Created:** 2026-08-12
