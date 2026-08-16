@@ -43,10 +43,11 @@
 | T187 | TD-03 Residual: Reduce handleBrokerSSE to ≤4 Parameters | backend-developer | pending | P2 | — | 2026-08-13 |
 | T188 | TD-10 Fix SSE Telemetry Test Stderr-Capture Race | qa-engineer | pending | P2 | — | 2026-08-13 |
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
-| C015 | Mount user repo read-write (CWSO_WORKSPACE_HOST) | devops-engineer | pending | P0 | C010, C019 | 2026-08-13 |
+| T191 | Fix `.env.jwt.dev` permission mismatch (chmod 600 vs non-root container user) | devops-engineer | pending | P0 | — | 2026-08-16 |
+| T192 | Fix JWT 401 mismatch between orchestrator and `phase2-integration.py` | backend-developer | pending | P1 | — | 2026-08-16 |
+| C015 | Mount user repo read-write (CWSO_WORKSPACE_HOST) **[SEC-C019-01 — see task-C015.md]** | devops-engineer | pending | P0 | C010, C019 | 2026-08-16 |
 | C016 | make up one-command target **[RELEASE-GATING CONDITION — see note ¹]** | devops-engineer | pending | P0 | C012, C013, C014, C015 | 2026-08-16 |
 | C018 | E2E smoke test (v1.0 DoD executable) | qa-engineer | pending | P0 | C016, C017 | 2026-08-12 |
-| C019 | Sandbox trustworthiness, non-KVM default path | backend-developer | in_progress | P0 | C010 | 2026-08-16 |
 | C020 | ADR-012: filesystem projection decision | solution-architect | pending | P0 | C010–C018 (CG1) | 2026-08-12 |
 | C021 | Implement filesystem projection | backend-developer | pending | P0 | C020 (GO) | 2026-08-12 |
 | C022 | Write-back into git ODB | backend-developer | pending | P0 | C021 | 2026-08-12 |
@@ -102,6 +103,11 @@
 > gap before release. This is release-gating, not backlog — see `docs/tasks/task-C016.md`
 > § "Release-gating condition" and `docs/tasks/task-C062.md` ("Release v1.0.0"). C010 and
 > C012 are both unaffected on their own merits: both diffs were independently reviewed
-> and confirmed correct and complete.
+> and confirmed correct and complete. **Addendum (2026-08-16, discovered during C019/MR
+> !123):** even once C016 lands, `make up` will likely still fail acceptance criterion
+> #1 on a genuinely fresh clone for a *second*, unrelated reason — see **T191**
+> (`.env.jwt.dev` born `chmod 600`, unreadable by the orchestrator container's
+> non-root user). T191 is tracked as its own P0 task; see `docs/tasks/task-C016.md`'s
+> "Release-gating condition" section for the full cross-reference.
 
 Per-task briefs live alongside this file as `task-T001.md`, `task-T002.md`, …, `task-C001.md`, …

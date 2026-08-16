@@ -16,6 +16,38 @@ Introduce `CWSO_WORKSPACE_HOST` so a developer points CWSO at **their own reposi
 defaulting to `sample-workspace` for the smoke test, and re-evaluate the `:ro` mount:
 a shadow-workspace orchestrator that cannot write is a demo.
 
+## Tracked security condition (SEC-C019-01, security-engineer review of MR !123, 2026-08-16)
+
+**Medium severity, structural — do not close this task without addressing it.**
+`docs/artifacts/sandbox-trustworthiness-v1.md` (C019) — the evidence artifact this
+task is instructed to cite for its read-write default — only covers **container-level
+sandbox tiering** (properties P1-P4: filesystem confinement via the container/volume
+boundary, process isolation, resource limits, network policy). It does **not** cover
+the `pathGuard`/`fs_tools.go` in-process trust boundary — i.e. the logic that decides
+which paths *inside* an already-mounted, already-writable `/workspace` a given
+sub-agent/tool call is allowed to touch. For a read-write mount of the user's real
+repository, `pathGuard`/`fs_tools.go` is the actual exposure surface that matters day
+to day — the container boundary (P1-P4) is necessary but not sufficient.
+
+**Do not let this task cite "P1-P4 MET" as blanket justification for the read-write
+default.** Before this task closes, it must do one of:
+
+1. Commission or perform its own scoped review of `pathGuard`/`fs_tools.go` (path
+   traversal handling, symlink handling, workspace-boundary enforcement) and document
+   the result alongside the C019 citation in `docs/user/installation-v3.md`'s
+   workspace section, **or**
+2. Explicitly document a scoped risk acceptance if a full review is out of this
+   task's budget — state in writing what is and isn't covered, so a reader of the
+   installation docs isn't left assuming C019's P1-P4 evidence covers more than it
+   does.
+
+If a `pathGuard`/`fs_tools.go` review surfaces a genuine gap (e.g. a traversal or
+symlink-escape path out of `/workspace`), treat it with the same seriousness as
+C019's own hard-stop rule: do not ship a softened claim — escalate to the orchestrator
+as `technical` / `critical` rather than proceeding with the read-write default
+unresolved. This is a human re-decision point, same as C019's rail, not something to
+quietly work around.
+
 ## Inputs
 
 - `deploy/docker-compose.yml` (orchestrator `volumes:`, line 32)
@@ -30,6 +62,7 @@ a shadow-workspace orchestrator that cannot write is a demo.
 - Validate at startup (compose or entrypoint level) that the host path exists and is a directory; fail with a clear message if not
 - Document in `docs/user/installation-v3.md`: how to set `CWSO_WORKSPACE_HOST`, that the mount is read-write, and that shadow workspaces (not the mounted repo) are where agent edits land — the mount is the source of truth agents branch *from*
 - Cite `docs/artifacts/sandbox-trustworthiness-v1.md` (C019) in the docs section covering the read-write default — the mount's safety story rests on that evidence
+- **Satisfy SEC-C019-01 (see the tracked security condition above)**: address the `pathGuard`/`fs_tools.go` trust boundary explicitly (scoped review or documented risk acceptance) — do not cite C019's P1-P4 evidence as if it covers this
 - Keep `sample-workspace` as the default so C018's smoke test needs no configuration
 - Add a CHANGELOG `## Unreleased` entry
 

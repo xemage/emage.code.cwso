@@ -46,6 +46,24 @@ until **all three** of the following are true:
    can safely wait for; C002/C010/C014 already established the precedent of touching
    just the quick-start command blocks (not the whole guide) task-by-task.
 
+**New cross-reference (2026-08-16, discovered incidentally during C019's audit,
+MR !123 §6):** even with `make up` correctly calling
+`scripts/cwso-bootstrap-secrets.sh` first (item 1 above), acceptance criterion #1
+("`make up` from clean state reaches healthy with zero manual steps") will likely
+**still fail on a genuinely fresh clone**, for an unrelated reason — see
+`docs/tasks/task-T191.md`: the bootstrap script's `chmod 600` on `.env.jwt.dev`
+leaves the file unreadable by the `orchestrator` container's non-root `cwso` user
+(different UID than the host user that ran the bootstrap script), because the
+compose `secrets:` block is a plain bind mount, not a Swarm-managed secret. This
+was reproduced live (container fails to start until a manual `chmod 644` workaround)
+and is tracked as its own P0 task, **T191**, independent of C016. Whoever picks up
+C016 should check T191's status first — if T191 is still open when C016 starts,
+either wait for it or treat resolving it as effectively part of reaching C016's own
+acceptance criterion #1, since the two failures are inseparable in practice (an
+observer running `make up` on a clean machine can't tell "the caller is missing" from
+"the caller exists but the file it produces is unreadable" — both look like the same
+broken zero-manual-steps promise).
+
 ## Inputs
 
 - `Makefile` (existing targets, e.g. `build`)
