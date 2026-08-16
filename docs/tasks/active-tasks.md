@@ -59,7 +59,7 @@
 | C023 | Projection lifecycle + crash safety | backend-developer | pending | P0 | C021 | 2026-08-12 |
 | C024 | Prove projection E2E in CI | qa-engineer | pending | P0 | C022, C023 | 2026-08-12 |
 | C025 | CONDITIONAL: document IPC-only limitation | technical-writer | pending | P0 | C020 (NO-GO) | 2026-08-12 |
-| C030 | MCP gap table (impl vs spec) | backend-developer | pending | P1 | C001–C005 (CG0) | 2026-08-12 |
+| C030 | MCP gap table (impl vs spec) | backend-developer | in_progress | P1 | C001–C005 (CG0) | 2026-08-16 |
 | C031 | ADR-013: SDK vs conformance suite | solution-architect | pending | P1 | C030 | 2026-08-12 |
 | C032 | Execute ADR-013 decision | backend-developer | pending | P1 | C031 | 2026-08-12 |
 | C033 | Client compatibility matrix (3×2) | qa-engineer | pending | P1 | C032 | 2026-08-12 |
