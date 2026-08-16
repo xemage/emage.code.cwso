@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Scripts (C013)
+- **`feat(scripts)`**: Added `scripts/cwso-token.sh`, replacing the inline Python
+  heredoc in `docs/user/installation-v3.md` §3 for minting the dev MCP JWT.
+  Usage: `cwso-token.sh [--role orchestrator|worker] [--ttl <seconds>]` (defaults
+  `--role orchestrator --ttl 3600`). Reads the signing secret from `.env.jwt.dev`
+  in the repo root and fails with a pointer to `scripts/cwso-bootstrap-secrets.sh`
+  if that file is missing. Prints only the signed token on stdout (all
+  diagnostics go to stderr) so `TOKEN=$(scripts/cwso-token.sh)` composes cleanly.
+  Claims (`alg` HS256, `iss` `cwso`, `aud` `cwso-mcp`, `role`) verified against
+  `orchestrator/internal/transport/http.go` `verifyJWT()`/`authMiddleware()` and
+  against a running `deploy/docker-compose.yml` orchestrator container: both
+  `--role orchestrator` and `--role worker` tokens are accepted (200) on the
+  auth-gated `/mcp` endpoint, while missing/garbage bearer tokens are rejected
+  (401).
+
 ### Deployment (C017)
 - **`feat(scripts)`**: Added `scripts/cwso-doctor.sh`, a pre-flight/post-flight
   diagnostic for the one-command stack. Checks, in order: `docker`/`docker compose`
