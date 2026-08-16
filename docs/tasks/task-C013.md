@@ -2,11 +2,11 @@
 
 **ID:** C013
 **Owner:** devops-engineer
-**Status:** in_progress
+**Status:** done
 **Priority:** P0
 **Depends on:** C010
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-16
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (B5); docs/plans/plan-cwso-v1.0-phase1-one-command-stack-v2.md
 
 ## Objective
@@ -87,4 +87,28 @@ server's rejection reason and report `technical` / `major`.
 
 ## Execution notes
 
-<filled during execution>
+Implemented `scripts/cwso-token.sh` per brief: reads the signing secret from
+`.env.jwt.dev`, fails with a clear pointer to `scripts/cwso-bootstrap-secrets.sh`
+(C012) when absent, mints claims (`alg` HS256, `iss` `cwso`, `aud` `cwso-mcp`, `role`)
+verified against the real server validation code (not guessed), prints only the token
+on stdout with all diagnostics on stderr. Verified live: both `--role orchestrator`
+and `--role worker` tokens accepted (200) on the auth-gated `/mcp` endpoint;
+missing/garbage bearer tokens rejected (401); `--ttl` override works.
+
+Independent Tech Lead review (MR !116) returned **PASS, no conditions**: secret
+non-leakage verified on every code path including error/fallback branches,
+stdout/stderr discipline confirmed statement-by-statement, claim shape cross-checked
+against the actual server code, role/TTL handling correct, file ownership clean.
+
+This branch's `e2e:phase2` CI job needed 5 attempts before landing green: original +
+2 concurrent-context retries + 1 serialized retry all failed with a `Connection
+refused` mid-RPC signature (consistent with runner contention from several sibling
+branches' pipelines running at the same time); a 4th attempt, run in true isolation,
+still failed but with a different crash shape (an unhandled `JSONDecodeError` further
+into the test than any prior attempt); a 5th attempt, also isolated, passed cleanly.
+Root-caused as transient infra load, not a regression in this task's diff (which
+touches only `scripts/cwso-token.sh`, `docs/user/installation-v3.md` §3, and
+`CHANGELOG.md` — nothing the e2e test's RPC path depends on). Needed three
+`develop`-merge conflict-resolution rounds (ledger-file contention from
+C011/C012/C017 landing concurrently) before it could merge. Merged to `develop`
+2026-08-16 (squash).

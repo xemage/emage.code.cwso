@@ -2,11 +2,11 @@
 
 **ID:** C031
 **Owner:** solution-architect
-**Status:** in_progress
+**Status:** done
 **Priority:** P1
 **Depends on:** C030
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-16
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (B1, open question 2); docs/plans/plan-cwso-v1.0-phase3-protocol-conformance-v1.md; docs/artifacts/mcp-gap-analysis-v1.md
 
 ## Objective
@@ -94,4 +94,31 @@ that as a finding weighing against adoption — do not assume them.
 
 ## Execution notes
 
-<filled during execution>
+Published `docs/decisions/ADR-013-mcp-protocol-path.md`: records the human's
+2026-08-13 decision (keep hand-rolled MCP kernel, reject SDK adoption for v1.0) rather
+than re-litigating it; gives the SDK option a genuine, non-strawman evaluation
+(determinism named as the disqualifying factor — the official SDK's public docs
+describe async-per-session dispatch with no documented sequential-mode guarantee,
+against the kernel's flat synchronous `Handle()`); scopes C032's conformance suite
+directly from the C030 gap table (35 rows, ~45-55 estimated test cases, 2 flagged
+required fixes: the `ErrInvalidRequest` misuse and the `notifications/resources/list_changed`
+capability mismatch); states 5 falsifiable reversal criteria; includes an
+approval-required section. Correctly noted that the brief's cited format precedent,
+ADR-012, doesn't exist yet (its owning task C020 is still pending) and used
+`docs/decisions/_template.md` instead, flagging this rather than silently diverging.
+
+Solution Architect has no Bash/git tooling, so could not commit/push/open its own MR —
+the orchestrator completed that step directly (verified `git diff --stat` showed
+exactly the one new file per the brief's own verification command, then committed,
+pushed, and opened MR !118).
+
+Independent Tech Lead review (MR !118) returned **CONDITIONAL_PASS**: one fix
+required — three citations of `orchestrator/internal/server/server.go:799-827` for
+`Server.Handle()` clipped the function's opening signature out of the cited range;
+corrected to `789-827` to match the gap table's own citation (a one-line-range fix in
+three spots, not a substantive re-evaluation). Citation accuracy (spot-checked
+elsewhere), SDK fairness, reversal-criteria falsifiability, conformance-suite
+usability, and the ADR-012-missing format justification were all independently
+verified PASS. Orchestrator applied the fix directly (again, no Bash access for the
+worker), pushed, condition resolved. Merged to `develop` 2026-08-16 (squash), MR !118
+— unblocks C032 (not yet dispatched).

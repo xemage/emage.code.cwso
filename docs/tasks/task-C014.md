@@ -2,11 +2,11 @@
 
 **ID:** C014
 **Owner:** devops-engineer
-**Status:** in_progress
+**Status:** done
 **Priority:** P0
 **Depends on:** C010
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-16
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (B5); docs/plans/plan-cwso-v1.0-phase1-one-command-stack-v2.md
 
 ## Objective
@@ -89,4 +89,29 @@ If a variable's consumer cannot be found, do not guess — leave it, list it, fl
 
 ## Execution notes
 
-<filled during execution>
+Inventoried every export in `scripts/cwso-enable-all-features.sh`/`.env.example`,
+verified each consumer by grep before moving: 20 variables onto `orchestrator`
+(`CWSO_HAL_SOCKET`, `CWSO_HHD_*` x10, `CWSO_SPARSE_*` x3, `CWSO_AST_SPIKE_*` x2, 4
+`CWSO_ROLLOUT_*` flags), 1 (`CWSO_ROLLOUT_HTTP_BIND`) onto `rollout`. Values unchanged
+from the original example — relocated only. `CWSO_ROLLOUT_UPSTREAM_URL` was already
+present on `rollout` from C011 and left as-is. Deprecation header added to the
+original script verbatim per the brief; script and its `.env.example` kept, not
+deleted. Caught and correctly fixed a brief discrepancy: the brief said the doc update
+was in `docs/user/installation-v3.md` §2, but the actual manual "source the script"
+step was in §10 ("Recommended daily workflow") — fixed the real location instead of
+guessing or silently doing nothing. Verified live: `docker compose config` var count
+increased as expected; `env -i bash -c 'docker compose up -d'` (genuinely clean
+environment, nothing sourced) reached healthy.
+
+Independent Tech Lead review (MR !121) returned **CONDITIONAL_PASS**: every moved
+variable independently re-traced to a real consumer in `config.go`/`config.rs`
+(reviewer's count matched the worker's exactly), no secrets moved into the compose
+file, deprecation header verbatim-correct, the §2→§10 self-correction verified
+legitimate, file ownership clean, values unchanged. One issue: the `CHANGELOG.md`
+prose undercounted the moved variables (said "19 vars... x9", should be "20 vars...
+x10" — the MR description's own evidence table already had the correct count).
+Reviewer explicitly recommended a trivial fix-up rather than a full re-review; the
+orchestrator applied it directly (`80676fc`), confirmed the pipeline stayed green,
+and merged. MR !121 merged to `develop` 2026-08-16 (squash) — unblocks **C019**, the
+third and final task in the sequential `deploy/docker-compose.yml` chain
+(C011 → C014 → C019), dispatched immediately after merge.
