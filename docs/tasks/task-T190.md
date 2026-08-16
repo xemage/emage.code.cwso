@@ -2,11 +2,11 @@
 
 **ID:** T190
 **Owner:** devops-engineer
-**Status:** in_progress
+**Status:** done
 **Priority:** P0
 **Depends on:** —
 **Created:** 2026-08-16
-**Completed:** —
+**Completed:** 2026-08-16
 **Based on:** `docs/checkpoints/checkpoint-022-phase0-c001-c005-complete.md` (Blocker BLK-022-01)
 
 ## Objective
