@@ -45,7 +45,7 @@
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
 | C011 | Add cwso-rollout behind opt-in profile | devops-engineer | in_progress | P0 | C010 | 2026-08-16 |
 | C013 | scripts/cwso-token.sh replaces JWT heredoc | devops-engineer | in_progress | P0 | C010 | 2026-08-16 |
-| C014 | Fold enable-all-features into compose defaults | devops-engineer | pending | P0 | C010 | 2026-08-12 |
+| C014 | Fold enable-all-features into compose defaults | devops-engineer | in_progress | P0 | C010 | 2026-08-16 |
 | C015 | Mount user repo read-write (CWSO_WORKSPACE_HOST) | devops-engineer | pending | P0 | C010, C019 | 2026-08-13 |
 | C016 | make up one-command target **[RELEASE-GATING CONDITION — see note ¹]** | devops-engineer | pending | P0 | C012, C013, C014, C015 | 2026-08-16 |
 | C017 | scripts/cwso-doctor.sh diagnostics | devops-engineer | in_progress | P0 | C010 | 2026-08-16 |

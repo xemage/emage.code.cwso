@@ -186,10 +186,13 @@ This is not a bug; it's how VS Code's extension logs connection lifecycle events
 
 ## 10. Recommended daily workflow
 
+<!-- NOTE: manual `source scripts/cwso-enable-all-features.sh` step removed in v0.8.0
+     (C014); feature-flag defaults now live in deploy/docker-compose.yml's
+     `environment:` blocks, so a bare `docker compose up` already has them. The
+     script is deprecated but kept for reference. -->
 ```bash
 cd <repo-root>
-source scripts/cwso-enable-all-features.sh
-docker compose -f deploy/docker-compose.yml --profile phase2 --profile phase4 up -d
+docker compose -f deploy/docker-compose.yml up -d
 export CWSO_MCP_TOKEN='...'
 cd <workspace-root>
 code .
