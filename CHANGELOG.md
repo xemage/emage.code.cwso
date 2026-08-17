@@ -4,6 +4,31 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Security (T193)
+- **`fix(tools)`**: Closed a symlink-based workspace-escape gap in
+  `orchestrator/internal/tools/fs_tools.go`'s `pathGuard()` for **new-file**
+  writes. `pathGuard()` already resolved symlinks (via `filepath.EvalSymlinks`)
+  and rejected escapes for paths that **exist** on disk, but silently fell
+  through to `return clean, nil` — the unresolved, unchecked path — when the
+  leaf didn't exist yet, because `EvalSymlinks` errors on a non-existent leaf.
+  `write_file_sync` (the only write-capable tool) then wrote through that
+  unresolved path via `os.MkdirAll`/`os.WriteFile`, so a new file targeted
+  through a symlinked intermediate directory pointing outside the workspace
+  root was actually written outside the workspace. `pathGuard()` now walks the
+  target path upward (`filepath.Dir`) to find the nearest **existing**
+  ancestor, resolves symlinks on that ancestor, verifies it's inside the
+  workspace root, then rejoins the non-existent tail components and
+  re-verifies the joined path is still inside the workspace before trusting
+  it. Existing-file read/overwrite behavior (already correct) is unchanged.
+  Discovered by the C015 worker while implementing the read-write workspace
+  mount (blocked pending this fix); independently re-verified by the
+  orchestrator before dispatch. New regression tests cover: a new file behind
+  a workspace-external symlinked directory (rejected, and the filesystem is
+  checked directly to confirm nothing was written outside), a deeply-nested
+  variant (multiple non-existent path segments), and two positive cases (a
+  symlink that stays inside the workspace, and a plain multi-level new-file
+  write with no symlinks) to confirm the fix doesn't break legitimate writes.
+
 ### Deployment (C014)
 - **`feat(deploy)`**: Folded every consumed variable from
   `scripts/cwso-enable-all-features.sh` into `deploy/docker-compose.yml`'s

@@ -45,6 +45,7 @@
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
 | T191 | Fix `.env.jwt.dev` permission mismatch (chmod 600 vs non-root container user) | devops-engineer | pending | P0 | — | 2026-08-16 |
 | T192 | Fix JWT 401 mismatch between orchestrator and `phase2-integration.py` | backend-developer | pending | P1 | — | 2026-08-16 |
+| T193 | Fix `pathGuard()` symlink-escape gap for new-file writes **[BLOCKS C015]** | backend-developer | in_progress | P0 | — | 2026-08-16 |
 | C015 | Mount user repo read-write (CWSO_WORKSPACE_HOST) **[SEC-C019-01 — see task-C015.md]** | devops-engineer | pending | P0 | C010, C019 | 2026-08-16 |
 | C016 | make up one-command target **[RELEASE-GATING CONDITION — see note ¹]** | devops-engineer | pending | P0 | C012, C013, C014, C015 | 2026-08-16 |
 | C018 | E2E smoke test (v1.0 DoD executable) | qa-engineer | pending | P0 | C016, C017 | 2026-08-12 |

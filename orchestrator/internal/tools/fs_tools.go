@@ -19,6 +19,15 @@ import (
 
 // pathGuard validates that targetPath resolves inside root. Symlinks that
 // escape root are rejected.
+//
+// SECURITY: for targets that already exist on disk, filepath.EvalSymlinks
+// resolves the full path and we check the resolved path against root. For
+// targets that do NOT yet exist (e.g. a new file being written for the
+// first time), EvalSymlinks cannot resolve the non-existent leaf, so we
+// instead resolve symlinks on the nearest EXISTING ancestor directory and
+// re-verify the non-existent tail rejoined onto that resolved ancestor.
+// Without this, a symlinked intermediate directory pointing outside root
+// would let a new-file write escape the workspace unchecked.
 func pathGuard(root, targetPath string) (string, error) {
 	if root == "" {
 		return "", errors.New("workspace root not configured")
@@ -38,13 +47,77 @@ func pathGuard(root, targetPath string) (string, error) {
 	}
 	// Resolve symlinks if target exists; reject if it escapes.
 	if resolved, err := filepath.EvalSymlinks(clean); err == nil {
-		relResolved, err := filepath.Rel(absRoot, resolved)
-		if err != nil || strings.HasPrefix(relResolved, "..") {
+		if !withinWorkspace(absRoot, resolved) {
 			return "", fmt.Errorf("path %q symlinks outside workspace root", targetPath)
 		}
 		return resolved, nil
 	}
-	return clean, nil
+	// The target itself doesn't exist yet (EvalSymlinks requires every path
+	// component, including the leaf, to exist). Resolve symlinks on the
+	// nearest existing ancestor directory instead, then rejoin the
+	// non-existent tail components and re-verify the rejoined path is still
+	// inside the workspace before trusting it.
+	resolvedAncestor, tail, err := resolveNearestExistingAncestor(absRoot, clean)
+	if err != nil {
+		return "", fmt.Errorf("path %q: %w", targetPath, err)
+	}
+	if !withinWorkspace(absRoot, resolvedAncestor) {
+		return "", fmt.Errorf("path %q symlinks outside workspace root", targetPath)
+	}
+	joined := filepath.Clean(filepath.Join(append([]string{resolvedAncestor}, tail...)...))
+	if !withinWorkspace(absRoot, joined) {
+		return "", fmt.Errorf("path %q symlinks outside workspace root", targetPath)
+	}
+	return joined, nil
+}
+
+// withinWorkspace reports whether resolved lies inside (or equals) absRoot.
+// Both arguments must already be absolute, cleaned paths.
+func withinWorkspace(absRoot, resolved string) bool {
+	rel, err := filepath.Rel(absRoot, resolved)
+	return err == nil && !strings.HasPrefix(rel, "..")
+}
+
+// resolveNearestExistingAncestor walks p upward (via filepath.Dir) until it
+// finds an ancestor directory that exists on disk, then resolves symlinks
+// on that ancestor via filepath.EvalSymlinks. It returns the resolved
+// ancestor path plus the non-existent tail path components (in
+// root-to-leaf order) that the caller must rejoin onto the resolved
+// ancestor and re-check against the workspace root.
+//
+// The walk is bounded by absRoot: p is assumed to already lie lexically
+// inside absRoot (pathGuard checks this before calling in), so the walk
+// will reach absRoot if nothing more specific exists. If absRoot itself
+// does not exist, or EvalSymlinks fails on an existing ancestor for a
+// reason other than the path not existing (e.g. a permission error), this
+// returns an error rather than silently falling back to an unresolved,
+// unchecked path.
+func resolveNearestExistingAncestor(absRoot, p string) (string, []string, error) {
+	var tail []string
+	cur := p
+	for {
+		resolved, err := filepath.EvalSymlinks(cur)
+		if err == nil {
+			return resolved, tail, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", nil, err
+		}
+		if cur == absRoot {
+			return "", nil, fmt.Errorf("workspace root %q does not exist", absRoot)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			// Reached the filesystem root without ever hitting absRoot.
+			// Should be unreachable given pathGuard's earlier lexical
+			// containment check, but guard against it defensively rather
+			// than looping forever or resolving against something outside
+			// the workspace.
+			return "", nil, fmt.Errorf("no existing ancestor found for %q", p)
+		}
+		tail = append([]string{filepath.Base(cur)}, tail...)
+		cur = parent
+	}
 }
 
 // ReadFileSync reads a UTF-8 file from inside the configured workspace.
