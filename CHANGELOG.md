@@ -4,6 +4,52 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Security (T194)
+- **`fix(tools)`**: Closed the check-then-use (TOCTOU) window between
+  `pathGuard()`'s symlink-safety check (fixed in T193) and the actual
+  filesystem operation each caller performs afterward, as a separate step.
+  `pathGuard()` only proves a path is safe **at the moment of the check**;
+  `ReadFileSync.Execute`, `WriteFileSync.Execute`, and `ListDir.Execute`
+  each then called `os.Stat`/`os.ReadFile`/`os.MkdirAll`/`os.WriteFile`/
+  `os.ReadDir` by path string as a second, independently-timed step — if a
+  symlink were swapped into place along that path in the gap, the OS's
+  live symlink resolution at execution time (not the resolution
+  `pathGuard()` saw a moment earlier) would decide the outcome. Not
+  exploitable via CWSO's current tool surface (nothing can create a
+  symlink at runtime today), but C015 (paused pending this fix) removes
+  that precondition by mounting the user's real, externally-writable
+  repository into the workspace. Fixed by adding `secureResolveDirs`/
+  `secureOpenLeaf` to `orchestrator/internal/tools/fs_tools.go`: instead of
+  a second path-string lookup, all three call sites now walk
+  `pathGuard()`'s already-resolved, canonical path one component at a time
+  via `openat(2)`, each hop anchored to the file descriptor obtained by
+  the PREVIOUS hop and opened with `O_NOFOLLOW` (the final leaf hop too).
+  A symlink swapped into any component after `pathGuard()`'s check is
+  refused by the kernel at that exact hop (`ELOOP`/`ENOTDIR`) — there is no
+  later, separately-timed name resolution left for a race to win against.
+  This is the **strong (`*at()`-anchored) fix from all three call sites**
+  (`ReadFileSync`, `WriteFileSync`, `ListDir`); no call site uses the
+  weaker "re-verify then race a smaller window" fallback. Implemented with
+  Go's standard `syscall` package only (no new dependency); scoped with
+  `//go:build linux` since `syscall.Openat`/`Mkdirat` are Linux-only in Go's
+  standard library and CWSO's sole deployment target
+  (`deploy/Dockerfile.orchestrator`) is Linux (Alpine). **Known trade-off,
+  flagged for reviewer sign-off in MR !<TBD>**: this constraint makes
+  `GOOS=darwin`/`GOOS=windows` builds of the whole `orchestrator` module
+  fail (confirmed via local cross-compile check; previously succeeded) —
+  `internal/server/server.go` references the affected tool types and sits
+  outside this task's file-ownership boundary, so it was not touched, but
+  reviewers should be aware native (non-Docker) macOS/Windows dev builds
+  are affected until a follow-up splits the Linux-only implementation
+  behind a build tag with a portable fallback. T193's symlink-resolution
+  fix and its regression tests are unmodified and still pass. New tests in
+  `fs_tools_test.go` prove the new `*at()`-anchored code path is reachable
+  and correctly rejects a pre-existing symlink at both the intermediate-
+  directory and leaf levels, plus a best-effort (non-flaky-by-design)
+  concurrent symlink-swap stress test as supporting evidence — see the MR
+  description for the full written reasoning proof of why the window is
+  closed, not just narrowed.
+
 ### Security (T193)
 - **`fix(tools)`**: Closed a symlink-based workspace-escape gap in
   `orchestrator/internal/tools/fs_tools.go`'s `pathGuard()` for **new-file**

@@ -2,11 +2,11 @@
 
 **ID:** T193
 **Owner:** backend-developer
-**Status:** pending
+**Status:** done
 **Priority:** P0 — blocking
 **Depends on:** —
 **Created:** 2026-08-16
-**Completed:** —
+**Completed:** 2026-08-16
 **Based on:** Discovered by the C015 worker (task C015, dispatched to implement the
 read-write workspace mount) while addressing security condition SEC-C019-01. The
 worker treated this as a hard-stop per its brief's rail ("if a required property
@@ -180,4 +180,36 @@ undocumented.
 
 ## Execution notes
 
-<filled during execution>
+Implemented `resolveNearestExistingAncestor()`: walks upward via `filepath.Dir`
+until an ancestor directory exists, resolves symlinks there via `EvalSymlinks`,
+fails closed (returns an error, does not fall through) on any `EvalSymlinks` error
+that isn't simply "the leaf doesn't exist yet" (e.g. a permissions error). The
+resolved ancestor and the rejoined non-existent tail are each independently
+re-verified against the workspace root via a new shared `withinWorkspace()` helper,
+which the existing-file branch was refactored to use too (logic unchanged, just
+de-duplicated). 6 new regression tests added, including a genuine before/after
+demonstration: stashed the fix, reran the new tests against the old code (3 failed,
+confirmed via a throwaway repro that a real file was written outside the workspace),
+restored the fix, all pass. Full `internal/tools` package: 60/60 tests, `go vet`/
+build clean.
+
+Independent security-engineer review (MR !126) returned **CONDITIONAL_PASS with no
+conditions on this task's own scope** — every claim independently re-derived rather
+than trusted: reproduced the before/after test failure/pass split directly (not just
+read the worker's transcript), walked the actual `resolveNearestExistingAncestor()`
+code for correct termination and fail-closed behavior, confirmed the double
+containment re-check on the rejoined path, confirmed existing-file behavior is
+provably equivalent at the code level, and independently reran the full suite.
+
+The review surfaced one new structural finding not part of this task's own scope: a
+TOCTOU gap between `pathGuard()`'s check and each caller's later filesystem
+operation. The reviewer gave a more precise reason it's not exploitable *today* than
+the original "single-writer" framing this task first proposed: no tool in CWSO's
+current MCP surface can create a symlink at runtime at all (independently confirmed —
+no `os.Symlink` call anywhere in the package), so there's no reachable primitive to
+exploit the race window with, regardless of writer concurrency. The reviewer
+explicitly flagged that precondition as fragile and exactly what C015's read-write
+mount removes. Tracked forward as **T194**, a new blocking task — not closed here,
+and this fix is not weakened or reworked because of it (T194 builds on top).
+
+Merged to `develop` 2026-08-16 (squash), MR !126.
