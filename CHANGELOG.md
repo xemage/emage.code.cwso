@@ -4,6 +4,53 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Deployment (C015)
+- **`feat(deploy)`**: Introduced `CWSO_WORKSPACE_HOST` so operators can point
+  the orchestrator at their own repository instead of the bundled
+  `sample-workspace/` demo, and changed the orchestrator's workspace mount
+  from read-only to **read-write**
+  (`${CWSO_WORKSPACE_HOST:-../sample-workspace}:/workspace:rw` in
+  `deploy/docker-compose.yml`). `CWSO_WORKSPACE_HOST` is host-side only —
+  the in-container path (`CWSO_WORKSPACE=/workspace`) is unchanged.
+  `sample-workspace` remains the default when the variable is unset, so
+  C018's smoke test needs no configuration. A read-only deployment is still
+  supported by editing the mount suffix back to `:ro` (documented as an
+  explicit escape hatch, not removed).
+- **`feat(deploy)`**: Added a `workspace-check` pre-flight service to
+  `deploy/docker-compose.yml` that verifies the resolved workspace path is a
+  real, non-empty directory before the orchestrator container starts
+  (`depends_on: workspace-check: condition: service_completed_successfully`).
+  Docker Engine does not reject a bind mount whose host source is missing —
+  it silently creates an empty, root-owned directory instead (verified live;
+  also affects Compose's own `bind: create_host_path: false`, tracked
+  upstream as ineffective for local `up`:
+  docker/compose#13602) — so a successful mount alone does not prove the
+  host path existed. `workspace-check` checks non-emptiness instead (true
+  for any real repository or the `sample-workspace` default, never true for
+  an auto-created empty directory), giving a clear `FATAL:` failure and a
+  non-zero `docker compose up` exit instead of a silent empty mount.
+- **`docs`**: Added `docs/user/installation-v3.md` §11 "Point CWSO at your
+  own repository", documenting `CWSO_WORKSPACE_HOST`, the read-write default
+  and what it does/doesn't mean (shadow workspaces, not the mount, are where
+  agent edits land), host file-permission requirements for the non-root
+  container user, the `:ro` escape hatch, and the startup validation above.
+  Addresses the tracked security condition **SEC-C019-01** (security-engineer
+  review of MR !123, 2026-08-16): the read-write default's safety story now
+  cites both `docs/artifacts/sandbox-trustworthiness-v1.md` (C019 —
+  container-level sandbox tiering, P1-P4) *and* the in-process
+  `pathGuard`/`fs_tools.go` trust boundary closed by **T193** (symlink-escape
+  fix, MR !126) and **T194** (TOCTOU fix, MR !127), rather than citing C019's
+  P1-P4 evidence alone as if it covered the in-process boundary too. This
+  task's own independent review of the current
+  `orchestrator/internal/tools/fs_tools.go` (post-T193/T194, confirmed merged
+  via `git log` on this branch) found both fixes correctly in place on every
+  read/write/list call site and no further gap — verified by reading the
+  code directly and by running `fs_tools_test.go`'s full suite (15 tests,
+  including a live TOCTOU symlink-swap race exercise) with `go test
+  ./internal/tools/... -race` in a `golang:1.25-alpine` container matching
+  `deploy/Dockerfile.orchestrator`'s build stage; all pass, race detector
+  clean. `orchestrator/*` code itself was not modified by this task.
+
 ### Dependencies (T196)
 - **`chore(deps)`**: Bumped the transitive `h2` crate from `0.4.14` to `0.4.16`
   in `services/Cargo.lock` (lockfile-only; no `Cargo.toml` changes) to clear

@@ -2,12 +2,42 @@
 
 **ID:** C015
 **Owner:** devops-engineer
-**Status:** pending
+**Status:** in_progress
 **Priority:** P0
-**Depends on:** C010, C019
+**Depends on:** C010, C019, T193, T194
 **Created:** 2026-08-12
 **Completed:** —
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (C015 row, open question 3); docs/plans/plan-cwso-v1.0-phase1-one-command-stack-v2.md
+
+## Resumed 2026-08-16 — both blockers resolved
+
+While investigating SEC-C019-01 (below), the assigned worker found that
+`orchestrator/internal/tools/fs_tools.go`'s `pathGuard()` has a symlink-escape gap
+for **new-file writes** (existing-file read/overwrite is correctly protected; new
+files written through a symlinked intermediate directory are not). Per this task's
+own instruction under SEC-C019-01 ("if your own pathGuard/fs_tools.go review surfaces
+a genuine gap... STOP and report it as a blocker... this is a human re-decision
+point"), the worker correctly stopped without committing rather than shipping this
+task on top of an open path-confinement gap. The human decided: fix the gap first as
+a blocking prerequisite.
+
+**Both blockers are now resolved:**
+- **T193** (symlink-escape fix): merged, MR !126, independent security-engineer
+  review PASS on its own scope.
+- **T194** (TOCTOU gap between `pathGuard()`'s check and each caller's later
+  filesystem operation — surfaced by T193's own review): merged, MR !127,
+  independent security-engineer review CONDITIONAL_PASS with no conditions blocking
+  the merge. Fixed via an fd-anchored `openat`/`mkdirat` directory-chain walk on
+  Linux (CWSO's only actual deployment target); a portable `!linux` fallback with a
+  narrower guarantee is tracked separately as **T195** (P1, not blocking this task).
+
+This task is **resumed**. Its SEC-C019-01 response (below) can now legitimately
+point at both closed gaps (T193 + T194) as the primary basis for the read-write
+mount's safety story, plus whatever residual scoped risk acceptance still makes
+sense for defense-in-depth (e.g., T195's narrower non-Linux guarantee is worth
+noting if relevant to any documented deployment path; T194's own MR review is worth
+citing directly for how the in-process trust boundary was hardened, not just C019's
+container-level P1-P4 evidence).
 
 ## Objective
 
