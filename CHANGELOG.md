@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Dependencies (T196)
+- **`chore(deps)`**: Bumped the transitive `h2` crate from `0.4.14` to `0.4.16`
+  in `services/Cargo.lock` (lockfile-only; no `Cargo.toml` changes) to clear
+  [RUSTSEC-2026-0258](https://rustsec.org/advisories/RUSTSEC-2026-0258)
+  ("h2 unbounded empty DATA frames" — low-severity denial-of-service:
+  h2 accepted and queued empty DATA frames without limit, risking unbounded
+  memory growth or a panic-on-overflow if a stream wasn't actively drained;
+  patched upstream in `h2` v0.4.16). `h2` is pulled in transitively via
+  `hyper 1.10.1` / `hyper-util 0.1.20`, used by `services/cwso-rollout`;
+  both are declared as semver-range constraints (`hyper = "1"`,
+  `hyper-util = "0.1"`) in `services/cwso-rollout/Cargo.toml`, so
+  `cargo update -p h2` alone resolved a patched version without widening
+  those ranges. Verified with `cargo audit` (0 vulnerabilities; the 2
+  pre-existing unmaintained-crate warnings for `fxhash`/`paste` are
+  unaffected and out of scope) and the full Rust workspace test suite
+  (`cwso-git-shadow`, `cwso-merge-engine`, `cwso-hal`, `cwso-sparse`,
+  `cwso-rollout` — 146 tests passing, 0 regressions).
+
 ### Security (T194)
 - **`fix(tools)`**: Closed the check-then-use (TOCTOU) window between
   `pathGuard()`'s symlink-safety check (fixed in T193) and the actual
