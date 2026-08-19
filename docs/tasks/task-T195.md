@@ -2,11 +2,11 @@
 
 **ID:** T195
 **Owner:** backend-developer
-**Status:** pending
+**Status:** done
 **Priority:** P1 — not blocking C015 or T194
 **Depends on:** T194 (merged — this task adds a counterpart, does not modify T194's Linux path)
 **Created:** 2026-08-16
-**Completed:** —
+**Completed:** 2026-08-19
 **Based on:** Fast-follow from T194 (MR !127), per the security-engineer reviewer's
 platform-trade-off recommendation on that MR (accepted by the human: ship the
 Linux-only fd-anchored fix for T194 itself, since CI/production are unaffected, and
@@ -142,5 +142,46 @@ not blocking anything) with what you could verify and what you couldn't, rather 
 claiming untested coverage works.
 
 ## Execution notes
+
+Implemented `orchestrator/internal/tools/fs_tools_portable.go` (`//go:build !linux`)
+restoring the same exported surface T194's Linux-only build had removed from
+non-Linux `GOOS` entirely (confirmed: `orchestrator/internal/server/server.go`
+references `ReadFileSync`/`WriteFileSync`/`ListDir` with no build tag, so the whole
+module failed to build on non-Linux, and the entire T193+T194 regression suite
+silently vanished from non-Linux `go test ./...`). Reused T193's symlink-resolution
+logic verbatim. TOCTOU mitigation is the portable "re-verify immediately before use"
+fallback (Linux's `openat`/`mkdirat` fd-anchoring isn't available outside `GOOS=linux`
+in Go's stdlib), with an explicit, unburied doc comment on the narrower guarantee.
+Validated cross-compilation could not execute non-Linux tests directly in this
+environment, so validated by temporarily forcing the portable file to build/run under
+Linux via a build-tag swap: 13 tests, 3 repeated runs, all pass. The race-stress test
+run under `-race` reproduced a real out-of-workspace write in 1 of 3 runs — an
+empirical, not theoretical, confirmation of the disclosed window.
+
+Independent security-engineer review (MR !128) returned **CONDITIONAL_PASS**:
+reproduced the race at a *higher* rate than reported (47% under `-race`, 7% without,
+across 15 runs each — using the same build-tag-swap validation method), explained the
+window's actual width from the code (`reverifyBeforeUse`'s second `pathGuard`/
+`EvalSymlinks` walk vs. the kernel's independent multi-syscall resolution inside
+`MkdirAll`/`WriteFile`), confirmed T193's logic byte-identical/unregressed, confirmed
+exported-surface parity with `server.go`, and endorsed the core design decision
+(ship the honestly narrower, never-CI/production-reachable guarantee rather than
+block on an unachievable full fix — this file is never compiled by
+`deploy/Dockerfile.orchestrator` or any CI job, both Linux-only).
+
+One blocking finding, **SEV-002**: the CHANGELOG disclosure claimed the escape "did
+not reproduce without `-race`", which was factually wrong per the reviewer's own
+testing (it reproduces both with and without `-race`, just less often without it).
+Fixed directly (text-only correction, no code change), pipeline reconfirmed green,
+merged. Two low, non-blocking findings tracked for future backlog, not gating this
+merge: **SEV-003** (extend race-stress coverage to `ReadFileSync`/`ListDir`, which
+share the same pattern but currently have zero race coverage — only
+`WriteFileSync` has the race test) and **SEV-004** (add a CI/governance guard
+requiring fresh security review before `fs_tools_portable.go` could ever enter an
+actual build target, in case a macOS/Windows runner is added later).
+
+Merged to `develop` 2026-08-19 (squash), MR !128. Needed to pick up `develop` twice
+before it would go green — once for T196's `h2` fix (unrelated `rust:audit` CI
+drift), once more for C015's own CI fix landing concurrently.
 
 <filled during execution>

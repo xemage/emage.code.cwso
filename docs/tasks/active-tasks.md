@@ -45,9 +45,6 @@
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
 | T191 | Fix `.env.jwt.dev` permission mismatch (chmod 600 vs non-root container user) | devops-engineer | pending | P0 | — | 2026-08-16 |
 | T192 | Fix JWT 401 mismatch between orchestrator and `phase2-integration.py` | backend-developer | pending | P1 | — | 2026-08-16 |
-| T195 | Portable `!linux` fallback for `fs_tools.go` path guard | backend-developer | in_progress | P1 | T194 | 2026-08-16 |
-| T196 | Bump `h2` to clear RUSTSEC-2026-0258 (`rust:audit` CI drift) | devops-engineer | in_progress | P0 | — | 2026-08-19 |
-| C015 | Mount user repo read-write (CWSO_WORKSPACE_HOST) **[SEC-C019-01 — T193+T194 satisfied, resumed, see task-C015.md]** | devops-engineer | in_progress | P0 | C010, C019, T193, T194 | 2026-08-16 |
 | C016 | make up one-command target **[RELEASE-GATING CONDITION — see note ¹]** | devops-engineer | pending | P0 | C012, C013, C014, C015 | 2026-08-16 |
 | C018 | E2E smoke test (v1.0 DoD executable) | qa-engineer | pending | P0 | C016, C017 | 2026-08-12 |
 | C020 | ADR-012: filesystem projection decision | solution-architect | pending | P0 | C010–C018 (CG1) | 2026-08-12 |

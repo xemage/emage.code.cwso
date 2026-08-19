@@ -2,11 +2,11 @@
 
 **ID:** T196
 **Owner:** devops-engineer
-**Status:** pending
+**Status:** done
 **Priority:** P0
 **Depends on:** —
 **Created:** 2026-08-19
-**Completed:** —
+**Completed:** 2026-08-19
 **Based on:** Discovered while landing MR !128 (T195) — `rust:audit` failed on a
 pipeline whose diff (a one-line CHANGELOG text correction) cannot possibly touch
 Rust dependencies. Same pattern as T190 (Go toolchain / `govulncheck` drift,
@@ -149,4 +149,23 @@ suppression flag.
 
 ## Execution notes
 
-<filled during execution>
+Bumped `h2` `0.4.14` → `0.4.16` via `cargo update -p h2` (lockfile-only, no
+`Cargo.toml` change — `hyper = "1"` / `hyper-util = "0.1"` in
+`services/cwso-rollout/Cargo.toml` were already permissive enough). Confirmed
+RUSTSEC-2026-0258 cleared (`cargo audit`: 0 vulnerabilities), the 2 pre-existing
+"allowed warning" advisories (`fxhash`, `paste`) left exactly as they were, and the
+full Rust workspace test suite (`cwso-git-shadow`, `cwso-merge-engine`, `cwso-hal`,
+`cwso-sparse`, `cwso-rollout` — 146 tests) passes with 0 regressions.
+
+Independent Tech Lead review (MR !130) returned **PASS, no conditions**:
+independently reproduced "0 vulnerabilities" locally with the exact pinned
+`cargo-audit` version, confirmed lockfile-only scope and no suppression flags added,
+confirmed the pre-existing warnings were unaffected, and confirmed an incidental
+`windows-sys`-family lockfile reshuffle (a normal `cargo update -p` side effect) is
+inert — all versions already present pre-change, Windows-only conditional
+dependencies, no effect on this project's Linux-only CI/build target.
+
+Merged to `develop` 2026-08-19 (squash), MR !130 — unblocked two independently-in-flight
+MRs that had hit the same content-independent drift: T195 (MR !128) and C015 (MR
+!129), both of which needed a second `develop` merge to pick this fix up before their
+own pipelines could go green.
