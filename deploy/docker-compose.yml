@@ -6,6 +6,59 @@ secrets:
     # POC-DEBT: File-based secret acceptable for dev/compose; prod needs external vault
 
 services:
+  # C015: pre-flight validation that CWSO_WORKSPACE_HOST (or the sample-workspace
+  # default) resolves to a real, non-empty directory on the host BEFORE the
+  # orchestrator container starts, gating it via `depends_on: condition:
+  # service_completed_successfully` below.
+  #
+  # Why a check container rather than relying on the bind mount to fail on a
+  # missing path: verified live against this stack's target Docker/Compose
+  # versions that a missing bind-mount source is NOT rejected -- Docker Engine
+  # silently creates an empty, root-owned directory at the missing host path
+  # instead of failing (this reproduces both with plain `docker run -v`/
+  # `--mount type=bind` and with Compose's own long-syntax `bind:
+  # create_host_path: false`, which is documented to prevent exactly this but is
+  # tracked as ineffective for local/non-Swarm `up` on the installed versions --
+  # see https://github.com/docker/compose/issues/13602). So "the mount
+  # succeeded" is not proof the host path existed; a separate, positive check is
+  # required.
+  #
+  # What is checked instead: non-emptiness. A real repository -- even a fresh
+  # `git init` with zero commits -- always contains at least `.git/`; the
+  # sample-workspace default always contains `hello.txt`; a directory Docker
+  # silently auto-created for a missing/mistyped CWSO_WORKSPACE_HOST is always
+  # completely empty. This is a reliable signal independent of the Engine/
+  # Compose auto-create behavior above, and does not require mounting anything
+  # beyond the workspace path itself (no broader host filesystem access).
+  workspace-check:
+    image: alpine:3.20
+    container_name: cwso-workspace-check
+    volumes:
+      - ${CWSO_WORKSPACE_HOST:-../sample-workspace}:/workspace-check:ro
+    command:
+      - sh
+      - -c
+      - |
+        if [ -z "$$(ls -A /workspace-check 2>/dev/null)" ]; then
+          echo "FATAL: CWSO workspace path is missing or empty." >&2
+          echo "  CWSO_WORKSPACE_HOST (defaults to ../sample-workspace) resolves to an empty directory." >&2
+          echo "  This usually means the host path does not exist -- Docker silently created an" >&2
+          echo "  empty directory there instead of failing outright." >&2
+          echo "  Set CWSO_WORKSPACE_HOST to the existing path of your repository and retry, e.g.:" >&2
+          echo "    CWSO_WORKSPACE_HOST=/path/to/your/repo docker compose -f deploy/docker-compose.yml up -d" >&2
+          exit 1
+        fi
+        echo "workspace check OK: $$(ls -A /workspace-check | wc -l) entries found in workspace"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    network_mode: "none"
+    # C015: trivial, short-lived shell check -- generous headroom over its
+    # actual single-process footprint, same defense-in-depth rationale as the
+    # other services' pids_limit values in this file.
+    pids_limit: 16
+
   orchestrator:
     image: cwso/orchestrator:dev
     build:
@@ -64,8 +117,21 @@ services:
       CWSO_ROLLOUT_SOCKET: "/run/cwso/rollout.sock"
     secrets:
       - jwt_secret
+    depends_on:
+      workspace-check:
+        condition: service_completed_successfully
     volumes:
-      - ../sample-workspace:/workspace:ro
+      # C015: CWSO_WORKSPACE_HOST points the orchestrator at the developer's own
+      # repository on the host; defaults to ../sample-workspace so the smoke
+      # test needs no configuration. Mount is read-write (rw) -- see
+      # docs/user/installation-v3.md, "Point CWSO at your own repository", for
+      # what read-write means in practice (shadow workspaces, not this mount,
+      # are where agent edits actually land -- this mount is the source of
+      # truth agents branch *from*) and how to append `:ro` here instead for a
+      # deliberately read-only deployment. Existence/non-emptiness of the host
+      # path is validated by the `workspace-check` service above before this
+      # container starts.
+      - ${CWSO_WORKSPACE_HOST:-../sample-workspace}:/workspace:rw
       - cwso-runtime:/run/cwso
     read_only: true
     cap_drop: ["ALL"]

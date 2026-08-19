@@ -200,8 +200,192 @@ code .
 
 Then use MCP tools from VS Code.
 
-## 11. Related docs
+## 11. Point CWSO at your own repository (`CWSO_WORKSPACE_HOST`)
+
+By default, `deploy/docker-compose.yml` mounts the bundled `sample-workspace/`
+directory into the orchestrator container at `/workspace`, so the smoke test
+in §2 (`python3 scripts/phase2-integration.py`) works with zero configuration.
+For real use, point CWSO at **your own repository** instead:
+
+```bash
+CWSO_WORKSPACE_HOST=/absolute/path/to/your/repo \
+  docker compose -f deploy/docker-compose.yml up -d
+```
+
+`CWSO_WORKSPACE_HOST` is a **host-side** path — the directory on the machine
+running Docker, not a path inside any container. It only changes what gets
+bind-mounted at `/workspace`; the in-container path itself
+(`CWSO_WORKSPACE=/workspace`, read by `orchestrator/internal/config/config.go`)
+is unchanged and not user-configurable.
+
+If `CWSO_WORKSPACE_HOST` is unset, the mount falls back to
+`../sample-workspace` (relative to `deploy/docker-compose.yml`) — the same
+demo directory used before this variable existed.
+
+### The mount is read-write
+
+`/workspace` is mounted **read-write** (`:rw`), not read-only. This is a
+deliberate default, not an oversight — see "Why read-write is the default"
+below for the evidence it rests on.
+
+**What "read-write" does *not* mean:** it does not mean an agent's edits are
+written directly and irreversibly into your working tree the moment a tool
+call runs. CWSO's actual edit model is:
+
+- The mounted repository (`CWSO_WORKSPACE_HOST`) is the **source of truth
+  agents branch *from***, and the target the orchestrator's own baseline file
+  tools (`read_file_sync`, `write_file_sync`, `list_dir`) operate against
+  directly.
+- Concurrent multi-agent code edits go through **shadow workspaces**
+  (`cwso-git-shadow`, `cwso-merge-engine`) — isolated, ephemeral copies where
+  agents actually make and merge changes — not the mounted repository
+  directly. The mount being read-write is what lets those shadow workspaces
+  be created from (and, once merged, written back to) your real repository in
+  the first place; it is not agents editing your working tree unmediated.
+
+**Host file permissions matter.** The orchestrator container runs as a
+non-root user (`cwso`, uid `100`/gid `101` — see `deploy/Dockerfile.orchestrator`).
+For the mount to be genuinely writable, that uid must have write permission
+on your repository directory on the host (e.g. `chmod o+w /path/to/your/repo`,
+or a matching group/ownership setup) — a bind mount being declared `:rw` in
+Docker only means the OS *permits* write attempts through it; standard POSIX
+file permissions on the host still apply and can still deny them.
+
+### Read-only escape hatch
+
+If you want CWSO to only ever read your repository, edit
+`deploy/docker-compose.yml` and change the orchestrator's workspace mount
+suffix from `:rw` to `:ro`:
+
+```yaml
+    volumes:
+      - ${CWSO_WORKSPACE_HOST:-../sample-workspace}:/workspace:ro
+      - cwso-runtime:/run/cwso
+```
+
+This is a deliberate, supported deployment option for anyone who wants a
+strictly read-only mount — the read-write default does not remove it.
+
+### Startup validation
+
+Before the orchestrator container starts, a `workspace-check` service in
+`deploy/docker-compose.yml` verifies the resolved workspace path (either your
+`CWSO_WORKSPACE_HOST` or the `sample-workspace` default) exists and is
+non-empty, and gates the orchestrator on it
+(`depends_on: workspace-check: condition: service_completed_successfully`).
+
+This exists because Docker Engine does **not** reject a bind mount whose host
+source path doesn't exist — it silently creates an empty, root-owned
+directory there instead (verified live against this stack's target
+Docker/Compose versions; this also affects Compose's own long-syntax
+`bind: create_host_path: false` flag, which is documented to prevent exactly
+this but is tracked upstream as ineffective for local/non-Swarm `up`:
+<https://github.com/docker/compose/issues/13602>). So a successful mount is
+not, by itself, proof the path you gave existed. `workspace-check` instead
+verifies the mounted directory is **non-empty** — true for any real
+repository (even a fresh `git init` with no commits, which still has
+`.git/`) and for the `sample-workspace` default (`hello.txt`), but never true
+for a directory Docker just auto-created because the path you gave it didn't
+exist. If you see:
+
+```
+FATAL: CWSO workspace path is missing or empty.
+```
+
+check that `CWSO_WORKSPACE_HOST` is spelled correctly and points at a path
+that already exists on the host.
+
+### Why read-write is the default: the safety evidence
+
+The read-write default is approved conditional on non-KVM sandbox
+trustworthiness evidence (Roadmap Approval, decision 3, 2026-08-13). Two
+distinct trust boundaries back it, and both need to hold for the default to
+be sound:
+
+1. **Container-level sandbox tiering (C019, `docs/artifacts/sandbox-trustworthiness-v1.md`).**
+   Audits properties P1-P4 (filesystem confinement, process isolation,
+   resource limits, network policy) for the `gvisor-fast-ephemeral`/
+   `docker-trusted` sandbox tiers used by dispatched sub-agent jobs. All four
+   are **MET** with live evidence. Two points from that artifact matter
+   specifically for this mount: (a) every sub-agent job dispatched through
+   `dispatch_concurrent_jobs` gets the workspace mounted **read-only**,
+   unconditionally, regardless of caller input (§4.1) — this compose file's
+   read-write mount is an orchestrator-container-to-host mount, not a
+   sub-agent-sandbox mount; and (b) the default compose stack as shipped does
+   not wire sandbox execution at all (§7 item 2) — so today, the actual
+   read-write exposure surface is the orchestrator's own trusted Go binary
+   and its `pathGuard`-confined file tools (item 2 below), not arbitrary or
+   LLM-generated code execution.
+
+2. **The in-process `pathGuard`/`fs_tools.go` trust boundary
+   (`orchestrator/internal/tools/fs_tools.go`).** C019's audit explicitly
+   scopes this out (§7 item 6) — it covers the container/volume boundary, not
+   which paths *inside* an already-mounted, already-writable `/workspace` a
+   given tool call may touch. That gap was tracked separately as
+   **SEC-C019-01** and is closed by two merged, independently
+   security-reviewed fixes:
+   - **T193** (symlink-escape fix, MR !126, security-engineer review PASS):
+     `pathGuard()` previously resolved symlinks and rejected escapes only for
+     targets that already exist on disk; for a **new** file written through a
+     symlinked intermediate directory, it fell through to the unresolved
+     path. `write_file_sync` (the only write-capable tool) could therefore be
+     made to write outside the workspace root. Fixed by resolving symlinks on
+     the nearest *existing* ancestor directory and re-verifying the
+     non-existent tail rejoined onto it before trusting the path.
+   - **T194** (TOCTOU fix, MR !127, security-engineer review
+     CONDITIONAL_PASS with no conditions blocking merge): `pathGuard()` only
+     proves a path safe **at the moment of the check**; each of
+     `ReadFileSync`, `WriteFileSync`, and `ListDir` then performed its actual
+     filesystem operation as a second, independently-timed step by path
+     string — a classic check-then-use race if a symlink were swapped into
+     place in between. Fixed by adding `secureResolveDirs`/`secureOpenLeaf`:
+     all three call sites now walk `pathGuard()`'s already-resolved canonical
+     path one component at a time via `openat(2)`/`mkdirat(2)`, each hop
+     anchored to the file descriptor from the *previous* hop and opened with
+     `O_NOFOLLOW` (the final leaf hop too), so a symlink swapped into any
+     component after `pathGuard()`'s check is refused by the kernel at that
+     exact hop rather than silently followed. The Linux-only implementation
+     (`//go:build linux`) matches CWSO's sole deployment target
+     (`deploy/Dockerfile.orchestrator` builds on Alpine); a portable
+     narrower-guarantee fallback for non-Linux dev builds is tracked
+     separately as **T195** (P1, not blocking) and does not apply to the
+     shipped container image this compose file builds and runs.
+
+   This task's own independent review of the current
+   `orchestrator/internal/tools/fs_tools.go` on this branch (2026-08-19,
+   post-T193/T194 — verified via `git log` that both merges are present on
+   `agent/devops-engineer/C015`) confirms both fixes are present as described
+   above and found no further gap in
+   `pathGuard`/`secureResolveDirs`/`secureOpenLeaf`: every write path
+   (`WriteFileSync`) and every read/list path (`ReadFileSync`, `ListDir`)
+   routes through `pathGuard()` followed by the `*at()`-anchored,
+   `O_NOFOLLOW` walk — there is no call site left that opens a
+   `pathGuard()`-checked path by a second, independently-timed path-string
+   lookup. This was not a read-only review: the file's own test suite
+   (`fs_tools_test.go`, 15 tests covering `pathGuard`, `secureResolveDirs`,
+   `secureOpenLeaf`, and each of the three tool call sites, including
+   `TestWriteFileSyncRaceAgainstSymlinkSwapNeverEscapesWorkspace`, an actual
+   TOCTOU race exercise) was run live with `go test ./internal/tools/...
+   -race` in a `golang:1.25-alpine` container matching
+   `deploy/Dockerfile.orchestrator`'s build stage — all 15 pass, race
+   detector clean. Nothing in the current tool surface creates a symlink at
+   runtime (both T193 and T194's own MRs confirm this and no change since
+   then adds that capability), so the residual exposure is exactly what both
+   fixes target: a symlink placed by something *outside* CWSO's own tool
+   surface (e.g. directly on the host, in the mounted repository) between a
+   `pathGuard()` check and its use — now handled by the kernel-enforced
+   `O_NOFOLLOW` walk rather than a second, racy check.
+
+   **What this does not cover:** the `pathGuard`/`fs_tools.go` boundary
+   governs the orchestrator's own baseline file tools only. It says nothing
+   about the safety of code an agent might execute *through* those tools
+   (e.g. running a script that itself writes elsewhere) — that is a
+   sandboxing concern (item 1 above), not a path-confinement one.
+
+## 12. Related docs
 
 - `docs/user/installation-v2.md` (full feature and rollout reference)
 - `docs/user/ide-integration-v2.md` (IDE-focused setup and troubleshooting)
+- `docs/artifacts/sandbox-trustworthiness-v1.md` (C019 — container-level
+  sandbox tiering evidence cited above)
 - `README.md`
