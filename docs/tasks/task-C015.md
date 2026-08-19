@@ -2,11 +2,11 @@
 
 **ID:** C015
 **Owner:** devops-engineer
-**Status:** in_progress
+**Status:** done
 **Priority:** P0
 **Depends on:** C010, C019, T193, T194
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-19
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (C015 row, open question 3); docs/plans/plan-cwso-v1.0-phase1-one-command-stack-v2.md
 
 ## Resumed 2026-08-16 — both blockers resolved
@@ -156,4 +156,50 @@ with the exact mount error.
 
 ## Execution notes
 
-<filled during execution>
+This task had two false-start recoveries, both handled with the same "treat inherited
+work as unverified" discipline established for C019's earlier recovery.
+
+**Recovery 1** (infra session limit killed the resumed worker mid-task, no commit
+left): the fresh session independently re-reproduced the Docker silent-empty-directory
+bind-mount behavior from scratch (not just cited the inherited claim), independently
+re-read `orchestrator/internal/tools/fs_tools.go` to confirm T193/T194's fixes were
+genuinely present at all three call sites (rather than trust the salvaged CHANGELOG
+text asserting this), live-ran all four brief scenarios against the real stack
+(default `sample-workspace` healthy; custom real-repo path genuinely writable;
+nonexistent path caught by `workspace-check`'s `FATAL` exit with the orchestrator
+never reaching `Up`; manual `:ro` override correctly rejects writes with "Read-only
+file system"), and fixed a real section-numbering bug in the salvaged
+`installation-v3.md` content (§11 had been skipped).
+
+**Recovery 2** (a genuinely new, content-caused CI failure, not the T196 RUSTSEC
+drift): `e2e:phase2` failed with `workspace-check` exiting 1 in the real GitLab
+pipeline. Root-caused to this project's Docker-socket-binding CI runners: `docker
+compose` runs inside the CI job container but talks to a daemon on a different
+filesystem, so any relative bind-mount source (including the parameterized
+`CWSO_WORKSPACE_HOST` default) silently resolves to an empty directory there — a
+pre-existing, previously-invisible CI limitation (same root cause already solved once
+for `.env.jwt.dev`) that `workspace-check` is simply the first thing to correctly
+detect and fail loudly on. Confirmed no host-visible path exists in this runner's
+config to work around it properly, confirmed `scripts/phase2-integration.py` never
+reads/writes through the raw `/workspace` mount (all workspace interaction goes
+through `git-shadow`'s isolated shadow-workspace RPCs), and fixed via a CI-only
+`deploy/docker-compose.ci.yml` override — verified against the real pipeline (not
+just local Docker, which can't reproduce this failure mode), with the real
+`deploy/docker-compose.yml` left completely unweakened.
+
+Independent security-engineer review (MR !129) returned **PASS, no conditions**:
+every load-bearing claim re-derived live — Docker's bind-mount behavior reproduced
+from scratch, all four scenarios re-run against the real stack including the
+critical negative case, `fs_tools.go` read directly confirming T193/T194 present at
+all three call sites, and SEC-C019-01 substantively verified satisfied (the docs cite
+both trust boundaries — C019's container-level P1-P4 and T193/T194's in-process
+fixes — separately with mechanism-level detail, not a blanket P1-P4 citation, per the
+condition's explicit requirement). One Low, non-blocking finding: **SEC-C015-01** —
+`workspace-check`'s non-emptiness signal is coarse (a stray file could pass without
+being a real repo); a usability gap, not exploitable, optional follow-up only.
+
+Merged to `develop` 2026-08-19 (squash), MR !129, after picking up `develop` twice
+(once for the CI fix's own base, once more for T196's `h2` bump to clear an unrelated
+`rust:audit` drift). **This closes the entire C019 → T193 → T194 → C015
+security-hardening chain** for the in-process trust boundary that governs this
+now-read-write, externally-managed repository mount.
