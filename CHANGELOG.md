@@ -4,6 +4,55 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Security (T195)
+- **`feat(tools)`**: Added `orchestrator/internal/tools/fs_tools_portable.go`
+  (`//go:build !linux`), a portable counterpart to T194's Linux-only
+  `fs_tools.go`. Fast-follow from T194's MR (!127) per the reviewing
+  security engineer's platform-trade-off recommendation. Before this
+  change, `fs_tools.go` being gated `//go:build linux` for its ENTIRE
+  contents meant `internal/server/server.go` (which references
+  `tools.ReadFileSync`/`tools.WriteFileSync`/`tools.ListDir` unconditionally,
+  with no build tag) failed to compile the whole `orchestrator` module on
+  any non-Linux `GOOS` — confirmed via `GOOS=darwin go build ./...` failing
+  before this change and succeeding after — and, more importantly, the
+  entire T193+T194 regression test suite silently vanished from
+  `go test ./...` on non-Linux machines with zero visible warning. This
+  file restores both: same exported surface (`ReadFileSync`,
+  `WriteFileSync`, `ListDir`, same `Workspace string` struct shape, same
+  tool names `read_file_sync`/`write_file_sync`/`list_dir`), so
+  `server.go` compiles unmodified against either build tag. T193's
+  symlink-resolution logic (`pathGuard`, `resolveNearestExistingAncestor`,
+  `withinWorkspace`) is reused verbatim (it has no `syscall.Openat`/
+  `Mkdirat` dependency and is fully portable), so the T193 fix is not
+  regressed on non-Linux.
+  **Explicit, deliberately NARROWER guarantee — read before relying on
+  this build for anything security-sensitive:** this build does NOT have
+  T194's kernel-enforced, `openat(2)`/`O_NOFOLLOW`-anchored atomicity
+  available (Go's standard library only exposes `Openat`/`Mkdirat` for
+  `GOOS=linux`). Instead it re-verifies path containment/symlink-safety a
+  second time via `reverifyBeforeUse` (a second `pathGuard` call)
+  immediately before each `os.Open`/`os.WriteFile`/`os.MkdirAll`/
+  `os.ReadDir` call, minimizing — NOT eliminating — the check-then-use
+  window. A symlink swap landing exactly inside that shortened window is
+  still theoretically possible on this build. This is not just a
+  theoretical caveat: a concurrent-race regression test
+  (`TestPortableWriteFileSyncRaceAgainstSymlinkSwapNeverEscapesWorkspace`,
+  ported from T194's Linux race test) was observed to actually reproduce
+  an out-of-workspace write both with and without `-race` — independent
+  security review reproduced it at a materially higher rate under `-race`
+  (47% across 15 runs, vs. 7% across 15 runs without `-race` — the race
+  detector's scheduler perturbation widens the window but does not create
+  it) — concrete, empirical confirmation that the window is real,
+  not hypothetical, even though CWSO's actual and only deployment target
+  (`deploy/Dockerfile.orchestrator`, Alpine Linux) never builds or ships
+  this file — `.gitlab-ci.yml`'s `go test ./... -race` job runs on Linux
+  only, so it never compiles or exercises this build either. New
+  `fs_tools_portable_test.go` ports the T193/T194 symlink-at-component and
+  symlink-at-leaf rejection cases (plus the race stress test) to close the
+  "test suite silently disappears on non-Linux" gap for `go test
+  ./internal/tools/...`. See the package doc comment atop
+  `fs_tools_portable.go` for the full narrower-guarantee writeup.
+
 ### Deployment (C015)
 - **`feat(deploy)`**: Introduced `CWSO_WORKSPACE_HOST` so operators can point
   the orchestrator at their own repository instead of the bundled

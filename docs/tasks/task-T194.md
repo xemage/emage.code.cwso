@@ -2,11 +2,11 @@
 
 **ID:** T194
 **Owner:** backend-developer
-**Status:** pending
+**Status:** done
 **Priority:** P0 — blocking
 **Depends on:** T193 (merged — this task builds on its fix, does not replace it)
 **Created:** 2026-08-16
-**Completed:** —
+**Completed:** 2026-08-16
 **Based on:** Discovered by the T193 worker while fixing the `pathGuard()` symlink-escape
 gap (task T193, MR !126), and independently assessed by the security-engineer
 reviewer of that MR. This task carries forward the reviewer's corrected framing of
@@ -185,4 +185,39 @@ that this task's own investigation couldn't close.
 
 ## Execution notes
 
-<filled during execution>
+Implemented the preferred `*at()`-anchored approach from the brief: `secureResolveDirs`/
+`secureOpenLeaf` (naming approximate — see final source) walk the already-verified
+canonical path one directory component at a time via `openat(2)`, each hop anchored
+to the file descriptor obtained by the *previous* hop, with `O_NOFOLLOW` on every
+hop including the final one (`O_DIRECTORY|O_NOFOLLOW` for intermediate directories).
+If a symlink is swapped into any component after `pathGuard`'s check but before this
+walk runs, the corresponding `openat()` call is refused by the kernel at that exact
+hop — there is no remaining independently-timed top-down name lookup for a race to
+win against. Applied to all three call sites (`WriteFileSync`, `ReadFileSync`,
+`ListDir`). New regression tests for symlink-at-intermediate-component and
+symlink-at-leaf rejection, plus a best-effort concurrent race test. All of T193's
+existing tests unmodified and passing. Full module `go test ./... -race` clean,
+`gofmt`/`vet`/build clean.
+
+Requires `//go:build linux` (confirmed: Go's stdlib exposes `syscall.Openat`/
+`Mkdirat` only on Linux; no equivalent on Darwin, none at all on Windows) — the
+entire `fs_tools.go` file, not just the new logic, carries this tag. Cross-compilation
+confirmed this breaks native non-Linux builds of the whole `orchestrator` module
+(`orchestrator/internal/server/server.go` references these types unconditionally),
+though CI and `deploy/Dockerfile.orchestrator` (both `golang:1.25-alpine`, Linux-only)
+are entirely unaffected.
+
+Independent security-engineer review (MR !127) returned **CONDITIONAL_PASS, no
+blocking conditions on the merge itself**: re-derived the fd-anchoring chain
+line-by-line for all three call sites (confirmed no hop silently falls back to a
+fresh path-based lookup, which would have reintroduced the race), independently
+reran the full test/vet/build/`-race` suite, confirmed T193's fix and tests
+genuinely unmodified. Per the orchestrator's process, the platform trade-off (Linux-
+only fix vs. portable fallback) was explicitly held as an open decision point pending
+the reviewer's recommendation rather than folded into the pass/fail verdict — the
+reviewer recommended shipping the Linux-only fix as-is (CI/production unaffected)
+and tracking the portable fallback separately, non-blocking; the human accepted that
+recommendation. Fast-follow tracked as **T195** (P1, not blocking C015 or this task).
+
+Merged to `develop` 2026-08-16 (squash), MR !127. **C015 is now fully unblocked**
+(both T193 and T194 satisfied) and was resumed immediately after this merge.
