@@ -110,6 +110,29 @@ go:test:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH
 
+# C034: MCP protocol contract snapshot. Dedicated job (separate from go:test,
+# which also runs this test as part of `./...`) so protocol-surface drift
+# gets its own clearly-labeled, fast-feedback pipeline signal rather than
+# being buried in the full suite. Compares the live method/notification/
+# error-code/tool-schema surface against the committed golden fixture
+# (internal/server/testdata/mcp_contract_snapshot_v1.json) and fails if they
+# differ. Never passes -update-snapshot — drift must fail the pipeline, not
+# self-heal; the fixture can only be regenerated deliberately via
+# `make mcp-contract-snapshot-update`, run locally and committed as a
+# reviewable diff.
+go:mcp-contract-snapshot:
+  stage: test
+  image: golang:1.25.13
+  cache:
+    key: go-mod-$CI_COMMIT_REF_SLUG
+    paths: [.gopath/pkg/mod]
+  script:
+    - cd orchestrator
+    - go test ./internal/server/... -run TestMCPContractSnapshot -v
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
 rust:test:
   stage: test
   image: rust:1.87-slim
