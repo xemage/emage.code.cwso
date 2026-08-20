@@ -2,7 +2,7 @@
 
 > Filename: `ADR-013-mcp-protocol-path.md`
 
-- **Status**: proposed
+- **Status**: accepted
 - **Date**: 2026-08-16
 - **Decider(s)**: human (decision authority, roadmap Approval §, decision 2, 2026-08-13); solution-architect (this record — rationale write-up and conformance-suite scoping, not the decision itself)
 - **Tasks**: C030 (gap table, done — MR !112), C031 (this ADR), C032 (execute the decision), C033 (client compatibility matrix), C034 (contract snapshot test)
