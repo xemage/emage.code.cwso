@@ -2,11 +2,11 @@
 
 **ID:** T191
 **Owner:** devops-engineer
-**Status:** in_progress
+**Status:** done
 **Priority:** P0
 **Depends on:** —
 **Created:** 2026-08-16
-**Completed:** —
+**Completed:** 2026-08-19
 **Based on:** Discovered incidentally during C019 (sandbox trustworthiness audit), MR !123 §6 — not part of C019's scope, logged separately per the orchestrator's defect-disposition call.
 
 ## Objective
@@ -130,5 +130,63 @@ bind-mount-vs-Swarm-secret architecture decision, which is bigger than this task
 scope alone.
 
 ## Execution notes
+
+**First commit**: added a `jwt-secret-fix` pre-flight helper service, gated into
+orchestrator's `depends_on` (same pattern as C015's `workspace-check`). It looked up
+the orchestrator image's live `cwso` uid/gid (not hardcoded) and `chown`ed the host
+`.env.jwt.dev` to match, mode staying `600`. All three brief-listed candidate
+approaches (Swarm secrets, host chgrp/ACLs, root-then-drop-privileges) were tested
+live and rejected for verified reasons, documented in the MR.
+
+**Independent Tech Lead review FAILED this first commit**: live-reproduced that the
+helper's bind mount of the secret file caused Docker to silently auto-vivify an
+empty, root-owned directory at `.env.jwt.dev`'s host path whenever the file was
+genuinely absent (before any in-container check could run) — corrupting the host
+filesystem on a fresh clone and breaking `scripts/cwso-bootstrap-secrets.sh`'s
+recovery path (`Is a directory` hard failure). This was a real regression versus
+pre-task behavior for that exact scenario.
+
+**Second commit** found a deeper root cause than the first review flagged: `orchestrator`'s
+own top-level Compose `secrets: file:` stanza *also* independently bind-mounted the
+same host path, and Compose materializes every service's mounts up front for a
+single `up` invocation (not gated by `depends_on` start-order) — so fixing only
+`jwt-secret-fix`'s mount would not have stopped `orchestrator`'s own mount from
+reproducing the identical bug. Fix: stop bind-mounting the host path into any
+container. `jwt-secret-fix` now mounts the always-existing parent directory, checks
+for the named file inside it, and (if present) copies — never mutates in place — the
+secret into a new named Docker volume (`cwso-jwt-secret`) at `/run/secrets/jwt_secret`,
+owned by the looked-up `cwso` uid/gid, mode 600. `orchestrator` mounts that same
+named volume read-only at the identical in-container path `config.go` already
+expects (`config.go` itself untouched throughout). Named volumes have no host source
+path, closing the auto-vivification bug class for both services at once, not just
+half of it. Also detects a stray leftover directory (from a pre-fix run) and refuses
+to treat it as the secret, with best-effort cleanup.
+
+Independent Tech Lead re-review returned **CONDITIONAL_PASS**: every claim
+independently live-reproduced on the actual host filesystem — the exact check the
+first review's own value came from, deliberately repeated rather than trusted this
+time. Missing-secret scenario: `.env.jwt.dev` genuinely stays absent (not a
+directory), `config.go`'s original fail-closed error unchanged, clean bootstrap
+recovery afterward. Happy path: host file mode/owner/content unchanged, and — going
+further than the fix's own claim — byte-identical content confirmed between the host
+file and the staged volume copy. Stray-directory path: a manually planted root-owned
+directory correctly refused, not corrupted further. New `DAC_READ_SEARCH` capability
+grant (needed because the helper now reads file content to copy it, not just mutate
+metadata) confirmed minimal — no `DAC_OVERRIDE`. `config.go` diff-confirmed
+untouched. Two small process conditions, both resolved before merge: the MR
+description's `git diff --stat` claim was stale (said 2 files, actually 4 including
+the two orchestrator-owned ledger files) — corrected directly; and confirming the
+correct MR-gating pipeline (not a redundant duplicate that had separately hit an
+unrelated runner infra flake) actually finished green — it did, after one transient
+runner hang (`check:version-drift` produced zero trace output for 20+ minutes,
+resolved cleanly on retry, consistent with infra flakiness rather than content).
+
+Incidentally found and independently re-verified during this task (not fixed here,
+logged separately as **T197**, P2): `CWSO_IPC_ALLOWED_GIDS` is hardcoded to a gid
+that doesn't match the orchestrator's actual live gid. Confirmed **latent, not an
+active access-control gap** — the parallel `CWSO_IPC_ALLOWED_UIDS` allowlist already
+matches the orchestrator's real uid, and the allowlist check is `uid OR gid`.
+
+Merged to `develop` 2026-08-19 (squash), MR !132 — unblocks **C016**.
 
 <filled during execution>
