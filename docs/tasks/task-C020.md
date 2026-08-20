@@ -2,11 +2,11 @@
 
 **ID:** C020
 **Owner:** solution-architect
-**Status:** in_progress
+**Status:** done
 **Priority:** P0
 **Depends on:** C010–C018 (gate CG1)
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-20
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (B2, §2.5 risk 1); docs/plans/plan-cwso-v1.0-phase2-real-filesystem-v1.md
 
 ## Objective
@@ -95,4 +95,63 @@ target), that is `unclear_requirements` / `critical` — stop and ask before wri
 
 ## Execution notes
 
-<filled during execution>
+Wrote `docs/decisions/ADR-012-shadow-workspace-filesystem-projection.md`, scoring
+all three mechanisms (OverlayFS bind-mount, FUSE, materialise-to-tmpfs) against
+all four required host-matrix rows (Linux+KVM, Linux no-KVM/degraded, rootless
+Docker, SELinux-enforcing) — 12/12 cells, none blank. Recommendation: **GO,
+materialise-to-tmpfs** (eager per-workspace materialisation at creation time +
+`inotify`-driven write-back into the git-shadow blob store, with a periodic
+hash-based reconciliation pass as the correctness backstop for missed/overflowed
+`inotify` events). OverlayFS and FUSE both rejected on the same core finding:
+both require a real `mount(2)`/`fusermount` call from a trusted CWSO process,
+a capability withheld everywhere under this project's hardened posture
+(`cap_drop: ["ALL"]` on every service in `deploy/docker-compose.yml`); the
+chosen mechanism reuses the tmpfs pattern already proven working under that
+exact posture (`git-shadow`'s own service block) and extends the already-
+reviewed T194 `pathGuard`/`secureResolveDirs`/`secureOpenLeaf` TOCTOU-safe path
+rather than opening new security-sensitive surface. C025 (documented IPC-only
+fallback) explicitly not activated — this is a GO, not a NO-GO.
+
+Honestly flagged, not hidden: the task's literal "materialise-to-tmpfs-**on-
+open**" option name implies a lazy per-open trigger that isn't achievable
+without FUSE-style syscall interception (which this option specifically
+avoids); the ADR's actual recommendation is a reinterpretation — eager
+materialisation of the whole workspace tree at creation time, not per-file
+on open — surfaced prominently in its own "A naming note, addressed honestly"
+section and as an explicit human sign-off item, not buried in the body.
+Several host-matrix cells are honestly hedged (no artifact in this repo
+documents a minimum supported kernel version, confirms CWSO has ever run on
+rootless Docker or an SELinux-enforcing host, or confirms gVisor's FUSE-
+passthrough maturity on this project's pinned version) rather than asserted
+with manufactured confidence.
+
+**VERDICT: PASS, no conditions** (independent Tech Lead review, MR !142) —
+every load-bearing citation independently re-verified directly against
+source, not trusted from the ADR's own prose: the `POC-DEBT (P2-1)` marker
+at `services/cwso-git-shadow/src/main.rs:11` (verbatim match); the
+`git-shadow` tmpfs config and `cap_drop: ["ALL"]` posture at
+`deploy/docker-compose.yml:361-364` (verbatim match); `router.go`'s
+`resolve`/`resolveDockerTrusted`/`resolveFirecracker` behavior (confirmed:
+100% of no-KVM traffic silently routes to gVisor); `fs_tools.go`'s
+`pathGuard`/`secureResolveDirs`/`secureOpenLeaf` line citations (exact
+match at lines 65/201/256); host-matrix completeness (12/12 non-blank
+cells); the core `cap_drop`-blocks-mount-but-not-tmpfs architectural
+argument independently assessed as sound; the hedged cells confirmed
+genuinely hedged (not manufactured false modesty); house-format compliance,
+correct ADR-012 numbering, `Status: proposed` (not self-approved), and the
+"Approval required" section's four explicit sign-off items all confirmed
+present and substantive. File ownership confirmed clean — exactly one new
+file, no code or other docs touched.
+
+Solution Architect has no git/Bash tooling — the orchestrator independently
+spot-checked the same load-bearing citations before pushing the branch and
+opening MR !142 on the agent's behalf, mirroring the C031 precedent. MR !142
+(`agent/solution-architect/C020`), merged to `develop`.
+
+**Human approval required before C021 (implementation) may start** — see
+the ADR's "Approval required" section for the four explicit items needing
+sign-off: the mechanism choice itself; the on-open naming reinterpretation;
+confirmation OverlayFS/FUSE are rejected-for-v1.0 (not closed-forever), with
+the ADR's stated Reversal criteria as the correct bar for reopening; and
+confirmation C025 stays dormant. `active-tasks.md`'s C021 row now carries
+this explicitly as a blocking dependency alongside C020 itself.
