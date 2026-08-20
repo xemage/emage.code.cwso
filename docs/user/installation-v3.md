@@ -23,11 +23,10 @@ python3 --version
 
 From a shell on the machine where CWSO is running:
 
-<!-- NOTE: profiles removed in v0.8.0 (C010); this block must stay identical in README.md and installation-v3.md -->
+<!-- NOTE: profiles removed in v0.8.0 (C010); one-command `make up` adopted in v1.0 (C016);
+     this block must stay identical in README.md and installation-v3.md -->
 ```bash
-make build
-docker compose -f deploy/docker-compose.yml up -d
-curl -sS http://127.0.0.1:8080/healthz
+make up
 python3 scripts/phase2-integration.py
 ```
 

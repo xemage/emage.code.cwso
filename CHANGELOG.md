@@ -4,6 +4,49 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Added (C016)
+- **`feat(make)`**: Added `make up` -- the one-command front door for the
+  stack, collapsing the previously-manual 7-step startup (bootstrap secrets,
+  build, start, wait for health, mint a token, hand-assemble an MCP client
+  config) into a single invocation. Runs, in order and failing fast with a
+  non-zero exit and a human-readable message at the first failing step (no
+  half-started, silently-partial state): (1) `scripts/cwso-bootstrap-secrets.sh`
+  (C012, called as-is, not reimplemented); (2) `docker compose build`; (3)
+  `docker compose up -d`; (4) polls `http://127.0.0.1:8080/healthz` every 2s
+  until it returns 200 or a 120s deadline is hit, on timeout printing the last
+  50 lines of `docker compose logs` to stderr before exiting 1; (5) mints an
+  MCP token via `scripts/cwso-token.sh` (C013, called as-is, at that script's
+  own default role/TTL -- not hardcoded here). On success, prints a
+  ready-to-paste MCP client config block (the `.vscode/mcp.json` /
+  `.cursor/mcp.json` shape from `docs/user/ide-integration-v2.md`, token
+  embedded directly rather than via `${env:CWSO_MCP_TOKEN}`) between
+  `===== PASTE INTO YOUR MCP CLIENT =====` / `===== END =====` markers. Only
+  the minted token is ever printed -- the underlying JWT signing secret
+  (`.env.jwt.dev` / the staged `cwso-jwt-secret` volume, T191) is never
+  written to stdout/stderr by this target, matching the same rule
+  `scripts/cwso-bootstrap-secrets.sh` and `scripts/cwso-token.sh` already
+  enforce.
+  Also added `make down` (alias for the existing `make stop`, i.e. `docker
+  compose down`) for naming symmetry with `make up`; `make logs` (`docker
+  compose logs -f`) already existed and needed no change.
+  This closes the release-gating condition tracked on this task since C010's
+  review (chain of custody: C010's documented `docker compose up -d`
+  quick-start failed at the orchestrator on a fresh clone missing
+  `.env.jwt.dev` -> C012 built the bootstrap script but nothing called it yet
+  -> this task is that caller). Verified live on a genuinely clean state
+  (`rm -f .env.jwt.dev && make down && make up`): reaches a healthy
+  orchestrator with zero manual steps, the printed config block is valid
+  JSON, and the embedded token is accepted by an authenticated `tools/list`
+  call against `/mcp`; `make down` cleanly stops the stack; a forced port
+  8080 conflict makes `make up` fail fast at step 3/5 with a clear message
+  and non-zero exit rather than hanging or partially starting.
+- **`docs`**: Updated the shared quick-start command block (kept
+  byte-identical between `README.md` and `docs/user/installation-v3.md` per
+  the existing C002 convention) to call `make up` instead of the raw `make
+  build` + `docker compose ... up -d` + `curl .../healthz` sequence it
+  replaces; the `python3 scripts/phase2-integration.py` smoke-test line is
+  unchanged.
+
 ### Deployment (T191 follow-up)
 - **`fix(deploy)`**: Fixed a regression in the original T191 `jwt-secret-fix`
   helper found by Tech Lead review (MR !132) via live reproduction: the

@@ -5,7 +5,7 @@ SHELL := /bin/bash
 COMPOSE := docker compose -f deploy/docker-compose.yml
 
 .PHONY: help build build-orchestrator build-git-shadow build-merge-engine \
-	test test-go test-rust run stop logs inspector demo smoke-local clean lint fmt release-assets doctor
+	test test-go test-rust run up stop down logs inspector demo smoke-local clean lint fmt release-assets doctor
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -33,8 +33,71 @@ test-rust: ## Run Rust test suites in container (placeholder until Phase 2)
 run: ## docker compose up
 	$(COMPOSE) up --build
 
+up: ## One command: bootstrap secrets -> build -> start -> wait for health -> mint token -> print MCP config (C016)
+	@set -euo pipefail; \
+	echo "==> [1/5] Bootstrapping secrets (scripts/cwso-bootstrap-secrets.sh)"; \
+	if ! bash scripts/cwso-bootstrap-secrets.sh; then \
+		echo "make up: FAILED at step 1/5 (bootstrap secrets) -- see output above" >&2; \
+		exit 1; \
+	fi; \
+	echo "==> [2/5] Building images (docker compose build)"; \
+	if ! $(COMPOSE) build; then \
+		echo "make up: FAILED at step 2/5 (docker compose build) -- see output above" >&2; \
+		exit 1; \
+	fi; \
+	echo "==> [3/5] Starting stack (docker compose up -d)"; \
+	if ! $(COMPOSE) up -d; then \
+		echo "make up: FAILED at step 3/5 (docker compose up -d) -- see output above" >&2; \
+		echo "        run 'make down' to clean up any partially-started containers, then retry" >&2; \
+		exit 1; \
+	fi; \
+	echo "==> [4/5] Waiting for http://127.0.0.1:8080/healthz (up to 120s)"; \
+	healthy=""; \
+	last_code=""; \
+	deadline=$$((SECONDS + 120)); \
+	while [ "$$SECONDS" -lt "$$deadline" ]; do \
+		last_code="$$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:8080/healthz 2>/dev/null || true)"; \
+		if [ "$$last_code" = "200" ]; then healthy=1; break; fi; \
+		sleep 2; \
+	done; \
+	if [ -z "$$healthy" ]; then \
+		echo "make up: FAILED at step 4/5 -- http://127.0.0.1:8080/healthz did not return 200 within 120s (last status: $${last_code:-no response})" >&2; \
+		echo "---- last 50 lines of 'docker compose logs' ----" >&2; \
+		$(COMPOSE) logs --tail=50 >&2 || true; \
+		echo "        run 'make logs' for the full stream, or 'make down' to stop the stack" >&2; \
+		exit 1; \
+	fi; \
+	echo "==> [5/5] Minting MCP token (scripts/cwso-token.sh)"; \
+	token="$$(bash scripts/cwso-token.sh)"; \
+	if [ -z "$$token" ]; then \
+		echo "make up: FAILED at step 5/5 (token minting produced no output) -- see stderr above" >&2; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	echo "CWSO stack is healthy and ready."; \
+	echo ""; \
+	echo "===== PASTE INTO YOUR MCP CLIENT ====="; \
+	printf '%s\n' '{'; \
+	printf '%s\n' '  "servers": {'; \
+	printf '%s\n' '    "cwso": {'; \
+	printf '%s\n' '      "type": "http",'; \
+	printf '%s\n' '      "url": "http://127.0.0.1:8080/mcp",'; \
+	printf '%s\n' '      "headers": {'; \
+	printf '        "Authorization": "Bearer %s",\n' "$$token"; \
+	printf '%s\n' '        "Origin": "http://localhost"'; \
+	printf '%s\n' '      }'; \
+	printf '%s\n' '    }'; \
+	printf '%s\n' '  }'; \
+	printf '%s\n' '}'; \
+	echo "===== END ====="; \
+	echo ""; \
+	echo "Paste the block above into .vscode/mcp.json (VS Code) or .cursor/mcp.json (Cursor)."; \
+	echo "The token expires per scripts/cwso-token.sh's default TTL; re-run 'make up' or 'scripts/cwso-token.sh' to mint a new one."
+
 stop: ## docker compose down
 	$(COMPOSE) down
+
+down: stop ## Alias for 'stop' (docker compose down) -- symmetry with 'up' (C016)
 
 logs: ## Tail compose logs
 	$(COMPOSE) logs -f
