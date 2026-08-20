@@ -45,7 +45,6 @@
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
 | T192 | Fix JWT 401 mismatch between orchestrator and `phase2-integration.py` | backend-developer | pending | P1 | — | 2026-08-16 |
 | T197 | Fix `CWSO_IPC_ALLOWED_GIDS` drift (hardcoded gid 100 vs orchestrator's live gid 101) | devops-engineer | pending | P2 | — | 2026-08-19 |
-| C016 | make up one-command target **[RELEASE-GATING CONDITION — T191 satisfied, see note ¹]** | devops-engineer | in_progress | P0 | C012, C013, C014, C015, T191 | 2026-08-20 |
 | C018 | E2E smoke test (v1.0 DoD executable) | qa-engineer | pending | P0 | C016, C017 | 2026-08-12 |
 | C020 | ADR-012: filesystem projection decision | solution-architect | pending | P0 | C010–C018 (CG1) | 2026-08-12 |
 | C021 | Implement filesystem projection | backend-developer | pending | P0 | C020 (GO) | 2026-08-12 |
@@ -80,36 +79,32 @@
 > C025 activates only on an ADR-012 NO-GO. Gate dependencies (CG0–CG4) are noted inline.
 > CG0 (C001–C005, C030) cleared 2026-08-16 — see `docs/tasks/completed-tasks.md`.
 
-> ¹ **Tracked condition (originated CONDITIONAL_PASS, Tech Lead review of C010/MR !113,
-> 2026-08-16; refined CONDITIONAL_PASS, Tech Lead review of C012/MR !115, 2026-08-16):**
-> C010 made the documented `docker compose up -d` quick-start the default path, but
-> that path fails at the orchestrator container with a JWT-secret config error on any
-> checkout lacking a manually-created `.env.jwt.dev`. C012 (merged, CONDITIONAL_PASS)
-> built a correct, verified bootstrap script (`scripts/cwso-bootstrap-secrets.sh`) but
-> the C012 review found **nothing currently calls it** — no Makefile `up` target exists
-> yet, so a fresh clone following today's docs still hits the error. The condition
-> therefore moves from C012 to **C016**, which is the task that actually wires the
-> bootstrap script into the one-command path. Closing this condition requires **all
-> three**: (a) C016 lands and its `make up` target invokes
-> `scripts/cwso-bootstrap-secrets.sh` before starting the stack; (b) re-verification on
-> a genuinely fresh clone that the *documented* quick-start succeeds with zero manual
-> file creation; (c) a follow-up update to `README.md` / `docs/user/installation-v3.md`'s
-> quick-start sections once C016 lands, since neither currently mentions the bootstrap
-> script or `make up` — C016's brief has been amended (2026-08-16) to permit this
-> narrow quick-start edit (same precedent as C002/C010/C014), since `C050` ("write the
-> single user guide") is much further downstream and cannot be relied on to close this
-> gap before release. This is release-gating, not backlog — see `docs/tasks/task-C016.md`
-> § "Release-gating condition" and `docs/tasks/task-C062.md` ("Release v1.0.0"). C010 and
-> C012 are both unaffected on their own merits: both diffs were independently reviewed
-> and confirmed correct and complete. **Addendum (2026-08-16, discovered during C019/MR
-> !123; resolved 2026-08-19):** even once C016 lands, `make up` would have still failed
-> acceptance criterion #1 on a genuinely fresh clone for a *second*, unrelated reason —
-> `.env.jwt.dev` born `chmod 600`, unreadable by the orchestrator container's non-root
-> user. Tracked and fixed as **T191** (MR !132, PASS after one re-review round —
-> Docker's bind-mount auto-vivification of the secret path was closed via a
-> parent-dir-mount + named-volume-staging redesign, not just a chown-in-place fix).
-> **This addendum is now resolved** — C016 depends on T191 (see the ledger row above)
-> and can proceed without rediscovering this bug. See `docs/tasks/task-C016.md`'s
-> "Release-gating condition" section for the full history.
+> ¹ **RESOLVED 2026-08-20.** Tracked condition (originated CONDITIONAL_PASS, Tech Lead
+> review of C010/MR !113, 2026-08-16; refined CONDITIONAL_PASS, Tech Lead review of
+> C012/MR !115, 2026-08-16): C010 made the documented `docker compose up -d`
+> quick-start the default path, but that path failed at the orchestrator container
+> with a JWT-secret config error on any checkout lacking a manually-created
+> `.env.jwt.dev`. C012 (merged, CONDITIONAL_PASS) built a correct, verified bootstrap
+> script (`scripts/cwso-bootstrap-secrets.sh`) but its own review found **nothing
+> called it yet**. The condition moved to **C016**, the task that wires the bootstrap
+> script into a one-command path, with three closing requirements: (a) `make up`'s
+> first step invokes the bootstrap script; (b) fresh-clone re-verification with zero
+> manual file creation; (c) `README.md`/`docs/user/installation-v3.md`'s quick-starts
+> reference `make up`. A second addendum (2026-08-16, discovered during C019/MR !123)
+> found a related, independent gap — `.env.jwt.dev` born `chmod 600`, unreadable by
+> the orchestrator container's non-root user — tracked and fixed as **T191** (MR !132,
+> merged 2026-08-19).
+>
+> **C016 (MR !135, merged 2026-08-20, PASS no conditions) satisfies all three closing
+> requirements**, independently reproduced live by Tech Lead review: `make up` calls
+> `scripts/cwso-bootstrap-secrets.sh` first; a genuinely clean-state cycle (no
+> `.env.jwt.dev`, `make down && make up`) reaches a healthy, token-authenticated stack
+> in ~7.7s with zero manual steps (exercising T191's fix with no regression); and
+> `README.md`/`docs/user/installation-v3.md`'s quick-start blocks now call `make up`
+> and remain byte-identical to each other. **The full C010 → C012 → C016 (+ T191)
+> release-gating chain, tracked since 2026-08-16, is closed.** See
+> `docs/tasks/task-C016.md` § "Release-gating condition" and `docs/tasks/completed-tasks.md`
+> for the complete history; `docs/tasks/task-C062.md` ("Release v1.0.0") can rely on
+> this being satisfied without re-deriving it.
 
 Per-task briefs live alongside this file as `task-T001.md`, `task-T002.md`, …, `task-C001.md`, …
