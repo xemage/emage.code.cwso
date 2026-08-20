@@ -5,7 +5,8 @@ SHELL := /bin/bash
 COMPOSE := docker compose -f deploy/docker-compose.yml
 
 .PHONY: help build build-orchestrator build-git-shadow build-merge-engine \
-	test test-go test-rust run up stop down logs inspector demo smoke-local smoke clean lint fmt release-assets doctor
+	test test-go test-rust run up stop down logs inspector demo smoke-local smoke clean lint fmt release-assets doctor \
+	mcp-contract-snapshot mcp-contract-snapshot-update
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -26,6 +27,15 @@ test: test-go test-rust ## Run all tests
 test-go: ## Run Go test suite in container
 	docker run --rm -v $$PWD/orchestrator:/src -w /src golang:1.23-alpine \
 	  sh -c "apk add --no-cache git build-base && go test ./... -race -count=1"
+
+mcp-contract-snapshot: ## C034: verify the live MCP surface matches the committed contract snapshot (same check CI runs)
+	docker run --rm -v $$PWD/orchestrator:/src -w /src golang:1.25.13 \
+	  sh -c "go test ./internal/server/... -run TestMCPContractSnapshot -v"
+
+mcp-contract-snapshot-update: ## C034: DELIBERATELY regenerate testdata/mcp_contract_snapshot_v1.json from the live surface. Never run this to silence a failing check without reviewing the diff first -- a passing regen after an unreviewed surface change hides real protocol drift, it doesn't fix it.
+	docker run --rm -v $$PWD/orchestrator:/src -w /src golang:1.25.13 \
+	  sh -c "go test ./internal/server/... -run TestMCPContractSnapshot -update-snapshot -v"
+	@echo "Regenerated orchestrator/internal/server/testdata/mcp_contract_snapshot_v1.json -- review the diff (git diff) before committing."
 
 test-rust: ## Run Rust test suites in container (placeholder until Phase 2)
 	@echo "Rust tests run in Phase 2+"
