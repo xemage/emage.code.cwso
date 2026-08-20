@@ -2,7 +2,7 @@
 
 **ID:** C018
 **Owner:** qa-engineer
-**Status:** pending
+**Status:** in_progress
 **Priority:** P0
 **Depends on:** C016, C017
 **Created:** 2026-08-12
