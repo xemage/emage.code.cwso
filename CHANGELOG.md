@@ -4,6 +4,31 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Added (C018)
+- **`test`**: Added `scripts/cwso-smoke-test.sh` -- the v1.0
+  definition-of-done executable. From an already-running stack (`make up`),
+  drives the full real flow over the MCP HTTP transport with a token minted
+  fresh via `scripts/cwso-token.sh` (C013): `health` -> `create_shadow_workspace`
+  -> `write_shadow_file` -> `query_ast` -> `commit_shadow` ->
+  `merge_concurrent_results` -> `teardown` (`drop_shadow_workspace`), with a
+  clear `[PASS]`/`[FAIL]` line per stage. Exits non-zero on the first failing
+  stage and prints the failing response body -- no stage is mocked and no
+  assertion is weakened to route around a real failure. An `EXIT` trap always
+  tears the docker compose stack down (`down -v --remove-orphans`) on both
+  the success and failure paths, so the host is never left with a stray
+  container or volume. Added a `smoke` Makefile target (`make smoke`, depends
+  on `up`) and a `e2e:smoke` CI job (stage `e2e`) that builds+starts the
+  stack under CI's docker-socket-binding runner and runs the same script.
+  Live-verified: a full pass against a healthy stack (`docker ps`/`docker
+  volume ls` clean afterward), and a deliberately broken stage (git-shadow
+  sidecar stopped mid-run) producing a non-zero exit with the failing
+  response body printed and an equally clean teardown.
+  Note for follow-up: `schemas/create_shadow_workspace.json` and
+  `schemas/query_ast.json` have drifted from the real, currently-implemented
+  MCP tool contract (verified against `orchestrator/internal/tools/shadow_tools.go`);
+  this script follows the real live contract, not the stale schema files --
+  worth a documentation-sync pass separate from this task.
+
 ### Added (C016)
 - **`feat(make)`**: Added `make up` -- the one-command front door for the
   stack, collapsing the previously-manual 7-step startup (bootstrap secrets,
