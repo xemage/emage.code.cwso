@@ -46,13 +46,13 @@
 | T192 | Fix JWT 401 mismatch between orchestrator and `phase2-integration.py` | backend-developer | pending | P1 | — | 2026-08-16 |
 | T197 | Fix `CWSO_IPC_ALLOWED_GIDS` drift (hardcoded gid 100 vs orchestrator's live gid 101) | devops-engineer | pending | P2 | — | 2026-08-19 |
 | T198 | Sync `schemas/*.json` with real MCP tool contracts (create_shadow_workspace/query_ast drift) | technical-writer | pending | P2 | — | 2026-08-20 |
-| C020 | ADR-012: filesystem projection decision | solution-architect | pending | P0 | C010–C018 (CG1) | 2026-08-12 |
+| C020 | ADR-012: filesystem projection decision | solution-architect | in_progress | P0 | C010–C018 (CG1) | 2026-08-20 |
 | C021 | Implement filesystem projection | backend-developer | pending | P0 | C020 (GO) | 2026-08-12 |
 | C022 | Write-back into git ODB | backend-developer | pending | P0 | C021 | 2026-08-12 |
 | C023 | Projection lifecycle + crash safety | backend-developer | pending | P0 | C021 | 2026-08-12 |
 | C024 | Prove projection E2E in CI | qa-engineer | pending | P0 | C022, C023 | 2026-08-12 |
 | C025 | CONDITIONAL: document IPC-only limitation | technical-writer | pending | P0 | C020 (NO-GO) | 2026-08-12 |
-| C032 | Execute ADR-013 decision | backend-developer | pending | P1 | C031 | 2026-08-12 |
+| C032 | Execute ADR-013 decision | backend-developer | in_progress | P1 | C031 | 2026-08-20 |
 | C033 | Client compatibility matrix (3×2) | qa-engineer | pending | P1 | C032 | 2026-08-12 |
 | C034 | Contract snapshot test in CI | qa-engineer | pending | P1 | C032 | 2026-08-12 |
 | C040 | Scope/binding resolution for find_references | backend-developer | pending | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-12 |
