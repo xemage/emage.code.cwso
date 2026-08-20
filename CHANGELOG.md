@@ -4,6 +4,115 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Deployment (T191 follow-up)
+- **`fix(deploy)`**: Fixed a regression in the original T191 `jwt-secret-fix`
+  helper found by Tech Lead review (MR !132) via live reproduction: the
+  helper bind-mounted the secret *file* directly
+  (`../.env.jwt.dev:/secret/jwt_secret`), and the `orchestrator` service
+  separately consumed it via a top-level Compose `secrets: file:` stanza --
+  both are implemented as host bind mounts outside Swarm mode (verified live
+  against this stack's target Docker/Compose versions), and Docker Engine
+  silently auto-creates an empty directory at a missing bind-mount *source*
+  path before any in-container check can run. So a genuinely fresh clone
+  (`.env.jwt.dev` absent, bootstrap not yet run) that ran `docker compose up`
+  corrupted the host filesystem -- left a root-owned directory where a file
+  belongs -- and broke `scripts/cwso-bootstrap-secrets.sh`'s recovery path
+  (`... .env.jwt.dev: Is a directory`, hard failure). This affected *both*
+  services independently: `depends_on: condition:
+  service_completed_successfully` only gates *start* order, but Compose
+  creates every service's containers (and materializes their mounts) up
+  front for a single `up` invocation, so fixing only `jwt-secret-fix`'s own
+  mount did not stop `orchestrator`'s separate `secrets:` mount from
+  reproducing the identical bug.
+  Fix: stop bind-mounting the host `.env.jwt.dev` path into any container.
+  `jwt-secret-fix` now mounts the *parent* directory (the repo root, which
+  always exists) read-write and tests for the named file inside that
+  already-existing mount before touching anything -- a missing file inside
+  an existing directory mount cannot trigger the Engine's auto-vivify
+  behavior. If present, it copies (never moves -- the host original is left
+  untouched) the secret into a new `cwso-jwt-secret` named Docker volume at
+  `/run/secrets/jwt_secret`, owned by the looked-up `cwso` uid/gid, mode
+  600. `orchestrator` now mounts that same named volume read-only at the
+  identical in-container path `config.go` already expects (`config.go`
+  itself is unmodified). Named volumes are managed entirely inside Docker's
+  own storage, not sourced from a host path, so there is no
+  missing-source-path for either service's mount to auto-vivify against --
+  this removes the bug class entirely rather than only half of it.
+  `jwt-secret-fix`'s capability set grew by one: `DAC_READ_SEARCH` (in
+  addition to the existing `CHOWN`/`FOWNER`), because the helper now needs
+  to *read* the host secret's content (to copy it) rather than only mutate
+  its metadata in place; `CAP_DAC_OVERRIDE` (a much broader bypass of all
+  read/write DAC checks) was deliberately not added -- the helper detects a
+  stray leftover directory from a pre-fix run (or a host that never gets
+  down to a clean state) and best-effort `rmdir`s it if empty, falling back
+  to a clear one-line manual-cleanup instruction instead of a raw
+  permission-denied error when that isn't possible without the broader
+  capability.
+  Verified live (see MR !132 discussion for full transcripts): (1) fresh
+  clone, `.env.jwt.dev` absent, `docker compose up` without bootstrap --
+  `jwt-secret-fix` no-ops cleanly, `orchestrator` fails closed with
+  `config.go`'s original error, and `.env.jwt.dev` remains genuinely absent
+  on the host afterward (not auto-vivified as a directory); bootstrap then
+  runs and succeeds with zero manual intervention. (2) happy path (bootstrap
+  first, then `up`) still reaches a healthy orchestrator (`/healthz` -> `ok`)
+  with the staged secret at `mode 600 uid=100 gid=101` in the named volume,
+  and the host `.env.jwt.dev` is left completely untouched (`mode 600`,
+  original host owner, unchanged) throughout. (3) a directory manually
+  planted at `.env.jwt.dev` (root-owned, mode 0755 -- matching what the
+  Engine's own auto-vivify produces) is detected, refused, and either
+  removed automatically or reported with an actionable manual-fix message,
+  never chowned/treated as the secret.
+
+### Deployment (T191)
+- **`fix(deploy)`**: Resolved the `.env.jwt.dev` -> `/run/secrets/jwt_secret`
+  permission mismatch that made the documented one-command `docker compose
+  up` path fail to reach a healthy `orchestrator` on a genuinely fresh
+  clone (discovered during C019's MR !123 verification; blocks C016's
+  "zero manual steps" acceptance criterion). `scripts/cwso-bootstrap-secrets.sh`
+  (C012) writes `.env.jwt.dev` `chmod 600`, owned by whatever host user ran
+  it; the orchestrator's `secrets:` block bind-mounts that file as-is
+  (Compose's `uid`/`gid`/`mode` secret attributes are silently ignored
+  outside Swarm mode), and the orchestrator runs as the non-root `cwso`
+  user (different uid) with `cap_drop: ["ALL"]` (C019), so it could not
+  read the file without a manual `chmod` workaround.
+  Added a new `jwt-secret-fix` service to `deploy/docker-compose.yml`: a
+  throwaway, tightly-scoped container (`cap_drop: ["ALL"]` +
+  `cap_add: ["CHOWN", "FOWNER"]` only, `network_mode: none`,
+  `security_opt: no-new-privileges`) that runs before the orchestrator
+  (`depends_on: condition: service_completed_successfully`, same pattern
+  as C015's `workspace-check`) and `chown`s the host `.env.jwt.dev` to the
+  orchestrator image's own `cwso` uid/gid (looked up live from the image's
+  `/etc/passwd`, not hardcoded) so the orchestrator can read it via its
+  *existing* owner-read permission bits. The file's mode stays `600`
+  (never made group- or world-readable); only its owner changes, from the
+  host user to the container's `cwso` uid/gid. Idempotent, and a no-op
+  (exit 0) if `.env.jwt.dev` does not exist yet -- `config.go`'s existing
+  fail-closed check remains the single source of truth for a missing/
+  unreadable secret, and is unmodified. Verified live: fresh
+  `rm -f .env.jwt.dev && bash scripts/cwso-bootstrap-secrets.sh && docker
+  compose -f deploy/docker-compose.yml up -d --build orchestrator
+  git-shadow merge-engine` reaches a healthy orchestrator
+  (`/healthz` -> `ok`) with zero manual chmod; the secret file remains
+  mode 600 (not world/group readable) throughout; and a genuinely missing
+  `.env.jwt.dev` still fails closed with `config.go`'s original error
+  (`JWT secret must be set via /run/secrets/jwt_secret or CWSO_JWT_SECRET
+  when transport=http`), unchanged.
+  Rejected alternatives (see MR description for full rationale): Swarm
+  managed secrets (Compose's `uid`/`gid`/`mode` secret attributes are
+  ignored for plain `docker compose up`, and switching to `docker stack
+  deploy` is out of scope); host-side `chgrp`/`setfacl` from the
+  unprivileged bootstrap script (verified live: `chgrp` fails with
+  "Operation not permitted" for a non-member group, and `setfacl` is not
+  installed/portable across dev hosts); an orchestrator-entrypoint
+  root-then-drop-privileges fix (verified live: with `cap_drop: ["ALL"]`
+  already in place from C019, root inside the container cannot bypass DAC
+  checks either, since `CAP_DAC_OVERRIDE` is dropped -- weakening
+  `cap_drop` was out of scope); running the orchestrator itself as the
+  host's own uid (breaks the fixed-uid IPC peer-credential allowlist
+  `CWSO_IPC_ALLOWED_UIDS`/`GIDS` that git-shadow/merge-engine already
+  enforce against the orchestrator's `cwso` uid -- sandbox-tiering
+  territory, out of scope).
+
 ### Security (T195)
 - **`feat(tools)`**: Added `orchestrator/internal/tools/fs_tools_portable.go`
   (`//go:build !linux`), a portable counterpart to T194's Linux-only
