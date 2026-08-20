@@ -1,10 +1,34 @@
 name: cwso
 
-secrets:
-  jwt_secret:
-    file: ../.env.jwt.dev  # T029: Production must use secure secret management (Vault/SOPS)
-    # POC-DEBT: File-based secret acceptable for dev/compose; prod needs external vault
-
+# T191 follow-up (Tech Lead review, MR !132): this used to be a top-level
+# Compose `secrets:` stanza with `file: ../.env.jwt.dev`, consumed by the
+# `orchestrator` service's own `secrets:` block. Live-verified against this
+# stack's target Docker/Compose versions that plain (non-Swarm) Compose
+# `secrets: file:` is implemented as a host bind mount under the hood, with
+# the exact same "Engine silently auto-creates an empty directory for a
+# missing bind-mount source" behavior documented on `workspace-check` below
+# -- reproduced independently of (and in addition to) the `jwt-secret-fix`
+# bug this follow-up otherwise fixes: even with `jwt-secret-fix` no longer
+# touching the host file directly (see its own comment below), a genuinely
+# missing `.env.jwt.dev` still got auto-vivified into a root-owned host
+# directory purely from `orchestrator`'s own `secrets:` reference, because
+# Compose creates every service's containers (and materializes their
+# mounts) up front, before honoring `depends_on` *start* ordering -- so
+# `jwt-secret-fix` completing first does not protect a sibling service's own
+# independent bind of the same host path.
+#
+# Fix: stop bind-mounting the host `.env.jwt.dev` into any container
+# directly. `jwt-secret-fix` (below) is the only service that touches the
+# host file (via the existing parent-directory-mount pattern), and it
+# stages a copy into the `cwso-jwt-secret` *named* Docker volume at
+# `/run/secrets/jwt_secret`. `orchestrator` mounts that named volume
+# read-only at the same in-container path `config.go` already expects
+# (`/run/secrets/jwt_secret`, unchanged -- config.go itself is not touched).
+# Named volumes are managed entirely inside Docker's storage area, not
+# sourced from a host path, so there is no missing-source-path for the
+# Engine to auto-vivify against -- this eliminates the whole bug class for
+# the JWT secret, rather than only the half of it `jwt-secret-fix` alone
+# could reach.
 services:
   # C015: pre-flight validation that CWSO_WORKSPACE_HOST (or the sample-workspace
   # default) resolves to a real, non-empty directory on the host BEFORE the
@@ -57,6 +81,170 @@ services:
     # C015: trivial, short-lived shell check -- generous headroom over its
     # actual single-process footprint, same defense-in-depth rationale as the
     # other services' pids_limit values in this file.
+    pids_limit: 16
+
+  # T191: pre-flight fixup for the .env.jwt.dev -> /run/secrets/jwt_secret
+  # permission mismatch. scripts/cwso-bootstrap-secrets.sh (C012) writes
+  # .env.jwt.dev chmod 600, owned by whatever host user ran the bootstrap
+  # script; the orchestrator (below) runs as the non-root `cwso` user with
+  # `cap_drop: ["ALL"]` (C019), so it cannot read a file owned by some other
+  # host uid without help. This service does the one privileged operation
+  # (chown to the orchestrator image's own `cwso` uid/gid, looked up live
+  # from the image's /etc/passwd, not hardcoded -- Alpine assigns system
+  # uid/gid dynamically based on base-image state, and this codebase has at
+  # least one existing example of a hardcoded-vs-actual uid/gid drift:
+  # git-shadow/merge-engine's CWSO_IPC_ALLOWED_GIDS below is "0,100" but the
+  # orchestrator image's actual cwso gid is 101 as of alpine:3.20 --
+  # pre-existing, out of scope for T191, not touched here, but a cautionary
+  # example against hardcoding) that an unprivileged host user cannot
+  # (verified live: `chgrp` as the host user fails with "Operation not
+  # permitted"), in its own throwaway, capability-minimal container, without
+  # ever weakening the orchestrator's own cap_drop/read_only/
+  # no-new-privileges posture, without making the file group- or
+  # world-readable on the host, and without touching config.go's
+  # file-based-secret-over-env-var precedence (T029) or its fail-closed
+  # validation.
+  #
+  # T191 follow-up (Tech Lead review, MR !132) -- two related bugs found by
+  # live reproduction, both fixed together here:
+  #
+  # 1. This service originally bind-mounted the secret *file* directly --
+  #    `../.env.jwt.dev:/secret/jwt_secret` -- and the orchestrator (below)
+  #    separately consumed it via a top-level Compose `secrets: file:`
+  #    stanza, which (verified live, this stack's target Docker/Compose
+  #    versions) is *also* implemented as a host bind mount outside Swarm
+  #    mode. Both reproduce the same "Engine silently auto-creates an empty
+  #    directory for a missing bind-mount source" behavior already
+  #    documented on `workspace-check` above: when `.env.jwt.dev` genuinely
+  #    does not exist (fresh clone, bootstrap not yet run), the Engine
+  #    auto-vivifies an empty directory at the host path *before* any
+  #    in-container script gets to run an existence check -- so "the mount
+  #    succeeded" was never proof the file existed, for either service.
+  #    Worse: `depends_on: condition: service_completed_successfully` below
+  #    only gates *start* order -- Compose still creates every service's
+  #    containers (and materializes their mounts) up front for a single
+  #    `docker compose up` invocation, so fixing only this service's own
+  #    mount does not stop `orchestrator`'s independent `secrets:` mount
+  #    from corrupting the host path regardless of which service "wins" the
+  #    race. This corrupts the host filesystem (leaves a container-uid-owned
+  #    directory where a file belongs) and breaks
+  #    scripts/cwso-bootstrap-secrets.sh's recovery path (it hard-fails
+  #    trying to write a regular file over an existing directory).
+  #
+  # 2. Fix: stop bind-mounting the host `.env.jwt.dev` path into *any*
+  #    container. This service now mounts the *parent* directory (the repo
+  #    root, which always exists -- this compose file lives one level below
+  #    it) read-write, and tests for the named file *inside* that
+  #    already-existing mount before touching anything -- a missing file
+  #    inside an existing directory mount cannot trigger the Engine's
+  #    auto-vivify behavior (there is no missing *source path* to
+  #    fabricate; only a missing source path itself can trigger it). If
+  #    present, it copies (not moves -- the host original is left in place)
+  #    the secret into the `cwso-jwt-secret` named Docker volume at
+  #    `/run/secrets/jwt_secret`, owned by the looked-up `cwso` uid/gid,
+  #    mode 600. The orchestrator (below) mounts that same named volume
+  #    read-only at the identical in-container path `config.go` already
+  #    expects (unchanged). Named volumes are managed entirely inside
+  #    Docker's own storage area, not sourced from any host path, so there
+  #    is no missing-source-path for either service's mount to auto-vivify
+  #    against -- this closes the bug for both services at once, rather than
+  #    just the half this service alone could reach. Defense in depth: if
+  #    the path inside the parent-dir mount is a directory rather than a
+  #    regular file, that can now only mean a *pre-fix* run of this helper
+  #    (or the pre-fix orchestrator `secrets:` mount) already corrupted it,
+  #    on a host that ran an older version of this compose file at some
+  #    point in the past -- refuse to touch it (clear, actionable error) and
+  #    best-effort `rmdir` it if empty, so
+  #    scripts/cwso-bootstrap-secrets.sh's recovery path works cleanly again
+  #    with no manual intervention in the common case. That `rmdir` can
+  #    still fail with EACCES on some hosts (removing a directory entry
+  #    needs write permission on its *parent* -- the host-owned repo root --
+  #    which this container's deliberately narrow capability set does not
+  #    bypass; see the `cap_add` comment below for why CAP_DAC_OVERRIDE is
+  #    not granted just for this legacy-cleanup edge case). When that
+  #    happens the script falls back to a clear one-line manual instruction
+  #    instead of a raw permission-denied error.
+  #
+  # Idempotent and gated throughout: does nothing but exit 0 if
+  # .env.jwt.dev does not exist yet (e.g. bootstrap was skipped) --
+  # config.go's existing fail-closed check (reading an empty/absent
+  # /run/secrets/jwt_secret inside the named volume) remains the single
+  # source of truth for "no secret", not this service.
+  jwt-secret-fix:
+    image: cwso/orchestrator:dev
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.orchestrator
+    container_name: cwso-jwt-secret-fix
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        src=/secret-parent/.env.jwt.dev
+        dst=/run/secrets/jwt_secret
+
+        if [ ! -e "$$src" ]; then
+          echo "[OK] .env.jwt.dev not present yet -- nothing to stage (orchestrator will fail closed as designed)"
+          exit 0
+        fi
+
+        if [ -d "$$src" ]; then
+          # A directory here can now only be a stray leftover from a pre-fix
+          # run of this helper (or the pre-fix orchestrator secrets: mount) --
+          # never touch it as if it were the secret. Best-effort cleanup: this
+          # container deliberately does not hold CAP_DAC_OVERRIDE (see
+          # cap_add comment below), so removing a directory entry it doesn't
+          # have write access to via its parent (the repo root, host-owned)
+          # can fail with EACCES even though CAP_CHOWN/CAP_FOWNER are held --
+          # rmdir is gated on the *parent* directory's write permission, which
+          # those two capabilities do not bypass. Fall back to a clear manual
+          # instruction rather than escalating capabilities for this
+          # legacy-cleanup edge case.
+          if [ -n "$$(ls -A "$$src" 2>/dev/null)" ]; then
+            echo "[ERROR] .env.jwt.dev is a non-empty directory, not a file -- refusing to touch it. Remove it manually, then rerun scripts/cwso-bootstrap-secrets.sh." >&2
+            exit 1
+          fi
+          if rmdir "$$src" 2>/dev/null; then
+            echo "[FIXED] .env.jwt.dev was a stray empty directory (leftover from a pre-fix run) -- removed it. Rerun scripts/cwso-bootstrap-secrets.sh to generate the secret." >&2
+            exit 0
+          fi
+          echo "[ERROR] .env.jwt.dev is a stray empty directory (leftover from a pre-fix run), not a file -- refusing to touch it, and could not remove it automatically (insufficient permission on its parent directory). Remove it manually on the host (e.g. 'rmdir .env.jwt.dev'), then rerun scripts/cwso-bootstrap-secrets.sh." >&2
+          exit 1
+        fi
+
+        if [ ! -f "$$src" ]; then
+          echo "[ERROR] .env.jwt.dev exists but is not a regular file (unexpected type) -- refusing to touch it." >&2
+          exit 1
+        fi
+
+        u="$$(id -u cwso)"
+        g="$$(id -g cwso)"
+        cp "$$src" "$$dst.tmp"
+        chown "$$u:$$g" "$$dst.tmp"
+        chmod 600 "$$dst.tmp"
+        mv "$$dst.tmp" "$$dst"
+        echo "[OK] staged .env.jwt.dev into the jwt_secret volume, owned uid=$$u gid=$$g (mode 600, host file untouched)"
+    volumes:
+      - ..:/secret-parent:rw
+      - cwso-jwt-secret:/run/secrets:rw
+    user: "0:0"
+    read_only: true
+    cap_drop: ["ALL"]
+    # CHOWN/FOWNER: set ownership+mode on the staged copy in the named volume.
+    # DAC_READ_SEARCH: this service now *reads* .env.jwt.dev's content (to
+    # copy it into the named volume) rather than only mutating its metadata
+    # in place -- the host file is mode 600, owned by whatever host user ran
+    # scripts/cwso-bootstrap-secrets.sh, and this container runs as uid 0 but
+    # deliberately without CAP_DAC_OVERRIDE (that would grant a much broader
+    # bypass of all DAC checks, write included); DAC_READ_SEARCH is the
+    # narrowest capability that permits reading a file this container
+    # doesn't own without weakening anything else. The host file's owner/mode
+    # are never modified by this service (verified live) -- only the
+    # in-volume copy is chowned/chmoded.
+    cap_add: ["CHOWN", "FOWNER", "DAC_READ_SEARCH"]
+    security_opt:
+      - no-new-privileges:true
+    network_mode: "none"
     pids_limit: 16
 
   orchestrator:
@@ -115,10 +303,10 @@ services:
       CWSO_ROLLOUT_REWARD_ENABLED: "${CWSO_ROLLOUT_REWARD_ENABLED:-true}"
       CWSO_ROLLOUT_KV_PREFIX_ROUTER_ENABLED: "${CWSO_ROLLOUT_KV_PREFIX_ROUTER_ENABLED:-true}"
       CWSO_ROLLOUT_SOCKET: "/run/cwso/rollout.sock"
-    secrets:
-      - jwt_secret
     depends_on:
       workspace-check:
+        condition: service_completed_successfully
+      jwt-secret-fix:
         condition: service_completed_successfully
     volumes:
       # C015: CWSO_WORKSPACE_HOST points the orchestrator at the developer's own
@@ -133,6 +321,12 @@ services:
       # container starts.
       - ${CWSO_WORKSPACE_HOST:-../sample-workspace}:/workspace:rw
       - cwso-runtime:/run/cwso
+      # T191 follow-up: replaces the old top-level Compose `secrets: -
+      # jwt_secret` reference (see the comment at the top of this file for
+      # why). `jwt-secret-fix` stages the JWT secret into this named volume
+      # at exactly this path; config.go reads `/run/secrets/jwt_secret`
+      # unchanged. Mounted read-only here -- only jwt-secret-fix writes to it.
+      - cwso-jwt-secret:/run/secrets:ro
     read_only: true
     cap_drop: ["ALL"]
     security_opt:
@@ -266,3 +460,13 @@ services:
 
 volumes:
   cwso-runtime:
+  # T191 follow-up: staging volume for the JWT secret (see the comment at
+  # the top of this file). Not host-backed, so `docker compose down -v`
+  # is the only way to clear it -- consistent with cwso-runtime above.
+  # POC-DEBT: File-based JWT secret (`../.env.jwt.dev`, staged into this
+  # volume by jwt-secret-fix) acceptable for dev/compose; production needs
+  # external secret management (Vault/SOPS) -- tracked as DEBT-REGISTER.md
+  # R-1/R-2 (moved here from the removed top-level `secrets:` stanza; update
+  # DEBT-REGISTER.md's `file:line` references for R-1/R-2 next time it's
+  # touched -- out of this fix's file ownership).
+  cwso-jwt-secret:

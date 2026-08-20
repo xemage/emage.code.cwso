@@ -43,7 +43,7 @@
 | T187 | TD-03 Residual: Reduce handleBrokerSSE to ≤4 Parameters | backend-developer | pending | P2 | — | 2026-08-13 |
 | T188 | TD-10 Fix SSE Telemetry Test Stderr-Capture Race | qa-engineer | pending | P2 | — | 2026-08-13 |
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
-| T191 | Fix `.env.jwt.dev` permission mismatch (chmod 600 vs non-root container user) | devops-engineer | pending | P0 | — | 2026-08-16 |
+| T191 | Fix `.env.jwt.dev` permission mismatch (chmod 600 vs non-root container user) | devops-engineer | in_progress | P0 | — | 2026-08-19 |
 | T192 | Fix JWT 401 mismatch between orchestrator and `phase2-integration.py` | backend-developer | pending | P1 | — | 2026-08-16 |
 | T197 | Fix `CWSO_IPC_ALLOWED_GIDS` drift (hardcoded gid 100 vs orchestrator's live gid 101) | devops-engineer | pending | P2 | — | 2026-08-19 |
 | C016 | make up one-command target **[RELEASE-GATING CONDITION — see note ¹]** | devops-engineer | pending | P0 | C012, C013, C014, C015 | 2026-08-16 |
