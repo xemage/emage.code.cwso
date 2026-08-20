@@ -2,11 +2,11 @@
 
 **ID:** C018
 **Owner:** qa-engineer
-**Status:** in_progress
+**Status:** done
 **Priority:** P0
 **Depends on:** C016, C017
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-20
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (C018 row, §1.5); docs/plans/plan-cwso-v1.0-phase1-one-command-stack-v2.md
 
 ## Objective
@@ -89,4 +89,71 @@ do not weaken the assertion; report `technical` / `critical` with the response b
 
 ## Execution notes
 
-<filled during execution>
+`scripts/cwso-smoke-test.sh` (348 lines) implements the 7 stages exactly as required:
+health (bash, GET `/healthz` poll), then `create_shadow_workspace` /
+`write_shadow_file` / `query_ast` / `commit_shadow` / `merge_concurrent_results` /
+teardown (`drop_shadow_workspace`) via an embedded python3 stdlib block. Each stage
+prints a `[PASS]`/`[FAIL]` line, asserts real response content (not just absence of
+error — e.g. `query_ast` requires `hits >= 1`, `merge_concurrent_results` requires
+`outcome=success`/`status=merged`/`reason_code=semantic_merge_success`), and fails
+fast: `stage_fail()` prints the full JSON-RPC response body to stderr and exits 1
+with no fallthrough to later stages. `trap cleanup EXIT`, installed before any stage
+runs, unconditionally runs `docker compose down -v --remove-orphans` and preserves
+the original exit code — verified live on both the pass and deliberate-failure paths.
+
+Deviation from the brief's literal instruction to use "the exact JSON shapes from
+`schemas/`": the worker discovered `schemas/create_shadow_workspace.json` and
+`schemas/query_ast.json` have drifted from the real, live tool contracts in
+`orchestrator/internal/tools/shadow_tools.go` (fabricated `sandbox_profile`/
+`injected_memory_context` fields; missing actually-required `workspace_uuid`/`path`
+on `query_ast`) and correctly built the script against the real, live-verified
+contract instead — a "no mocks" e2e test that sent fabricated requests to match
+stale docs would defeat the test's own purpose. Flagged the drift as a finding
+rather than silently patching `schemas/*` (outside this task's file ownership).
+Both the orchestrator and the Tech Lead reviewer independently re-verified this
+claim directly against the Go source before accepting it; logged as its own task,
+**T198** (technical-writer, P2), merged same day (MR !138).
+
+**VERDICT: CONDITIONAL_PASS → resolved** (independent Tech Lead review; the
+worker's own Tech-Lead-only routing recommendation was independently evaluated and
+affirmed by the orchestrator before dispatch, not deferred to automatically — pure
+test harness over already-reviewed, unmodified components, no new secret-handling
+or path-confinement logic, reuses the established CI ephemeral-JWT-secret pattern).
+Reviewer live-reproduced both the full-pass and deliberate-failure runs independently
+(own `make up` / `docker stop cwso-git-shadow` / re-run, own `docker ps -a`/`volume
+ls`/`network ls` checks afterward — not trusted from the worker's transcript),
+confirmed the script's actual request payloads match the real Go `InputSchema()`s
+field-for-field, confirmed zero mocks/hardcoded credentials via grep, confirmed
+`glab ci lint` valid and file ownership scoped exactly to the allowed set, and found
+one additional minor drift the worker hadn't flagged (`merge_concurrent_results.json`
+missing the optional `rollout_session_id` field) — folded into T198 before it was
+dispatched.
+
+One blocking condition at review time: the MR's gating pipeline (`2775478431`) was
+failing on `build:rollout`. Root-caused as an external, transient crates.io
+supply-chain issue (`arrayref` yanked upstream, breaking `blake3`'s dependency
+resolution for `cwso-rollout`) — confirmed unrelated to this task's diff (no
+Rust/Cargo files touched, `build:rollout` isn't even in `e2e:smoke`'s `needs:`) and
+confirmed pre-existing-green on `develop`'s own tip ~20 minutes earlier at the same
+base commit. Resolved before merge: confirmed a fresh `develop` pipeline came back
+fully green (including `build:rollout`, meaning the yank had resolved upstream),
+then retried the MR's own gating pipeline directly (`POST
+.../pipelines/2775478431/retry`) rather than substituting a new branch-triggered
+pipeline (a first attempt at that was discarded — branch-pipeline `rules:` skip the
+build/audit/e2e stages entirely and would not have validated the MR) — came back
+14/14 green.
+
+Merging then surfaced two further, non-review issues, both resolved directly rather
+than re-opening review: (1) `docs/tasks/active-tasks.md` had a trivial adjacency
+merge conflict against `develop` — T198's ledger row (a separate, unrelated
+doc-logging MR) had merged minutes earlier immediately next to this task's own
+status-line edit; resolved on the MR branch by keeping both rows, re-triggered CI;
+(2) the resulting pipeline hit one transient CI-runner concurrency collision
+(`e2e:phase2` lost a `docker compose up` container-name race against a
+concurrently-running `e2e:smoke` job on the same shared docker-socket-binding
+runner: `Conflict. The container name "/cwso-git-shadow" is already in use`) —
+retried that single job, `e2e:phase4-swarm` auto-reran alongside it, full 14/14
+green. Merged: MR !137 (`agent/qa-engineer/C018`), merge commit `f3cefd28`.
+
+This script is the v1.0 release-gate executable — `docs/tasks/task-C062.md`
+("Release v1.0.0") re-runs it before any release can be cut.
