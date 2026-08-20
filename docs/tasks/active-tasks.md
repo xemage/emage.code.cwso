@@ -51,7 +51,6 @@
 | C023 | Projection lifecycle + crash safety | backend-developer | pending | P0 | C021 | 2026-08-12 |
 | C024 | Prove projection E2E in CI | qa-engineer | pending | P0 | C022, C023 | 2026-08-12 |
 | C025 | CONDITIONAL: document IPC-only limitation | technical-writer | pending | P0 | C020 (NO-GO) | 2026-08-12 |
-| C032 | Execute ADR-013 decision | backend-developer | in_progress | P1 | C031 | 2026-08-20 |
 | C033 | Client compatibility matrix (3×2) | qa-engineer | pending | P1 | C032 | 2026-08-12 |
 | C034 | Contract snapshot test in CI | qa-engineer | pending | P1 | C032 | 2026-08-12 |
 | C040 | Scope/binding resolution for find_references | backend-developer | pending | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-12 |

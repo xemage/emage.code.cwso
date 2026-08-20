@@ -2,11 +2,11 @@
 
 **ID:** C032
 **Owner:** backend-developer
-**Status:** in_progress
+**Status:** done
 **Priority:** P1
 **Depends on:** C031 (ADR-013 approved)
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-20
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (B1); docs/plans/plan-cwso-v1.0-phase3-protocol-conformance-v1.md; docs/decisions/ADR-013-mcp-protocol-path.md
 
 ## Objective
@@ -85,4 +85,70 @@ If executing the ADR reveals the gap table was wrong, stop and report
 
 ## Execution notes
 
-<filled during execution>
+Added `orchestrator/internal/server/mcp_conformance_test.go` (16 test functions):
+spec-shaped request/response/error assertions for the 4 gap-table "Implemented"
+methods (`ping`, `notifications/initialized`, `tools/list`, `tools/call`), the
+6 "Partial" methods (`initialize`, `resources/list`, `resources/templates/list`,
+`resources/read`, `resources/subscribe`, `resources/unsubscribe`), correct
+spec-shaped `MethodNotFound` (-32601) errors for the 6 genuinely "Missing"
+methods (`prompts/list`, `prompts/get`, `logging/setLevel`,
+`completion/complete`, `sampling/createMessage`, `roots/list`), and a sweep
+confirming 7 notification types are never emitted on the event bus across a
+representative call sequence.
+
+Two required fixes surfaced and applied during implementation (not scope
+creep — both directly required to make the conformance suite's own
+assertions true): (1) `capabilities.resources.listChanged` flipped `true` →
+`false` in `handleInitialize`, because `notifications/resources/list_changed`
+is never actually published anywhere in the codebase — the server was
+advertising a capability it doesn't deliver; (2) a new `mcp.RequestError{Code,
+Err}` type distinguishes malformed-JSON (-32700, Parse error) from
+wrong-protocol-version/missing-method (-32600, Invalid Request), previously
+collapsed into a single code. `ErrUnauthorized` (-32001) removed as genuinely
+dead code — auth is fully handled at the HTTP transport layer; confirmed via
+a whole-repo grep (not just `internal/mcp/`) for any reachable call site,
+none found. `POC-DEBT` hand-rolled-subset marker removed from `protocol.go:10`
+only once the above was verified true; `docs/DEBT-REGISTER.md` B1 flipped
+`open`/`v1.0-blocker` → `closed`/`fixed`, referencing C030–C032. Zero tool
+schema/semantics changes, zero new MCP methods added, zero touches to
+`services/*`/`deploy/*`/`schemas/*`.
+
+**VERDICT: CONDITIONAL_PASS → resolved** (independent Tech Lead review, MR
+!141). First-round review confirmed the `listChanged:false` fix and
+`ErrUnauthorized` removal were both correct and in-scope (not unrelated
+scope creep), confirmed 100% of the existing test suite green with zero
+weakened assertions, and confirmed the DEBT-REGISTER B1 claim was actually
+true (not just relabeled) — but attached two blocking conditions: (1) the
+MR's own gating pipeline hadn't yet finished green, and (2) a genuine
+test-coverage gap: `resources/unsubscribe` was previously only incidentally
+exercised inside an unrelated notification-sweep test with its own response
+discarded — no dedicated assertion existed for its response shape or the
+unknown-subscription-id error case. The orchestrator independently
+re-derived condition 2 directly from the diff and the actual
+`handleResourcesUnsubscribe` handler (confirming the handler logic itself
+was already correct — a genuine test gap, not an implementation bug) before
+dispatching a fix. A follow-up commit (`177283d`) added
+`TestConformanceResourcesUnsubscribeSpecShapeAndUnknownID` (happy path +
+unknown-id error case + a bonus double-unsubscribe check). A second,
+independent Tech Lead re-review verified this new test non-vacuously via
+**mutation testing** — temporarily broke the handler's not-found path in a
+disposable worktree, confirmed the new test actually failed, reverted,
+confirmed it passed again — and cross-checked the test's expectations
+directly against the real handler code. Condition 2 fully closed.
+
+Condition 1 (CI green) was hit twice by transient, content-independent
+shared-runner flakiness during the review/merge cycle: a `docker compose up`
+container-name collision between concurrently-scheduled `e2e:smoke`/
+`e2e:phase4-swarm` jobs (`Conflict. The container name "/cwso-git-shadow" is
+already in use`, same class as prior C018/T191 incidents this roadmap), and
+separately, on a retry of `e2e:phase4-swarm`, the previously-characterized
+"RPC connection-refused under concurrent load" pattern. Both independently
+confirmed transient by re-running each failed job individually to a clean
+pass (not assumed) — full 14/14 green before merge. Also corrected,
+non-blocking: the MR description's inaccurate "~21 test functions" claim
+fixed to the real, grep-confirmed 16.
+
+MR !141 (`agent/backend-developer/C032`), merged to `develop` via merge
+commit `69bb3720`. **Unblocks C033** (client compatibility matrix) and
+**C034** (contract snapshot test in CI), both listed as depending on C032,
+not yet dispatched.
