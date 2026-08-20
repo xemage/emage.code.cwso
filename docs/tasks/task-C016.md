@@ -2,11 +2,11 @@
 
 **ID:** C016
 **Owner:** devops-engineer
-**Status:** in_progress
+**Status:** done
 **Priority:** P0
 **Depends on:** C012, C013, C014, C015, T191 (all satisfied)
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-20
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (B5); docs/plans/plan-cwso-v1.0-phase1-one-command-stack-v2.md
 
 ## Objective
@@ -158,5 +158,33 @@ If the health endpoint never returns 200 within timeout on a healthy-looking sta
 capture `make logs` output and report `technical` / `major` — do not just raise the timeout.
 
 ## Execution notes
+
+Implemented `make up`/`down`/`logs` calling C012's `scripts/cwso-bootstrap-secrets.sh`
+and C013's `scripts/cwso-token.sh` as black boxes (neither modified), with a bounded
+120s `/healthz` poll and fail-fast, non-zero-exit behavior on any step failure. Did
+not need to rediscover or route around the T191 (`.env.jwt.dev` permission) or C015
+(`workspace-check` empty-mount) bug classes — both fixes held cleanly under this
+task's own live testing, exactly as expected. Updated `README.md`/
+`docs/user/installation-v3.md`'s quick-start blocks to call `make up`, confirmed
+byte-identical to each other with `diff`.
+
+Independent Tech Lead review (MR !135) returned **PASS, no conditions**: every
+functional claim independently live-reproduced rather than trusted — clean-state
+`make up` reached a healthy, token-authenticated stack in ~7.7s with zero manual
+steps; the printed config block's token was verified against a real live `POST /mcp`
+`tools/list` call (200, real 15-tool list); a secret-leak grep across the *entire*
+transcript (not just the final printed block) found zero occurrences of the raw
+secret or `JWT_SECRET=`; `make down` confirmed clean teardown; the failure path
+(pre-occupied port 8080) failed in 6.4s at step 3, before the health poll even
+started. Reviewer also explicitly confirmed the Tech-Lead-only review routing was
+correct (zero diff in any security-sensitive path — `scripts/*`, `deploy/*`,
+`orchestrator/*`, `services/*` all untouched; pure orchestration glue over
+already-independently-reviewed components).
+
+Merged to `develop` 2026-08-20 (squash), MR !135. **Closes the C010 → C012 → C016
+(+ T191) release-gating condition, tracked since 2026-08-16** — see the
+`active-tasks.md` footnote ¹ for the full chain history. `docs/tasks/task-C062.md`
+("Release v1.0.0") can now cite a working one-command install path without this
+being an open risk.
 
 <filled during execution>
