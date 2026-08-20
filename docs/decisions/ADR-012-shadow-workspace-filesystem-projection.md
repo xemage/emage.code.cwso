@@ -2,7 +2,7 @@
 
 > Filename: `ADR-012-shadow-workspace-filesystem-projection.md`
 
-- **Status**: proposed
+- **Status**: accepted
 - **Date**: 2026-08-20
 - **Decider(s)**: human (decision authority — roadmap Approval §, decision 1, 2026-08-13, settled the *whether*: filesystem projection is IN v1.0); solution-architect (this record — mechanism selection and host-matrix evidence, not the whether)
 - **Tasks**: C020 (this ADR), C021 (implement the projection), C022 (write-back into the git object store), C023 (lifecycle / crash-safety, explicit crash-path test), C024 (prove it end-to-end in CI); C025 (documented-fallback) is **NOT activated** by this decision — see "Decision" below
