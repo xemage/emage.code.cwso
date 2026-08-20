@@ -30,7 +30,7 @@ was carried forward or closed.
 
 | ID | Source `file:line` | Category | Description | Status | Disposition | Closing task |
 |---|---|---|---|---|---|---|
-| B1 (= D1, P1-1) | `orchestrator/internal/mcp/protocol.go:10` | Maintainability / spec compliance | Hand-rolled MCP protocol subset instead of the official `go-sdk`; only a partial method set is implemented | open | v1.0-blocker | C030–C032 |
+| B1 (= D1, P1-1) | `orchestrator/internal/mcp/protocol.go:10` | Maintainability / spec compliance | Hand-rolled MCP protocol subset instead of the official `go-sdk`; only a partial method set is implemented | closed | fixed | C030–C032 |
 | B2 (= P2-1) | `services/cwso-git-shadow/src/main.rs:11` | Architecture | OverlayFS bind-mount layer deferred; shadow files are reachable only via orchestrator→sidecar IPC, so sub-agents that expect a real filesystem path cannot work | open | v1.0-blocker | C020–C025 |
 | B6 (= P2-7) | scorecard P2-7 (`services/cwso-git-shadow/src/repo.rs`, `query_ast`) | Correctness | `find_references` matches identifier text only — no scope/binding analysis; false positives across shadowed names | open | v1.0-blocker | C040 |
 | B7 (= P2-4) | `services/cwso-git-shadow/src/repo.rs:180` | Correctness | Every shadow commit is an orphan (no parent); workspaces never form a history chain, so per-workspace history and three-way merges are unavailable | open | v1.0-blocker | C041 |
@@ -86,7 +86,7 @@ CWSO product debt, and are intentionally not register rows.
 | `services/cwso-git-shadow/Cargo.toml:20` | P2-3 (fixed) |
 | `services/cwso-git-shadow/src/main.rs:11` | B2 |
 | `services/cwso-git-shadow/src/repo.rs:180` | B7 |
-| `orchestrator/internal/mcp/protocol.go:10` | B1 |
+| `orchestrator/internal/mcp/protocol.go:10` | B1 (fixed) |
 | `orchestrator/internal/shadow/client.go:5` | B13 |
 | `orchestrator/internal/rollout/evaluator_swebench.go:64` | B11 |
 
