@@ -45,6 +45,7 @@
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
 | T192 | Fix JWT 401 mismatch between orchestrator and `phase2-integration.py` | backend-developer | pending | P1 | — | 2026-08-16 |
 | T197 | Fix `CWSO_IPC_ALLOWED_GIDS` drift (hardcoded gid 100 vs orchestrator's live gid 101) | devops-engineer | pending | P2 | — | 2026-08-19 |
+| T198 | Sync `schemas/*.json` with real MCP tool contracts (create_shadow_workspace/query_ast drift) | technical-writer | pending | P2 | — | 2026-08-20 |
 | C018 | E2E smoke test (v1.0 DoD executable) | qa-engineer | pending | P0 | C016, C017 | 2026-08-12 |
 | C020 | ADR-012: filesystem projection decision | solution-architect | pending | P0 | C010–C018 (CG1) | 2026-08-12 |
 | C021 | Implement filesystem projection | backend-developer | pending | P0 | C020 (GO) | 2026-08-12 |
