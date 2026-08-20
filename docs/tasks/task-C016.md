@@ -2,7 +2,7 @@
 
 **ID:** C016
 **Owner:** devops-engineer
-**Status:** pending
+**Status:** in_progress
 **Priority:** P0
 **Depends on:** C012, C013, C014, C015, T191 (all satisfied)
 **Created:** 2026-08-12
