@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 )
 
@@ -40,6 +41,72 @@ func TestParseRequestValidationErrors(t *testing.T) {
 	}
 	if _, err := ParseRequest([]byte(`{`)); err == nil {
 		t.Fatal("expected invalid json error")
+	}
+}
+
+// TestParseRequestErrorCodes is a conformance test (ADR-013 §3a "Misuse
+// finding" — required fix, closing the mcp-gap-analysis-v1.md ErrInvalidRequest
+// row): per JSON-RPC 2.0, malformed JSON that cannot be parsed at all is
+// Parse error (-32700); a syntactically valid envelope with the wrong
+// "jsonrpc" version or a missing "method" is Invalid Request (-32600). Each of
+// ParseRequest's three failure branches must independently select the
+// spec-correct code via the returned *RequestError, not collapse to -32700.
+func TestParseRequestErrorCodes(t *testing.T) {
+	cases := []struct {
+		name     string
+		raw      string
+		wantCode int
+	}{
+		{"malformed json -> Parse error", `{`, ErrParse},
+		{"wrong jsonrpc version -> Invalid Request", `{"jsonrpc":"1.0","id":1,"method":"ping"}`, ErrInvalidRequest},
+		{"missing method -> Invalid Request", `{"jsonrpc":"2.0","id":1}`, ErrInvalidRequest},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseRequest([]byte(tc.raw))
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			var reqErr *RequestError
+			if !errors.As(err, &reqErr) {
+				t.Fatalf("expected *RequestError, got %T: %v", err, err)
+			}
+			if reqErr.Code != tc.wantCode {
+				t.Fatalf("expected code %d, got %d", tc.wantCode, reqErr.Code)
+			}
+		})
+	}
+}
+
+// TestErrUnauthorizedRemoved documents the C032 decision (ADR-013 §3b
+// "Decision needed in C032"): ErrUnauthorized (-32001) was dead code (zero
+// reachable call sites — auth failures are handled entirely at the HTTP
+// transport layer as 401/403 before a JSON-RPC envelope is ever parsed) and
+// was removed rather than wired to an invented JSON-RPC-level path. This test
+// asserts the decision stuck: the remaining reserved-range constants keep
+// their documented values and -32001 is not silently reintroduced.
+func TestErrUnauthorizedRemoved(t *testing.T) {
+	reserved := map[string]int{
+		"ErrPermissionDenied": ErrPermissionDenied,
+		"ErrToolNotFound":     ErrToolNotFound,
+		"ErrToolExecution":    ErrToolExecution,
+		"ErrResourceNotFound": ErrResourceNotFound,
+	}
+	want := map[string]int{
+		"ErrPermissionDenied": -32002,
+		"ErrToolNotFound":     -32010,
+		"ErrToolExecution":    -32011,
+		"ErrResourceNotFound": -32020,
+	}
+	for name, code := range want {
+		if reserved[name] != code {
+			t.Fatalf("%s: expected %d, got %d", name, code, reserved[name])
+		}
+	}
+	for _, code := range reserved {
+		if code < -32099 || code > -32000 {
+			t.Fatalf("reserved-range code %d falls outside JSON-RPC's implementation-defined server-error range (-32000..-32099)", code)
+		}
 	}
 }
 
