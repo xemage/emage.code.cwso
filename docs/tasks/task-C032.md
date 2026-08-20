@@ -2,7 +2,7 @@
 
 **ID:** C032
 **Owner:** backend-developer
-**Status:** pending
+**Status:** in_progress
 **Priority:** P1
 **Depends on:** C031 (ADR-013 approved)
 **Created:** 2026-08-12

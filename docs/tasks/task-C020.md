@@ -2,7 +2,7 @@
 
 **ID:** C020
 **Owner:** solution-architect
-**Status:** pending
+**Status:** in_progress
 **Priority:** P0
 **Depends on:** C010–C018 (gate CG1)
 **Created:** 2026-08-12
