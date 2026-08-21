@@ -2,11 +2,11 @@
 
 **ID:** C023
 **Owner:** backend-developer
-**Status:** in_progress
+**Status:** done
 **Priority:** P0
 **Depends on:** C021, C022
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-21
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (C023 row); docs/plans/plan-cwso-v1.0-phase2-real-filesystem-v1.md; docs/decisions/ADR-012-shadow-workspace-filesystem-projection.md
 
 > **2026-08-21 correction (orchestrator):** this brief was originally written
@@ -199,4 +199,52 @@ against a premise you've found to be false.
 
 ## Execution notes
 
-<filled during execution>
+Added `sweep_stale_workspace_dirs` (`repo.rs`), called once from
+`ShadowStore::new` after `bare.git` is opened/created: removes every other
+entry directly under `storage_root`, unconditionally, sound because
+`workspaces` always starts as an empty map (confirmed directly, both by the
+worker and independently by the reviewer) — a fresh process never has
+anything legitimate to reconcile stale directories against. Per-entry
+removal failures are logged and skipped, not fatal to startup; `bare.git`'s
+exclusion is an exact-filename match. Deterministic crash test
+(`fresh_store_sweeps_directory_left_by_simulated_unclean_crash`) simulates
+an unclean crash without relying on any `Drop` impl (confirmed none
+exists): constructs a real `ShadowStore`, materializes a real workspace
+directory, discards the instance with no `drop_workspace` call, then
+constructs a fresh instance against the same `storage_root` and asserts the
+sweep removes the stale directory. SIGTERM/SIGINT investigation concluded
+no custom signal handler is needed — default disposition terminates the
+process immediately, sufficient because neither of `WriteBackEngine`'s
+background threads buffers anything requiring an orderly flush (per C022's
+pre-existing "Durability" doc comment) and `parking_lot` mutexes never
+poison on panic. New `tests/signal_shutdown.rs` spawns the real compiled
+binary and sends real `SIGTERM`/`SIGINT`, asserting prompt clean exit — run
+6 times total (worker + reviewer) with zero flakiness. A live
+container-level confirmation was attempted and correctly abandoned as not
+meaningful: `deploy/Dockerfile.git-shadow`'s entrypoint (`tini --
+cwso-git-shadow`, no restart supervisor) means killing the process brings
+the whole container down with it, making a "kill process, keep
+container+tmpfs alive" test impossible without modifying deploy files
+(out of scope) — the deterministic library-level test is the primary,
+sufficient evidence.
+
+**VERDICT: PASS, no conditions** (independent Tech Lead review, MR !157) —
+every claim above independently reproduced: sweep logic, exact-equality
+`bare.git` exclusion, per-entry failure isolation, the Drop-free
+deterministic crash test's actual load-bearing-ness, the `parking_lot`
+no-poison-on-panic claim, and the full 32 unit + 2 integration test suite.
+`rust:lint`'s failure confirmed pre-existing/unrelated (reproduces
+identically at `develop`'s own merge-base commit, `allow_failure: true`).
+Reviewer also independently confirmed the review-routing judgment
+(Tech-Lead-only, no Security Engineer): the sweep only enumerates/removes
+entries under a fixed, non-attacker-controlled `storage_root` via
+`read_dir`, no external string ever parsed into a path — a materially
+lower risk profile than C021/C022's new TOCTOU-class logic. File ownership
+confirmed clean: `services/cwso-git-shadow/**` only; the projection
+mechanism (C021) and write-back sync logic (C022) both confirmed
+unchanged.
+
+MR !157 (`agent/backend-developer/C023`), merged to `develop` via merge
+commit `b6e671f9`. Closes C023 — unblocks **C035** (fd-anchored read-back
+hardening, `v1.0-blocker`, next per the agreed sequencing) and, together
+with C022, **C024** (E2E proof in CI).
