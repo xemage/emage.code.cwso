@@ -111,14 +111,17 @@
 //! the answer is no, for every workspace, with or without this task's
 //! write-back mechanism.
 //!
-//! # Read-back path safety (symlinks, path construction)
+//! # Read-back path safety (symlinks, path construction, TOCTOU)
 //!
 //! See [`crate::repo::scan_workspace_tree`]'s doc comment for the full
-//! reasoning (symlink handling, path construction, and the accepted
-//! residual TOCTOU on the read side) -- this module's event handler applies
-//! the identical policy for the single-file case (see `sync_file`): a
-//! `symlink_metadata` check immediately before any read, refusing to follow
-//! through anything reporting `is_symlink()`.
+//! reasoning (symlink handling and path construction). Both the
+//! reconciliation pass (via `scan_workspace_tree`/`sync_new_subtree`) and
+//! this module's single-file inotify handler (`sync_file`) go through the
+//! same fd-anchored primitives (`crate::repo::read_real_file` for the
+//! latter) -- `openat(..., O_NOFOLLOW)` relative to an already-open
+//! directory fd, never a separate `symlink_metadata`-then-`fs::read` pair of
+//! syscalls against a path string. This closes `docs/DEBT-REGISTER.md` row
+//! R-3 (task C035) for both call sites identically.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -130,7 +133,7 @@ use inotify::{EventMask, EventOwned, Inotify, WatchDescriptor, WatchMask};
 use parking_lot::Mutex;
 use uuid::Uuid;
 
-use crate::repo::{scan_workspace_tree, ShadowStore};
+use crate::repo::{read_real_file, scan_workspace_tree, ShadowStore, SingleFileScan};
 
 /// Events this engine asks `inotify` to report for every watched directory.
 /// Notably absent: `ACCESS`, `ATTRIB`, `OPEN`, `CLOSE_NOWRITE` -- none of
@@ -487,13 +490,20 @@ impl WriteBackEngine {
     }
 
     /// Re-reads a single real file at `rel_path` and records its content in
-    /// the blob store. Applies the same symlink policy documented on
-    /// `scan_workspace_tree`: `symlink_metadata` is checked first, and a
-    /// symlink is skipped (logged), never followed.
+    /// the blob store. Uses `read_real_file` (`repo.rs`) -- the fd-anchored
+    /// read primitive shared with `scan_workspace_tree` -- rather than a
+    /// separate `symlink_metadata`-then-`fs::read` pair of syscalls against
+    /// a path string (that separation was `docs/DEBT-REGISTER.md` row R-3,
+    /// closed by task C035).
     fn sync_file(&self, id: Uuid, rel_path: &str) {
-        let real_path = self.store.workspace_dir(id).join(rel_path);
-        match std::fs::symlink_metadata(&real_path) {
-            Ok(meta) if meta.file_type().is_symlink() => {
+        let ws_dir = self.store.workspace_dir(id);
+        match read_real_file(&ws_dir, rel_path) {
+            Ok(SingleFileScan::Content(content)) => {
+                if let Err(e) = self.store.wb_apply_write(id, rel_path, &content) {
+                    tracing::warn!(workspace = %id, path = %rel_path, error = %e, "write-back: failed to record filesystem edit");
+                }
+            }
+            Ok(SingleFileScan::Symlink) => {
                 tracing::warn!(
                     workspace = %id,
                     path = %rel_path,
@@ -502,30 +512,21 @@ impl WriteBackEngine {
                      reasoning shared with the reconciliation pass"
                 );
             }
-            Ok(meta) if meta.file_type().is_file() => match std::fs::read(&real_path) {
-                Ok(content) => {
-                    if let Err(e) = self.store.wb_apply_write(id, rel_path, &content) {
-                        tracing::warn!(workspace = %id, path = %rel_path, error = %e, "write-back: failed to record filesystem edit");
-                    }
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    // Raced against a fast delete/rename-away between the
-                    // event and this read; the corresponding
-                    // DELETE/MOVED_FROM event (already delivered, or still
-                    // pending in this same batch) resolves this, with
-                    // reconciliation as the ultimate backstop.
-                }
-                Err(e) => tracing::warn!(workspace = %id, path = %rel_path, error = %e, "write-back: failed to read edited file"),
-            },
-            Ok(_) => tracing::warn!(
-                workspace = %id,
-                path = %rel_path,
-                "write-back: skipping non-regular filesystem entry (device/FIFO/socket) at projected path"
-            ),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // Gone again already; nothing to do.
+            Ok(SingleFileScan::Vanished) => {
+                // Raced against a fast delete/rename-away between the
+                // event and this read; the corresponding
+                // DELETE/MOVED_FROM event (already delivered, or still
+                // pending in this same batch) resolves this, with
+                // reconciliation as the ultimate backstop.
             }
-            Err(e) => tracing::warn!(workspace = %id, path = %rel_path, error = %e, "write-back: failed to stat edited path"),
+            Ok(SingleFileScan::Other) => {
+                tracing::warn!(
+                    workspace = %id,
+                    path = %rel_path,
+                    "write-back: skipping non-regular filesystem entry (device/FIFO/socket) at projected path"
+                );
+            }
+            Err(e) => tracing::warn!(workspace = %id, path = %rel_path, error = %e, "write-back: failed to read edited file"),
         }
     }
 
