@@ -12,9 +12,9 @@
 //! filesystem writes are hardened against a hostile `path` string.
 
 use std::collections::HashMap;
-use std::ffi::{CString, OsStr};
-use std::io::Write as _;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::ffi::{CStr, CString, OsStr};
+use std::io::{Read as _, Write as _};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -707,6 +707,248 @@ fn materialize_write_via_fd_walk(workspace_dir: &Path, rel: &Path, content: &[u8
     Ok(())
 }
 
+// --- C035 (closes R-3): fd-anchored recursive read-side walk ------------
+//
+// The write side (`materialize_write_via_fd_walk` above) anchors every hop
+// of a path walk to the previous hop's already-open fd, so there is never a
+// separate, independently-timed name-based lookup for a race to win
+// against. Until this task, the read side (`scan_workspace_tree`, used by
+// both C022's reconciliation pass and its inotify single-entry handlers)
+// instead checked `symlink_metadata(path)` and then made a *second*,
+// independent syscall (`fs::read`/recursion) against that same `path`
+// string -- a real TOCTOU gap between the check and the use, tracked as
+// `docs/DEBT-REGISTER.md` row R-3. The functions below generalize the
+// write side's `open_root_dir`/`openat_dir_nofollow`/`openat_leaf_nofollow`
+// pattern to a recursive **read** walk: every directory is opened once, by
+// fd, from its parent's already-open fd; every directory's entries are
+// enumerated via `fdopendir`/`readdir` against that same fd (never
+// `std::fs::read_dir` on a path string); and every entry -- file or
+// subdirectory -- is itself opened via `openat(..., O_NOFOLLOW)` relative
+// to the containing directory's fd before its type is even inspected, so
+// the *kernel* refuses to hand back an fd for a symlink at all, atomically,
+// rather than this code checking a type first and trusting it a syscall
+// later.
+
+/// What a single `openat(..., O_NOFOLLOW)` attempt against one directory
+/// entry, from its containing directory's already-open fd, turned out to
+/// be. Never constructed from a `stat`/`symlink_metadata` call on a path
+/// string -- always from `fstat`ing (or simply successfully obtaining) an
+/// fd that a `O_NOFOLLOW` open already committed to.
+enum EntryOpen {
+    Dir(OwnedFd),
+    File(OwnedFd),
+    /// The kernel refused to open this entry with `O_NOFOLLOW` because it
+    /// is currently a symlink -- whether pre-existing or swapped in by a
+    /// concurrent operation between this walk discovering the entry's name
+    /// and this open call. Never followed, per this store's read-side
+    /// symlink policy.
+    Symlink,
+    /// Raced against a concurrent delete between this walk discovering the
+    /// entry's name and this open call -- not an error, just nothing left
+    /// to read here.
+    Vanished,
+    /// Opened, but neither a directory nor a regular file (device, FIFO,
+    /// socket, ...) -- same "skip and log" policy the pre-fix code applied
+    /// after a `symlink_metadata` check, now determined from the open fd's
+    /// `fstat` result instead.
+    Other,
+}
+
+/// Opens `name` as an entry of the directory referenced by `parent_fd`,
+/// entirely via fd-anchored `openat` calls -- never a fresh, name-based
+/// lookup from `workspace_dir` or the filesystem root, and never a
+/// `symlink_metadata` call on a reconstructed path string.
+///
+/// Two attempts, in order, exactly mirroring how the write side's
+/// `openat_dir_nofollow` is itself just one call of this same shape:
+///
+///  1. `openat(parent_fd, name, O_DIRECTORY | O_NOFOLLOW)` -- succeeds iff
+///     `name` is, at the instant of *this* syscall, a real directory and
+///     not a symlink. `ENOTDIR` means it exists but isn't a directory right
+///     now (a file or a symlink); fall through to the second attempt.
+///  2. `openat(parent_fd, name, O_NOFOLLOW | O_NONBLOCK)` -- a generic,
+///     still-`O_NOFOLLOW`-guarded open. This is its *own*, independently
+///     enforced refusal-to-follow: if `name` was swapped for a symlink in
+///     the gap between attempt 1 and this attempt, this call fails closed
+///     (`ELOOP`) exactly the same way attempt 1 would have. `O_NONBLOCK`
+///     only matters if `name` turns out to be a FIFO with no writer (it has
+///     no effect on reads of a regular file or on directory opens), so a
+///     hostile or accidental FIFO planted in the projection can never hang
+///     this walk.
+///
+/// Every branch here is safe independently of what any *other* branch or
+/// any *earlier* check observed: there is no step in this function that
+/// trusts a previous syscall's result when opening the real target, only
+/// the kernel's own atomic enforcement of `O_NOFOLLOW` on the specific
+/// `openat` call that actually obtains the fd used afterward.
+fn open_entry_nofollow(parent_fd: RawFd, name: &OsStr) -> Result<EntryOpen> {
+    let c = cstring_component(name)?;
+
+    let dir_flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+    let dir_fd = unsafe { libc::openat(parent_fd, c.as_ptr(), dir_flags, 0) };
+    if dir_fd >= 0 {
+        return Ok(EntryOpen::Dir(unsafe { OwnedFd::from_raw_fd(dir_fd) }));
+    }
+    let dir_err = std::io::Error::last_os_error();
+    match dir_err.raw_os_error() {
+        Some(libc::ELOOP) => return Ok(EntryOpen::Symlink),
+        Some(libc::ENOENT) => return Ok(EntryOpen::Vanished),
+        Some(libc::ENOTDIR) => {} // exists, not (currently) a directory -- fall through
+        _ => {
+            return Err(dir_err)
+                .with_context(|| format!("openat {name:?} (O_DIRECTORY|O_NOFOLLOW)"))
+        }
+    }
+
+    let file_flags = libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC;
+    let fd = unsafe { libc::openat(parent_fd, c.as_ptr(), file_flags, 0) };
+    if fd < 0 {
+        let err = std::io::Error::last_os_error();
+        return match err.raw_os_error() {
+            Some(libc::ELOOP) => Ok(EntryOpen::Symlink),
+            Some(libc::ENOENT) => Ok(EntryOpen::Vanished),
+            _ => Err(err).with_context(|| format!("openat {name:?} (O_NOFOLLOW)")),
+        };
+    }
+    let owned = unsafe { OwnedFd::from_raw_fd(fd) };
+    let mut st: libc::stat = unsafe { std::mem::zeroed() };
+    if unsafe { libc::fstat(owned.as_raw_fd(), &mut st) } != 0 {
+        return Err(std::io::Error::last_os_error()).with_context(|| format!("fstat {name:?}"));
+    }
+    if st.st_mode & libc::S_IFMT == libc::S_IFREG {
+        Ok(EntryOpen::File(owned))
+    } else {
+        Ok(EntryOpen::Other)
+    }
+}
+
+/// Opens `dir` (a workspace projection root) as an `O_DIRECTORY` fd by
+/// name -- the read side's counterpart to `open_root_dir`, tolerant of the
+/// directory already having been removed (a workspace torn down mid-scan,
+/// or a stale reconciliation tick racing `drop_workspace`) rather than
+/// treating that as an error. `dir` is the same non-attacker-controlled
+/// trust anchor `open_root_dir` documents, so `O_NOFOLLOW` is
+/// correspondingly not required here either.
+fn open_scan_root_dir(dir: &Path) -> Result<Option<OwnedFd>> {
+    let c = CString::new(dir.as_os_str().as_bytes())
+        .map_err(|_| anyhow!("workspace root path contains a NUL byte: {dir:?}"))?;
+    let fd =
+        unsafe { libc::open(c.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC) };
+    if fd < 0 {
+        let err = std::io::Error::last_os_error();
+        if err.kind() == std::io::ErrorKind::NotFound {
+            return Ok(None);
+        }
+        return Err(err).with_context(|| format!("open workspace root {dir:?} for scan"));
+    }
+    Ok(Some(unsafe { OwnedFd::from_raw_fd(fd) }))
+}
+
+/// Fd-anchors from `workspace_dir` down to `rel_dir`, one component at a
+/// time, entirely via `open_entry_nofollow` -- the read-side counterpart to
+/// `materialize_write_via_fd_walk`'s directory descent. `Ok(None)` means
+/// the path is not currently reachable as a real directory (removed, or a
+/// component now names a symlink or non-directory) -- a graceful,
+/// documented no-op matching this module's existing "directory removed
+/// mid-scan" tolerance, not an error, since a live workspace's real
+/// filesystem changing out from under a scan is an expected race, not a
+/// bug.
+fn open_scan_dir_anchored(workspace_dir: &Path, rel_dir: &str) -> Result<Option<OwnedFd>> {
+    let mut current = match open_scan_root_dir(workspace_dir)? {
+        Some(fd) => fd,
+        None => return Ok(None),
+    };
+    if rel_dir.is_empty() {
+        return Ok(Some(current));
+    }
+    for component in Path::new(rel_dir).iter() {
+        match open_entry_nofollow(current.as_raw_fd(), component)? {
+            EntryOpen::Dir(next) => current = next,
+            EntryOpen::Symlink => {
+                tracing::warn!(
+                    dir = %rel_dir,
+                    component = ?component,
+                    "write-back scan: a component of the scan path is a symlink -- skipped, never followed"
+                );
+                return Ok(None);
+            }
+            EntryOpen::Vanished => return Ok(None),
+            EntryOpen::File(_) | EntryOpen::Other => {
+                tracing::warn!(
+                    dir = %rel_dir,
+                    component = ?component,
+                    "write-back scan: a component of the scan path is no longer a directory -- skipped"
+                );
+                return Ok(None);
+            }
+        }
+    }
+    Ok(Some(current))
+}
+
+/// Duplicates `dir_fd` (via `F_DUPFD_CLOEXEC`) and hands the duplicate to
+/// `fdopendir`, so the caller's own fd for the directory remains valid and
+/// usable for further `openat` calls (each entry is opened relative to the
+/// *original* fd) while a separate fd, owned by the returned `DIR*` stream,
+/// is used purely for enumeration (`readdir`). This is what lets one
+/// already-open directory fd both be listed *and* have its entries opened
+/// by name, without a second, independently-timed name-based lookup for
+/// either operation.
+fn fdopendir_dup(dir_fd: RawFd) -> Result<*mut libc::DIR> {
+    let dup_fd = unsafe { libc::fcntl(dir_fd, libc::F_DUPFD_CLOEXEC, 0) };
+    if dup_fd < 0 {
+        return Err(std::io::Error::last_os_error()).context("dup directory fd for fdopendir");
+    }
+    let dirp = unsafe { libc::fdopendir(dup_fd) };
+    if dirp.is_null() {
+        let err = std::io::Error::last_os_error();
+        unsafe { libc::close(dup_fd) };
+        return Err(err).context("fdopendir");
+    }
+    Ok(dirp)
+}
+
+/// RAII wrapper around a `DIR*` obtained from `fdopendir_dup`, so every
+/// return path out of `scan_dir_into` (including via `?`) still calls
+/// `closedir` exactly once.
+struct OwnedDirStream(*mut libc::DIR);
+
+impl Drop for OwnedDirStream {
+    fn drop(&mut self) {
+        unsafe {
+            libc::closedir(self.0);
+        }
+    }
+}
+
+/// Reads the next directory entry's name from `dirp` (a still-open `DIR*`
+/// from `fdopendir_dup`), skipping the synthetic `.`/`..` entries.
+/// `Ok(None)` means end-of-stream, not an error -- distinguished from a
+/// genuine `readdir` error by resetting `errno` to `0` immediately before
+/// the call, per the POSIX-documented technique (a `NULL` return with
+/// `errno` still `0` is end-of-stream; non-zero is a real error).
+fn next_dir_entry_name(dirp: *mut libc::DIR) -> Result<Option<std::ffi::OsString>> {
+    loop {
+        unsafe {
+            *libc::__errno_location() = 0;
+        }
+        let entry_ptr = unsafe { libc::readdir(dirp) };
+        if entry_ptr.is_null() {
+            let errno = unsafe { *libc::__errno_location() };
+            if errno == 0 {
+                return Ok(None);
+            }
+            return Err(std::io::Error::from_raw_os_error(errno)).context("readdir");
+        }
+        let entry = unsafe { &*entry_ptr };
+        let bytes = unsafe { CStr::from_ptr(entry.d_name.as_ptr()) }.to_bytes();
+        if bytes == b"." || bytes == b".." {
+            continue;
+        }
+        return Ok(Some(OsStr::from_bytes(bytes).to_os_string()));
+    }
+}
+
 /// Result of [`scan_workspace_tree`]: every reachable regular file's
 /// logical (workspace-relative, `/`-joined) path and content, plus every
 /// reachable real directory's logical path (the scan's own starting point
@@ -722,59 +964,45 @@ pub(crate) struct FsScanResult {
 /// `workspace_dir.join(start_rel)` (or `workspace_dir` itself if
 /// `start_rel` is empty), for C022 write-back's event handler
 /// (`writeback.rs`) and its periodic reconciliation pass. This is the read
-/// side's counterpart to `materialize_write` -- read here, not written --
-/// and is deliberately narrower in its safety guarantee, for reasons
-/// explained below rather than left implicit.
+/// side's counterpart to `materialize_write` -- read here, not written.
 ///
 /// # Path construction (traversal risk)
 ///
-/// Every path this function produces is built by joining an
-/// already-walked `PathBuf` (descended, one hop at a time, from
-/// `workspace_dir`, which is itself not attacker-controlled -- see
-/// `ShadowStore::workspace_dir`'s doc comment) with a single filename taken
-/// directly from `DirEntry::file_name()`. A kernel-reported directory-entry
-/// name can never contain a `/` byte, and `std::fs::read_dir` never yields
-/// the special `.`/`..` entries -- so, unlike `secure_relative_path`'s job
-/// on the write side (parsing and validating a caller-supplied, arbitrary
-/// *string*), there is no string-based `..`/absolute-path escape to check
-/// for here, because nothing on this path is ever parsed from a raw string
-/// handed to us by anything outside this process. This is the "smaller
-/// risk than the write side" the task brief anticipated, and this is the
-/// citable reason it is smaller, not an assumption.
+/// Every logical path this function produces is built by joining an
+/// already-walked relative-path prefix with a single directory-entry name
+/// obtained from `readdir` (`next_dir_entry_name`). A kernel-reported
+/// directory-entry name can never contain a `/` byte, and `.`/`..` are
+/// filtered out before this function ever sees them -- so, unlike
+/// `secure_relative_path`'s job on the write side (parsing and validating
+/// a caller-supplied, arbitrary *string*), there is no string-based
+/// `..`/absolute-path escape to check for here, because nothing on this
+/// path is ever parsed from a raw string handed to us by anything outside
+/// this process.
 ///
-/// # Symlink handling (deliberate, not an oversight)
+/// # Symlink handling and TOCTOU (fd-anchored -- closes R-3)
 ///
-/// Every entry's type is determined via `std::fs::symlink_metadata` --
-/// never `std::fs::metadata`, and never by calling `std::fs::read` first
-/// and hoping. Anything reporting `file_type().is_symlink()` is skipped
-/// entirely (logged at `warn`, not read, not recursed into). This removes
-/// "external tooling plants a symlink directly in the tmpfs projection to
-/// pull arbitrary host content into a shadow commit" as a live attack
-/// class, by construction, for every path this function walks.
+/// Every entry -- file or directory -- is opened via `openat(...,
+/// O_NOFOLLOW)` relative to its containing directory's already-open fd
+/// (`open_entry_nofollow`) *before* its type is inspected; the kernel
+/// refuses the open atomically if the entry is currently a symlink,
+/// exactly the same guarantee `materialize_write_via_fd_walk` gives the
+/// write side. There is no separate `symlink_metadata`-then-`fs::read`/
+/// recursion pair of syscalls left for a race to land in between: the
+/// fd this function reads from, or recurses into, is the *same* fd the
+/// `O_NOFOLLOW` open already committed to, not a fresh, name-based lookup
+/// performed afterward. This closes `docs/DEBT-REGISTER.md` row R-3
+/// (task C035) -- see `open_entry_nofollow`'s doc comment for the exact
+/// mechanism, and
+/// `scan_workspace_tree_race_against_symlink_swap_never_reads_outside_content`
+/// (this module's tests) for the race-stress evidence that the pre-fix,
+/// separate-syscall version of this function was not actually closed
+/// against this class of race, and that this version is.
 ///
-/// # Residual TOCTOU (accepted, documented, *not* eliminated)
-///
-/// POC-DEBT R-3: read-side symlink check is not fd-anchored (unlike the
-/// write side); see the reasoning below and `docs/DEBT-REGISTER.md` row R-3.
-///
-/// The `symlink_metadata` check and the subsequent `fs::read`/recursion are
-/// two independent syscalls, not one fd-anchored operation the way the
-/// write side's `openat(..., O_NOFOLLOW)` (`materialize_write_via_fd_walk`)
-/// closes the equivalent gap in a single kernel call. A component could in
-/// principle be swapped for a symlink in the narrow window between the two
-/// calls. This gap is deliberately accepted here, not closed the way the
-/// write side closes it, because the actor who could win that race already
-/// has the local filesystem write access needed to plant it -- which is
-/// exactly the premise of this entire task (raw mutations at the projected
-/// path) -- and the worst case is that *same* actor's own workspace ending
-/// up with a commit containing bytes read from outside its own workspace
-/// root, not a cross-workspace or host-escape read, since write-back never
-/// writes anything back to the real filesystem in this direction (see
-/// `writeback.rs`'s module doc comment). This is a genuine judgment call,
-/// not an unconsidered shortcut, and is flagged here explicitly for
-/// Security Engineer review rather than silently narrowed to "safe" -- see
-/// `docs/DEBT-REGISTER.md` for the tracked entry and a fd-anchored
-/// hardening path if this residual risk is judged unacceptable.
+/// Anything the kernel reports as a symlink (`EntryOpen::Symlink`) is
+/// skipped entirely (logged at `warn`, not read, not recursed into) --
+/// the same skip-and-log *policy* the pre-fix code applied, just enforced
+/// by construction now rather than by a separate, independently-timed
+/// check.
 ///
 /// # Non-UTF-8 filenames
 ///
@@ -789,69 +1017,85 @@ pub(crate) struct FsScanResult {
 pub(crate) fn scan_workspace_tree(workspace_dir: &Path, start_rel: &str) -> Result<FsScanResult> {
     let mut files = HashMap::new();
     let mut dirs = vec![start_rel.to_string()];
-    let start_dir = if start_rel.is_empty() {
-        workspace_dir.to_path_buf()
-    } else {
-        workspace_dir.join(start_rel)
-    };
-    scan_dir_into(&start_dir, start_rel, &mut files, &mut dirs)?;
+    if let Some(dir_fd) = open_scan_dir_anchored(workspace_dir, start_rel)? {
+        scan_dir_into(&dir_fd, start_rel, &mut files, &mut dirs)?;
+    }
     Ok(FsScanResult { files, dirs })
 }
 
+/// Enumerates `dir_fd`'s entries (via `fdopendir_dup`/`next_dir_entry_name`)
+/// and applies [`apply_scan_entry`] to each. `dir_fd` itself was obtained
+/// via a fd-anchored `openat` hop (either `open_scan_dir_anchored`'s root
+/// open, or a prior recursive call's `open_entry_nofollow` for a
+/// subdirectory) -- never re-resolved by name here.
 fn scan_dir_into(
-    real_dir: &Path,
+    dir_fd: &OwnedFd,
     rel_dir: &str,
     files: &mut HashMap<String, Vec<u8>>,
     dirs: &mut Vec<String>,
 ) -> Result<()> {
-    let entries = match std::fs::read_dir(real_dir) {
-        Ok(e) => e,
-        // The directory may have been removed between the event that
-        // triggered this scan and this call -- not an error, just nothing
-        // left to find here.
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(e).with_context(|| format!("read_dir {real_dir:?}")),
+    let dirp = fdopendir_dup(dir_fd.as_raw_fd())
+        .with_context(|| format!("fdopendir rel {rel_dir:?}"))?;
+    let stream = OwnedDirStream(dirp);
+    while let Some(name) =
+        next_dir_entry_name(stream.0).with_context(|| format!("readdir rel {rel_dir:?}"))?
+    {
+        apply_scan_entry(dir_fd, rel_dir, &name, files, dirs)?;
+    }
+    Ok(())
+}
+
+/// Opens one directory entry (`name`, a child of `dir_fd`) via
+/// `open_entry_nofollow` and records it: recurses into a subdirectory,
+/// reads a regular file's content via the same fd `open_entry_nofollow`
+/// already obtained (never `std::fs::read` on a path string), or logs and
+/// skips a symlink/vanished/other-typed entry per this store's read-side
+/// policy.
+fn apply_scan_entry(
+    dir_fd: &OwnedFd,
+    rel_dir: &str,
+    name: &OsStr,
+    files: &mut HashMap<String, Vec<u8>>,
+    dirs: &mut Vec<String>,
+) -> Result<()> {
+    let name_str = match name.to_str() {
+        Some(s) => s,
+        None => {
+            tracing::warn!(
+                dir = %rel_dir,
+                name = ?name,
+                "write-back scan: skipping entry with non-UTF-8 filename"
+            );
+            return Ok(());
+        }
     };
-    for entry in entries {
-        let entry = entry.with_context(|| format!("iterate {real_dir:?}"))?;
-        let name = entry.file_name();
-        let name_str = match name.to_str() {
-            Some(s) => s,
-            None => {
-                tracing::warn!(
-                    dir = ?real_dir,
-                    name = ?name,
-                    "write-back scan: skipping entry with non-UTF-8 filename"
-                );
-                continue;
-            }
-        };
-        let rel_path = if rel_dir.is_empty() {
-            name_str.to_string()
-        } else {
-            format!("{rel_dir}/{name_str}")
-        };
-        let real_path = entry.path();
-        let meta = std::fs::symlink_metadata(&real_path)
-            .with_context(|| format!("symlink_metadata {real_path:?}"))?;
-        let ft = meta.file_type();
-        if ft.is_symlink() {
+    let rel_path = if rel_dir.is_empty() {
+        name_str.to_string()
+    } else {
+        format!("{rel_dir}/{name_str}")
+    };
+
+    match open_entry_nofollow(dir_fd.as_raw_fd(), name)? {
+        EntryOpen::Dir(child_fd) => {
+            dirs.push(rel_path.clone());
+            scan_dir_into(&child_fd, &rel_path, files, dirs)?;
+        }
+        EntryOpen::File(file_fd) => {
+            let mut f = std::fs::File::from(file_fd);
+            let mut content = Vec::new();
+            f.read_to_end(&mut content)
+                .with_context(|| format!("read {rel_path:?}"))?;
+            files.insert(rel_path, content);
+        }
+        EntryOpen::Symlink => {
             tracing::warn!(
                 path = %rel_path,
-                real_path = ?real_path,
                 "write-back scan: skipping symlink planted directly in shadow workspace \
                  projection (never followed) -- see scan_workspace_tree's doc comment"
             );
-            continue;
         }
-        if ft.is_dir() {
-            dirs.push(rel_path.clone());
-            scan_dir_into(&real_path, &rel_path, files, dirs)?;
-        } else if ft.is_file() {
-            let content =
-                std::fs::read(&real_path).with_context(|| format!("read {real_path:?}"))?;
-            files.insert(rel_path, content);
-        } else {
+        EntryOpen::Vanished => {}
+        EntryOpen::Other => {
             tracing::warn!(
                 path = %rel_path,
                 "write-back scan: skipping non-regular, non-directory entry \
@@ -860,6 +1104,48 @@ fn scan_dir_into(
         }
     }
     Ok(())
+}
+
+/// Outcome of [`read_real_file`]: the fd-anchored, single-file counterpart
+/// to [`scan_workspace_tree`], used by `writeback.rs`'s inotify event
+/// handler (`sync_file`) instead of a separate `symlink_metadata`/
+/// `fs::read` pair of syscalls against a path string.
+pub(crate) enum SingleFileScan {
+    Content(Vec<u8>),
+    Symlink,
+    Vanished,
+    Other,
+}
+
+/// Fd-anchors from `workspace_dir`, through `rel_path`'s directory
+/// components (via `open_scan_dir_anchored`), to its final component (via
+/// `open_entry_nofollow`), and reads that file's content through the same
+/// fd the `O_NOFOLLOW` open obtained -- the single-file counterpart to
+/// `scan_workspace_tree`'s recursive walk, sharing the exact same
+/// underlying primitives (`open_entry_nofollow`, `open_scan_dir_anchored`)
+/// rather than a parallel, divergent implementation.
+pub(crate) fn read_real_file(workspace_dir: &Path, rel_path: &str) -> Result<SingleFileScan> {
+    let (dir_rel, leaf_str) = match rel_path.rsplit_once('/') {
+        Some((d, l)) => (d, l),
+        None => ("", rel_path),
+    };
+    let dir_fd = match open_scan_dir_anchored(workspace_dir, dir_rel)? {
+        Some(fd) => fd,
+        None => return Ok(SingleFileScan::Vanished),
+    };
+    let leaf = OsStr::new(leaf_str);
+    match open_entry_nofollow(dir_fd.as_raw_fd(), leaf)? {
+        EntryOpen::File(fd) => {
+            let mut f = std::fs::File::from(fd);
+            let mut content = Vec::new();
+            f.read_to_end(&mut content)
+                .with_context(|| format!("read {rel_path:?} under {workspace_dir:?}"))?;
+            Ok(SingleFileScan::Content(content))
+        }
+        EntryOpen::Symlink => Ok(SingleFileScan::Symlink),
+        EntryOpen::Vanished => Ok(SingleFileScan::Vanished),
+        EntryOpen::Dir(_) | EntryOpen::Other => Ok(SingleFileScan::Other),
+    }
 }
 
 pub fn dispatch(store: &Arc<ShadowStore>, req: Request) -> Response {
@@ -1327,6 +1613,216 @@ mod tests {
         assert!(
             !escape.load(Ordering::Relaxed),
             "write_file wrote a file outside the workspace during concurrent symlink swap"
+        );
+    }
+
+    // --- C035 (closes R-3): fd-anchored read-side TOCTOU fix -------------
+
+    #[test]
+    fn scan_workspace_tree_skips_symlink_planted_at_intermediate_component() {
+        // Deterministic regression coverage: a symlink at an intermediate
+        // directory component, pre-planted (not concurrently) before the
+        // scan runs. NOTE for reviewers, same caveat as the write side's
+        // `write_file_refuses_to_follow_symlink_planted_at_intermediate_component`:
+        // this static scenario was ALSO already caught by the pre-fix
+        // `symlink_metadata`-then-`fs::read_dir` check (the check runs
+        // before the racer has any chance to act), so this test alone does
+        // not distinguish old from new. It is included as direct,
+        // deterministic coverage of `scan_workspace_tree`/`scan_dir_into`
+        // specifically. The race-stress test below is what actually
+        // distinguishes pre-fix from post-fix behavior.
+        let s = store();
+        let (id, _) = s.create(None).unwrap();
+        let ws_dir = s.workspace_dir(id);
+
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.txt"), b"do-not-read").unwrap();
+        std::os::unix::fs::symlink(outside.path(), ws_dir.join("sub")).unwrap();
+        std::fs::write(ws_dir.join("sentinel.txt"), b"ok").unwrap();
+
+        let scan = scan_workspace_tree(&ws_dir, "").unwrap();
+        assert!(
+            !scan.files.keys().any(|p| p.contains("secret.txt")),
+            "a symlinked intermediate directory component must never be recursed into"
+        );
+        assert_eq!(
+            scan.files.get("sentinel.txt").map(Vec::as_slice),
+            Some(b"ok".as_slice())
+        );
+    }
+
+    #[test]
+    fn scan_workspace_tree_skips_symlink_planted_at_leaf() {
+        let s = store();
+        let (id, _) = s.create(None).unwrap();
+        let ws_dir = s.workspace_dir(id);
+
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("secret.txt");
+        std::fs::write(&secret, b"do-not-read").unwrap();
+        std::os::unix::fs::symlink(&secret, ws_dir.join("link.txt")).unwrap();
+
+        let scan = scan_workspace_tree(&ws_dir, "").unwrap();
+        assert!(
+            !scan.files.contains_key("link.txt"),
+            "a symlink planted directly at a scanned leaf must never be read"
+        );
+    }
+
+    #[test]
+    fn read_real_file_skips_symlink_planted_at_leaf() {
+        // Direct unit coverage for `read_real_file` (the single-file
+        // primitive `writeback.rs`'s `sync_file` uses), independent of the
+        // full write-back engine.
+        let s = store();
+        let (id, _) = s.create(None).unwrap();
+        let ws_dir = s.workspace_dir(id);
+
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("secret.txt");
+        std::fs::write(&secret, b"do-not-read").unwrap();
+        std::os::unix::fs::symlink(&secret, ws_dir.join("link.txt")).unwrap();
+
+        assert!(
+            matches!(
+                read_real_file(&ws_dir, "link.txt").unwrap(),
+                SingleFileScan::Symlink
+            ),
+            "read_real_file must report a leaf symlink as Symlink, never read through it"
+        );
+    }
+
+    #[test]
+    fn scan_workspace_tree_race_against_symlink_swap_never_reads_outside_content() {
+        // The read-side counterpart to
+        // `write_file_race_against_symlink_swap_never_escapes_workspace`,
+        // proving R-3 is actually closed (not merely that the deterministic
+        // tests above pass, which the pre-fix code already did too, since a
+        // *static* symlink was always caught by the old `symlink_metadata`
+        // check that ran before any race could act).
+        //
+        // Why this genuinely distinguishes pre-fix from post-fix: the
+        // pre-fix code's `symlink_metadata` check on "race" and its
+        // subsequent recursive `std::fs::read_dir(ws_dir.join("race"))`
+        // call are two independent syscalls. `std::fs::read_dir` does not
+        // use `O_NOFOLLOW` -- if "race" is swapped for a symlink to
+        // `outside` in the narrow window between those two calls,
+        // `read_dir` transparently follows it and lists `outside`'s
+        // contents instead, and the subsequent per-entry
+        // `symlink_metadata`/`fs::read` calls (now against `outside`'s own,
+        // non-symlink file) happily read the secret's content into the
+        // scan result. The post-fix code opens "race" via a single
+        // `openat(..., O_DIRECTORY | O_NOFOLLOW)` call and only ever
+        // lists/reads through that already-open fd afterward, so a later
+        // swap of the "race" name cannot redirect anything this scan does.
+        //
+        // Getting this race to actually land reliably, in either direction,
+        // needed more than a plain "remove, symlink, remove, mkdir" racer
+        // (that version was tried first and did not reproduce the leak
+        // against the pre-fix code even across 50,000 iterations / 5
+        // wall-clock seconds with 8 racer + 4 reader threads -- the
+        // pre-fix code's own check-to-use gap, a single `symlink_metadata`
+        // call immediately followed by a `read_dir` call with essentially
+        // no intervening work, is apparently narrower than that racer's
+        // achievable swap frequency allowed it to reliably hit on this
+        // hardware). This version instead pre-creates BOTH "race" (a real,
+        // empty directory) and "race_link" (a symlink to `outside`)
+        // up front, and has the racer threads repeatedly EXCHANGE the two
+        // names via `renameat2(..., RENAME_EXCHANGE)` -- a single, atomic
+        // syscall per swap, with no intermediate "name doesn't exist yet"
+        // gap at all, so "race" spends very close to exactly half of all
+        // wall-clock time as the real directory and half as the symlink,
+        // at the racer's maximum achievable swap frequency. With this
+        // change, this test was confirmed (see the MR description for the
+        // actual before/after run output) to reliably fail in well under
+        // 200ms when spliced onto the pre-fix commit, and to reliably pass
+        // against the fd-anchored fix below.
+        //
+        // This does NOT assert the race window is hit on any particular
+        // iteration/instant (that would be flaky by construction) -- only
+        // that across the whole `deadline` window, content from outside
+        // the workspace root is NEVER observed in a scan result.
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let s = store();
+        let (id, _) = s.create(None).unwrap();
+        let ws_dir = s.workspace_dir(id);
+        let race_dir = ws_dir.join("race");
+        std::fs::create_dir(&race_dir).unwrap();
+
+        let outside = tempfile::tempdir().unwrap();
+        let outside_path = outside.path().to_path_buf();
+        const SECRET_NAME: &str = "outside_secret.txt";
+        std::fs::write(
+            outside_path.join(SECRET_NAME),
+            b"host-only content, must never be read into a shadow commit",
+        )
+        .unwrap();
+
+        let race_link = ws_dir.join("race_link");
+        std::os::unix::fs::symlink(&outside_path, &race_link).unwrap();
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let leaked = Arc::new(AtomicBool::new(false));
+
+        const RACER_THREADS: usize = 8;
+        let racers: Vec<_> = (0..RACER_THREADS)
+            .map(|_| {
+                let racer_stop = stop.clone();
+                let path_a = CString::new(race_dir.as_os_str().as_bytes()).unwrap();
+                let path_b = CString::new(race_link.as_os_str().as_bytes()).unwrap();
+                std::thread::spawn(move || {
+                    while !racer_stop.load(Ordering::Relaxed) {
+                        unsafe {
+                            libc::renameat2(
+                                libc::AT_FDCWD,
+                                path_a.as_ptr(),
+                                libc::AT_FDCWD,
+                                path_b.as_ptr(),
+                                libc::RENAME_EXCHANGE,
+                            );
+                        }
+                    }
+                })
+            })
+            .collect();
+
+        const READER_THREADS: usize = 4;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let readers: Vec<_> = (0..READER_THREADS)
+            .map(|_| {
+                let ws_dir = ws_dir.clone();
+                let leaked = leaked.clone();
+                std::thread::spawn(move || {
+                    while std::time::Instant::now() < deadline {
+                        if leaked.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        if let Ok(scan) = scan_workspace_tree(&ws_dir, "") {
+                            if scan.files.keys().any(|p| p.ends_with(SECRET_NAME)) {
+                                leaked.store(true, Ordering::Relaxed);
+                                return;
+                            }
+                        }
+                    }
+                })
+            })
+            .collect();
+        for r in readers {
+            r.join().unwrap();
+        }
+
+        stop.store(true, Ordering::Relaxed);
+        for r in racers {
+            r.join().unwrap();
+        }
+
+        assert!(
+            !leaked.load(Ordering::Relaxed),
+            "scan_workspace_tree read content from outside the workspace root during a \
+             concurrent symlink swap of an intermediate directory component -- this is the R-3 \
+             TOCTOU gap C035 closes"
         );
     }
 

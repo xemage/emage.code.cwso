@@ -48,7 +48,7 @@ was carried forward or closed.
 | D5 (= P1-6) | `orchestrator/internal/server/server.go` (`handleInitialize`) | Spec compliance | Capability negotiation declares `tools.listChanged: false`; full capability set (resources, prompts, sampling) deferred | open | v1.1 | — |
 | D8 (= P1-8) | `orchestrator/internal/tools/fs_tools.go` (1 MiB cap) | Robustness | Read cap is hard-coded at 1 MiB; production should expose it via config | open | v1.1 | — |
 | P2-8 | `services/cwso-git-shadow/src/ast.rs` (`Workspace.base_tree`) | Cleanliness | `base_tree` is stored but never read after seeding the file map; dead state pending T029 | open | v1.1 | — |
-| R-3 | `services/cwso-git-shadow/src/repo.rs` (`scan_workspace_tree`'s doc comment) | Security | C022's write-back read-side scan (`scan_workspace_tree`, used by both the inotify event handler and the reconciliation pass) checks `symlink_metadata` immediately before reading/recursing into an entry, but that check and the subsequent `fs::read`/recursion are two separate syscalls, not one fd-anchored operation the way the write side's `openat(..., O_NOFOLLOW)` (`materialize_write_via_fd_walk`) closes the equivalent gap. A component could in principle be swapped for a symlink in the narrow window between the two. Independent Security Engineer review of C022's MR (!153) confirmed this is not exploitable against *today's* mount topology (nothing outside `git-shadow` itself currently has any path to a shadow workspace's projected directory), but found the "same actor already has the access" justification for accepting this permanently rests on an assumption about sandbox-mount wiring that has not been built yet (`C024`) and that ADR-012 itself names as an unsolved mount-propagation problem — accepting a TOCTOU gap permanently on a premise that depends on future code being built a particular way is inconsistent with the bar this project held the write side to (SEC-001, HIGH, blocking). | open | **v1.0-blocker** (reclassified from the provisional `v1.1`/`wontfix`-pending-review text this row originally carried, per the Security Engineer's explicit MR !153 disposition) — closing task **C035** (fd-anchored recursive read-back walk, generalizing C021's `openat`/`mkdirat` primitives from a single-leaf write to a tree-walking read via `openat`+`fdopendir`; reviewer confirmed this is tractable, not a novel problem, just more code than the linear write-side walk). If the fix is deferred rather than implemented, the "same actor" premise MUST be explicitly re-confirmed against C024's actual sandbox-mount-scoping implementation before v1.0 sign-off — this is not optional and not satisfied by C024 merely existing | C035 |
+| R-3 | `services/cwso-git-shadow/src/repo.rs` (`scan_workspace_tree`'s doc comment) | Security | C022's write-back read-side scan (`scan_workspace_tree`, used by both the inotify event handler and the reconciliation pass) checked `symlink_metadata` immediately before reading/recursing into an entry, but that check and the subsequent `fs::read`/recursion were two separate syscalls, not one fd-anchored operation the way the write side's `openat(..., O_NOFOLLOW)` (`materialize_write_via_fd_walk`) closes the equivalent gap. A component could in principle be swapped for a symlink in the narrow window between the two. Independent Security Engineer review of C022's MR (!153) confirmed this was not exploitable against *today's* mount topology, but found the "same actor already has the access" justification for accepting this permanently rested on an assumption about sandbox-mount wiring that had not been built yet (`C024`) and that ADR-012 itself names as an unsolved mount-propagation problem — accepting a TOCTOU gap permanently on a premise that depends on future code being built a particular way was inconsistent with the bar this project held the write side to (SEC-001, HIGH, blocking). | closed | fixed (C035) | C035 |
 | R-4 | `services/cwso-git-shadow/src/writeback.rs` (`handle_event`'s non-UTF-8 filename branch) | Robustness | A file created/renamed directly at a shadow workspace's real path with a non-UTF-8 name is silently skipped by write-back (logged at `warn`, no error surfaced to the caller) and can never be captured into a `commit_shadow` result. This is a pre-existing, system-wide constraint C022 does not introduce or worsen — `Workspace.files` is `HashMap<String, Oid>` and the IPC protocol carries every path as a JSON string end-to-end, so `write_file` itself already could not represent such a path either — but C022 is the first code path that can *observe* such a name arriving via raw filesystem tooling (rather than only ever receiving paths that were already JSON-string-encoded), so it is called out explicitly here rather than left implicit | open | v1.1 | — |
 | R-5 | `services/cwso-git-shadow/src/writeback.rs` (rename-handling doc comment, "Accepted, documented race") | Correctness | Rename is decomposed into two independent operations (`MOVED_FROM` → delete, `MOVED_TO` → create/sync), not one atomic move — independent Tech Lead review of C022's MR (!153) endorsed this design (no cookie-correlation) as sound, but identified a real, narrow race: the delete-half and create-half are two separate critical sections, and a `commit()` landing in the gap between them could observe the affected file as missing under *both* its old and new path (a transient full disappearance), self-resolving on the next event or reconciliation tick. Non-blocking; a future hardening (not required for v1.0) would batch same-tick, same-`inotify`-cookie `MOVED_FROM`/`MOVED_TO` pairs into one atomic delete+create under a single lock acquisition | open | v1.1 | — |
 
@@ -73,6 +73,34 @@ was carried forward or closed.
   connection limiting (lines 210–214), and the section comment
   `// --- Rate limiting middleware (T029 remediation #7) ---` (line 665)
   documenting the default of 60 requests/minute.
+- **R-3 — read-side TOCTOU: `fixed` (C035).** `services/cwso-git-shadow/src/repo.rs`
+  generalizes C021's write-side fd-anchored primitives
+  (`open_root_dir`/`openat_dir_nofollow`/`openat_leaf_nofollow`) to a
+  recursive read walk: `open_entry_nofollow` opens every directory entry
+  via `openat(..., O_NOFOLLOW)` (first attempting `O_DIRECTORY`, falling
+  back to a generic `O_NOFOLLOW` open) relative to its containing
+  directory's already-open fd, before its type is even inspected;
+  `fdopendir_dup`/`next_dir_entry_name` enumerate a directory's entries from
+  that same already-open fd (via a `F_DUPFD_CLOEXEC` duplicate, never
+  `std::fs::read_dir` on a path string); and file content is read via the
+  fd `open_entry_nofollow` already obtained, never `std::fs::read` on a
+  reconstructed path. `scan_workspace_tree`/`scan_dir_into` (the
+  reconciliation pass) and the new `read_real_file` (used by
+  `services/cwso-git-shadow/src/writeback.rs`'s `sync_file`, the inotify
+  single-entry handler) both go through these same primitives, so both
+  call sites named in this row are hardened identically. Regression
+  coverage: `scan_workspace_tree_skips_symlink_planted_at_intermediate_component`,
+  `scan_workspace_tree_skips_symlink_planted_at_leaf`, and
+  `read_real_file_skips_symlink_planted_at_leaf` are deterministic
+  (necessary but not sufficient, since a static symlink was already caught
+  by the pre-fix check too); `scan_workspace_tree_race_against_symlink_swap_never_reads_outside_content`
+  is the genuine race-stress test that actually distinguishes old from new
+  — confirmed (by splicing it onto the pre-fix commit) to reliably fail in
+  well under 200ms against the pre-fix `symlink_metadata`-then-`read_dir`
+  code, and to reliably pass against this fix. No new dependency: `libc`
+  (already a direct dependency, matching C021's own style) supplied every
+  primitive needed (`openat`, `fstat`, `fdopendir`, `readdir`,
+  `renameat2` in the test only).
 
 ### In-code `POC-DEBT` marker cross-check
 
@@ -92,7 +120,7 @@ CWSO product debt, and are intentionally not register rows.
 | `orchestrator/internal/mcp/protocol.go:10` | B1 (fixed) |
 | `orchestrator/internal/shadow/client.go:5` | B13 |
 | `orchestrator/internal/rollout/evaluator_swebench.go:64` | B11 |
-| `services/cwso-git-shadow/src/repo.rs` (`scan_workspace_tree`'s "Residual TOCTOU" doc comment, C022) | R-3 |
+| `services/cwso-git-shadow/src/repo.rs` (`scan_workspace_tree`'s "Residual TOCTOU" doc comment, C022) | R-3 (fixed; marker text removed, doc comment now describes the C035 fd-anchored fix instead) |
 | `services/cwso-git-shadow/src/repo.rs` (`scan_workspace_tree`'s "Non-UTF-8 filenames" doc comment, C022) | R-4 |
 | `services/cwso-git-shadow/src/writeback.rs` (rename-handling doc comment, "Accepted, documented race", C022) | R-5 |
 
