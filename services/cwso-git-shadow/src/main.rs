@@ -20,12 +20,16 @@
 //! reasoning. This closes the debt-register gap tracked as `B2` ("sub-agents
 //! access the virtual FS via orchestrator → sidecar IPC instead of an
 //! OS-reachable path"), via ADR-012's chosen mechanism (materialise-to-tmpfs)
-//! rather than the OverlayFS bind-mount the original marker named. Write-back of
-//! raw writes made directly at the projected path (by tooling other than
-//! this service's own `write_file`) into the git-shadow blob store is not
-//! yet implemented — that is C022, tracked separately; this service's own
-//! `write_file`/`read_file`/`commit_shadow`/AST-query IPC calls remain the
-//! only supported way to mutate a workspace's git-visible state today.
+//! rather than the OverlayFS bind-mount the original marker named.
+//!
+//! Write-back (C022, same ADR): raw filesystem mutations made directly at a
+//! workspace's projected path -- by tooling other than this service's own
+//! `write_file` IPC call -- are captured into the same in-memory blob store
+//! via an `inotify`-driven watcher plus a periodic hash-based reconciliation
+//! backstop; see `writeback::WriteBackEngine` for the mechanism and its
+//! durability/path-safety reasoning. `commit_shadow` reads from that same
+//! in-memory state regardless of whether an edit arrived via `write_file` or
+//! via a raw filesystem mutation this engine observed.
 
 use std::collections::HashSet;
 use std::io::{Read, Write};
@@ -40,9 +44,11 @@ use anyhow::{Context, Result};
 mod ast;
 mod proto;
 mod repo;
+mod writeback;
 
 use proto::{Envelope, Request, Response};
 use repo::ShadowStore;
+use writeback::WriteBackEngine;
 
 const SOCKET_PATH_DEFAULT: &str = "/run/cwso/git-shadow.sock";
 const FRAME_HEADER: usize = 4;
@@ -82,6 +88,14 @@ fn main() -> Result<()> {
     tracing::info!(?socket_path, ?storage_root, "cwso-git-shadow ready");
 
     let store = Arc::new(ShadowStore::new(storage_root)?);
+    // C022: start the write-back engine and wire it back into the store
+    // before accepting any IPC connections, so no `create_workspace` call
+    // can ever observe a store with write-back not yet attached (see
+    // `ShadowStore::attach_writeback`'s doc comment for why this is a
+    // two-step, not constructor-time, wiring).
+    let writeback_engine =
+        WriteBackEngine::spawn(Arc::clone(&store)).context("start filesystem write-back engine")?;
+    store.attach_writeback(writeback_engine);
 
     for stream in listener.incoming() {
         match stream {

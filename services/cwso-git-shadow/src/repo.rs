@@ -17,7 +17,7 @@ use std::io::Write as _;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
@@ -28,6 +28,7 @@ use uuid::Uuid;
 
 use crate::ast;
 use crate::proto::{Request, Response};
+use crate::writeback::WriteBackEngine;
 
 pub struct ShadowStore {
     repo: Mutex<Repository>,
@@ -35,6 +36,14 @@ pub struct ShadowStore {
     /// Root of the tmpfs-backed projection tree; each workspace gets
     /// `storage_root/<uuid>/` (see `workspace_dir`).
     storage_root: PathBuf,
+    /// C022 write-back engine (`docs/decisions/ADR-012-shadow-workspace-
+    /// filesystem-projection.md`). Populated exactly once, shortly after
+    /// construction in `main`, via `attach_writeback` -- see that method's
+    /// doc comment for why a `OnceLock` rather than a constructor argument.
+    /// Every code path that reads it treats "not attached" (this module's
+    /// own unit tests construct a bare `ShadowStore` and never attach one)
+    /// as "write-back is inactive," never as an error.
+    writeback: OnceLock<Arc<WriteBackEngine>>,
 }
 
 struct Workspace {
@@ -58,19 +67,38 @@ impl ShadowStore {
             repo: Mutex::new(repo),
             workspaces: Mutex::new(HashMap::new()),
             storage_root,
+            writeback: OnceLock::new(),
         })
+    }
+
+    /// Wires up the C022 write-back engine after construction. Must be
+    /// called at most once (a second call is a no-op: `OnceLock::set`
+    /// simply reports failure, which is intentionally ignored rather than
+    /// panicking — there is no scenario in this service where re-attaching
+    /// a second engine instance would be correct, so silently keeping the
+    /// first one is the safe default). Not part of `new` itself because
+    /// `WriteBackEngine::spawn` needs an `Arc<ShadowStore>` to hand its
+    /// background threads, which does not exist yet inside `new`'s own
+    /// constructor body — see `main.rs` for the two-step wiring.
+    pub fn attach_writeback(&self, engine: Arc<WriteBackEngine>) {
+        let _ = self.writeback.set(engine);
     }
 
     /// Deterministic real, tmpfs-backed path for a workspace's projection:
     /// `<storage_root>/<workspace-uuid>/`. `Uuid::to_string()` only ever
     /// produces hyphenated lowercase hex, so this is not itself
     /// attacker-controlled input (unlike the file `path` strings handled by
-    /// `materialize_write`).
-    fn workspace_dir(&self, id: Uuid) -> PathBuf {
+    /// `materialize_write`). `pub(crate)` so `writeback.rs` can resolve a
+    /// workspace's real path without duplicating this logic.
+    pub(crate) fn workspace_dir(&self, id: Uuid) -> PathBuf {
         self.storage_root.join(id.to_string())
     }
 
-    fn create(&self, base: Option<String>) -> Result<(Uuid, Option<Oid>)> {
+    // `pub(crate)`, not `fn`, solely so `writeback.rs`'s own unit tests
+    // (a different module) can create a workspace to exercise write-back
+    // against; `dispatch` below remains the only externally reachable
+    // (IPC) caller.
+    pub(crate) fn create(&self, base: Option<String>) -> Result<(Uuid, Option<Oid>)> {
         let base_tree = if let Some(sha) = base {
             let oid = Oid::from_str(&sha).with_context(|| format!("bad sha {sha}"))?;
             let repo = self.repo.lock();
@@ -132,10 +160,28 @@ impl ShadowStore {
             }
         }
         self.workspaces.lock().insert(id, ws);
+        // C022: register this workspace's real, projected directory for
+        // filesystem write-back (recursively adds inotify watches and
+        // seeds write-back's view of pre-existing content -- see
+        // `WriteBackEngine::register_workspace`'s doc comment). Done last,
+        // after the workspace is visible in `self.workspaces`, so a
+        // write-back event racing in immediately after registration always
+        // finds a live workspace to apply itself to.
+        if let Some(engine) = self.writeback.get() {
+            engine.register_workspace(id, &ws_dir);
+        }
         Ok((id, base_tree))
     }
 
     fn drop_workspace(&self, id: Uuid) -> bool {
+        // C022: tear down this workspace's watches *before* removing the
+        // in-memory entry and the real directory, so no further write-back
+        // event for this workspace is dispatched after this point (the
+        // `workspace_exists` guard in `writeback.rs`'s `handle_event` is a
+        // second, independent backstop if a stray event still races in).
+        if let Some(engine) = self.writeback.get() {
+            engine.unregister_workspace(id);
+        }
         let existed = self.workspaces.lock().remove(&id).is_some();
         // Remove the real, on-disk projection regardless of whether the
         // in-memory entry was found, so no orphaned directory can survive a
@@ -263,6 +309,85 @@ impl ShadowStore {
         // POC-DEBT P2-4: orphan commits per workspace; chained history added in T029.
         let commit_oid = repo.commit(None, &sig, &sig, message, &tree, &parent_refs)?;
         Ok((tree_oid, commit_oid))
+    }
+
+    // --- C022: write-back support (called only from `writeback.rs`) ------
+    //
+    // These methods are the *only* way `writeback.rs` touches `ShadowStore`
+    // state. Each one only updates the in-memory `files` map (and, for a
+    // write, the git ODB) -- never the real, projected filesystem path; see
+    // `writeback.rs`'s module doc comment ("Why write-back never writes
+    // back to disk") for why that direction is one-way by design.
+
+    /// Whether `id` is still a live workspace. Used by write-back to no-op
+    /// safely against a concurrent `drop_workspace` rather than erroring.
+    pub(crate) fn workspace_exists(&self, id: Uuid) -> bool {
+        self.workspaces.lock().contains_key(&id)
+    }
+
+    /// Records that `rel_path` now holds `content` on the real, projected
+    /// filesystem: writes `content` as a blob (idempotent -- writing
+    /// identical content again yields the same `Oid`) and updates the
+    /// workspace's `files` map. Silently no-ops if the workspace no longer
+    /// exists (a race against `drop_workspace`, not an error). Fails
+    /// closed (returns `Err`, does not touch the map) if `rel_path` itself
+    /// somehow isn't a valid workspace-relative logical path -- defense in
+    /// depth: every real caller in `writeback.rs` builds `rel_path` from a
+    /// combination of an already-registered watch's own `rel_dir` (which
+    /// this store produced) and a kernel-reported directory-entry name
+    /// (which cannot contain `/` or be `.`/`..`), so this should never
+    /// actually trip, but a state-corrupting map key is exactly the kind of
+    /// silent failure this task's brief singles out as unacceptable, so it
+    /// is checked rather than assumed.
+    pub(crate) fn wb_apply_write(&self, id: Uuid, rel_path: &str, content: &[u8]) -> Result<()> {
+        secure_relative_path(rel_path)
+            .with_context(|| format!("write-back rejected unsafe logical path: {rel_path}"))?;
+        let oid = self.repo.lock().blob(content)?;
+        if let Some(ws) = self.workspaces.lock().get_mut(&id) {
+            ws.files.insert(rel_path.to_string(), oid);
+        }
+        Ok(())
+    }
+
+    /// Records that `rel_path` no longer exists on the real, projected
+    /// filesystem. Silently no-ops if the workspace or the path is already
+    /// gone (both are legitimate, harmless races, not errors).
+    pub(crate) fn wb_apply_delete(&self, id: Uuid, rel_path: &str) {
+        if let Some(ws) = self.workspaces.lock().get_mut(&id) {
+            ws.files.remove(rel_path);
+        }
+    }
+
+    /// Removes every `files` entry whose logical path falls under
+    /// `rel_dir` (a whole real subdirectory having been deleted or moved
+    /// away). `rel_dir == ""` means the workspace root itself -- every
+    /// entry is cleared in that case, since `""` is logically a prefix of
+    /// every path in the workspace.
+    pub(crate) fn wb_apply_delete_prefix(&self, id: Uuid, rel_dir: &str) {
+        if let Some(ws) = self.workspaces.lock().get_mut(&id) {
+            if rel_dir.is_empty() {
+                ws.files.clear();
+                return;
+            }
+            let prefix = format!("{rel_dir}/");
+            ws.files.retain(|path, _| !path.starts_with(&prefix));
+        }
+    }
+
+    /// Snapshot of every currently known workspace id, for the
+    /// reconciliation pass to iterate without holding `workspaces`' lock
+    /// for the duration of each workspace's (potentially slow) filesystem
+    /// walk.
+    pub(crate) fn workspace_ids_snapshot(&self) -> Vec<Uuid> {
+        self.workspaces.lock().keys().copied().collect()
+    }
+
+    /// Read-only snapshot of a workspace's current `files` map, for the
+    /// reconciliation pass to diff against the real filesystem without
+    /// holding the lock for that same duration. `None` if the workspace no
+    /// longer exists (a race against `drop_workspace`).
+    pub(crate) fn workspace_files_snapshot(&self, id: Uuid) -> Option<HashMap<String, Oid>> {
+        self.workspaces.lock().get(&id).map(|ws| ws.files.clone())
     }
 
     fn query_ast(
@@ -500,6 +625,161 @@ fn materialize_write_via_fd_walk(workspace_dir: &Path, rel: &Path, content: &[u8
     let mut file = std::fs::File::from(leaf_fd);
     file.write_all(content)
         .with_context(|| format!("write {rel:?} under {workspace_dir:?}"))?;
+    Ok(())
+}
+
+/// Result of [`scan_workspace_tree`]: every reachable regular file's
+/// logical (workspace-relative, `/`-joined) path and content, plus every
+/// reachable real directory's logical path (the scan's own starting point
+/// included, so a caller scanning from the workspace root always gets `""`
+/// as one entry, and a caller scanning a specific new subtree gets that
+/// subtree's own path as one entry).
+pub(crate) struct FsScanResult {
+    pub files: HashMap<String, Vec<u8>>,
+    pub dirs: Vec<String>,
+}
+
+/// Recursively scans the real, projected filesystem starting at
+/// `workspace_dir.join(start_rel)` (or `workspace_dir` itself if
+/// `start_rel` is empty), for C022 write-back's event handler
+/// (`writeback.rs`) and its periodic reconciliation pass. This is the read
+/// side's counterpart to `materialize_write` -- read here, not written --
+/// and is deliberately narrower in its safety guarantee, for reasons
+/// explained below rather than left implicit.
+///
+/// # Path construction (traversal risk)
+///
+/// Every path this function produces is built by joining an
+/// already-walked `PathBuf` (descended, one hop at a time, from
+/// `workspace_dir`, which is itself not attacker-controlled -- see
+/// `ShadowStore::workspace_dir`'s doc comment) with a single filename taken
+/// directly from `DirEntry::file_name()`. A kernel-reported directory-entry
+/// name can never contain a `/` byte, and `std::fs::read_dir` never yields
+/// the special `.`/`..` entries -- so, unlike `secure_relative_path`'s job
+/// on the write side (parsing and validating a caller-supplied, arbitrary
+/// *string*), there is no string-based `..`/absolute-path escape to check
+/// for here, because nothing on this path is ever parsed from a raw string
+/// handed to us by anything outside this process. This is the "smaller
+/// risk than the write side" the task brief anticipated, and this is the
+/// citable reason it is smaller, not an assumption.
+///
+/// # Symlink handling (deliberate, not an oversight)
+///
+/// Every entry's type is determined via `std::fs::symlink_metadata` --
+/// never `std::fs::metadata`, and never by calling `std::fs::read` first
+/// and hoping. Anything reporting `file_type().is_symlink()` is skipped
+/// entirely (logged at `warn`, not read, not recursed into). This removes
+/// "external tooling plants a symlink directly in the tmpfs projection to
+/// pull arbitrary host content into a shadow commit" as a live attack
+/// class, by construction, for every path this function walks.
+///
+/// # Residual TOCTOU (accepted, documented, *not* eliminated)
+///
+/// POC-DEBT R-3: read-side symlink check is not fd-anchored (unlike the
+/// write side); see the reasoning below and `docs/DEBT-REGISTER.md` row R-3.
+///
+/// The `symlink_metadata` check and the subsequent `fs::read`/recursion are
+/// two independent syscalls, not one fd-anchored operation the way the
+/// write side's `openat(..., O_NOFOLLOW)` (`materialize_write_via_fd_walk`)
+/// closes the equivalent gap in a single kernel call. A component could in
+/// principle be swapped for a symlink in the narrow window between the two
+/// calls. This gap is deliberately accepted here, not closed the way the
+/// write side closes it, because the actor who could win that race already
+/// has the local filesystem write access needed to plant it -- which is
+/// exactly the premise of this entire task (raw mutations at the projected
+/// path) -- and the worst case is that *same* actor's own workspace ending
+/// up with a commit containing bytes read from outside its own workspace
+/// root, not a cross-workspace or host-escape read, since write-back never
+/// writes anything back to the real filesystem in this direction (see
+/// `writeback.rs`'s module doc comment). This is a genuine judgment call,
+/// not an unconsidered shortcut, and is flagged here explicitly for
+/// Security Engineer review rather than silently narrowed to "safe" -- see
+/// `docs/DEBT-REGISTER.md` for the tracked entry and a fd-anchored
+/// hardening path if this residual risk is judged unacceptable.
+///
+/// # Non-UTF-8 filenames
+///
+/// POC-DEBT R-4: non-UTF-8 filenames are silently skipped (see
+/// `docs/DEBT-REGISTER.md` row R-4).
+///
+/// Skipped with a `warn` log, not an error: this store's `files` map is
+/// `HashMap<String, Oid>` and its IPC protocol carries paths as JSON
+/// strings end-to-end, so a non-UTF-8 name could never be represented
+/// here regardless of this function -- a pre-existing, system-wide
+/// constraint this task does not introduce (see `docs/DEBT-REGISTER.md`).
+pub(crate) fn scan_workspace_tree(workspace_dir: &Path, start_rel: &str) -> Result<FsScanResult> {
+    let mut files = HashMap::new();
+    let mut dirs = vec![start_rel.to_string()];
+    let start_dir = if start_rel.is_empty() {
+        workspace_dir.to_path_buf()
+    } else {
+        workspace_dir.join(start_rel)
+    };
+    scan_dir_into(&start_dir, start_rel, &mut files, &mut dirs)?;
+    Ok(FsScanResult { files, dirs })
+}
+
+fn scan_dir_into(
+    real_dir: &Path,
+    rel_dir: &str,
+    files: &mut HashMap<String, Vec<u8>>,
+    dirs: &mut Vec<String>,
+) -> Result<()> {
+    let entries = match std::fs::read_dir(real_dir) {
+        Ok(e) => e,
+        // The directory may have been removed between the event that
+        // triggered this scan and this call -- not an error, just nothing
+        // left to find here.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e).with_context(|| format!("read_dir {real_dir:?}")),
+    };
+    for entry in entries {
+        let entry = entry.with_context(|| format!("iterate {real_dir:?}"))?;
+        let name = entry.file_name();
+        let name_str = match name.to_str() {
+            Some(s) => s,
+            None => {
+                tracing::warn!(
+                    dir = ?real_dir,
+                    name = ?name,
+                    "write-back scan: skipping entry with non-UTF-8 filename"
+                );
+                continue;
+            }
+        };
+        let rel_path = if rel_dir.is_empty() {
+            name_str.to_string()
+        } else {
+            format!("{rel_dir}/{name_str}")
+        };
+        let real_path = entry.path();
+        let meta = std::fs::symlink_metadata(&real_path)
+            .with_context(|| format!("symlink_metadata {real_path:?}"))?;
+        let ft = meta.file_type();
+        if ft.is_symlink() {
+            tracing::warn!(
+                path = %rel_path,
+                real_path = ?real_path,
+                "write-back scan: skipping symlink planted directly in shadow workspace \
+                 projection (never followed) -- see scan_workspace_tree's doc comment"
+            );
+            continue;
+        }
+        if ft.is_dir() {
+            dirs.push(rel_path.clone());
+            scan_dir_into(&real_path, &rel_path, files, dirs)?;
+        } else if ft.is_file() {
+            let content =
+                std::fs::read(&real_path).with_context(|| format!("read {real_path:?}"))?;
+            files.insert(rel_path, content);
+        } else {
+            tracing::warn!(
+                path = %rel_path,
+                "write-back scan: skipping non-regular, non-directory entry \
+                 (device/FIFO/socket) in shadow workspace projection"
+            );
+        }
+    }
     Ok(())
 }
 
@@ -884,6 +1164,219 @@ mod tests {
             "a base-tree symlink-mode entry must never materialize as a real OS symlink"
         );
         assert_eq!(std::fs::read(&real_path).unwrap(), b"../../etc/passwd");
+    }
+
+    // --- C022: filesystem write-back into the git ODB --------------------
+    //
+    // Unlike `store()` above, these tests need a live `WriteBackEngine`
+    // attached (inotify watcher + reconciliation loop), since that is
+    // exactly what is under test: an edit made *only* at the real,
+    // projected path (never through `write_file`) must still show up in
+    // `commit`'s tree. Write-back is asynchronous by design (an inotify
+    // event is delivered to a background thread, or -- worst case --
+    // picked up by the next reconciliation tick), so these tests poll
+    // (`wait_until`) rather than asserting immediately after the raw
+    // filesystem mutation.
+
+    fn store_with_writeback() -> Arc<ShadowStore> {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Arc::new(ShadowStore::new(dir.keep()).unwrap());
+        let engine = crate::writeback::WriteBackEngine::spawn(Arc::clone(&s))
+            .expect("spawn write-back engine");
+        s.attach_writeback(engine);
+        s
+    }
+
+    /// Polls `check` until it returns `true` or a bounded deadline passes.
+    /// The common case (a healthy inotify watch) resolves in well under a
+    /// second; the deadline is generous specifically to remain correct
+    /// (not flaky) even if a given run has to fall back to a periodic
+    /// reconciliation tick instead.
+    fn wait_until(mut check: impl FnMut() -> bool, what: &str) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if check() {
+                return;
+            }
+            if std::time::Instant::now() >= deadline {
+                panic!("write-back: timed out waiting for: {what}");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+    }
+
+    #[test]
+    fn write_back_captures_file_created_directly_on_real_path() {
+        let s = store_with_writeback();
+        let (id, _) = s.create(None).unwrap();
+
+        // Created via ordinary std::fs, never via the `write_file` IPC
+        // call -- this is exactly the "raw filesystem mutation" scenario
+        // this task closes.
+        let real = s.workspace_dir(id).join("created_via_fs.txt");
+        std::fs::write(&real, b"hello from raw fs").unwrap();
+
+        wait_until(
+            || {
+                let (tree_oid, _) = s.commit(id, "wb create").unwrap();
+                let repo = s.repo.lock();
+                let tree = repo.find_tree(tree_oid).unwrap();
+                match tree.get_path(Path::new("created_via_fs.txt")) {
+                    Ok(entry) => {
+                        let blob = repo.find_blob(entry.id()).unwrap();
+                        blob.content() == b"hello from raw fs"
+                    }
+                    Err(_) => false,
+                }
+            },
+            "commit tree to contain a file created directly on the real path",
+        );
+    }
+
+    #[test]
+    fn write_back_captures_file_modified_directly_on_real_path() {
+        let s = store_with_writeback();
+        let (id, _) = s.create(None).unwrap();
+        s.write_file(id, "existing.txt", b"v1").unwrap();
+
+        let real = s.workspace_dir(id).join("existing.txt");
+        std::fs::write(&real, b"v2-via-raw-fs").unwrap();
+
+        wait_until(
+            || {
+                let (tree_oid, _) = s.commit(id, "wb modify").unwrap();
+                let repo = s.repo.lock();
+                let tree = repo.find_tree(tree_oid).unwrap();
+                match tree.get_path(Path::new("existing.txt")) {
+                    Ok(entry) => {
+                        let blob = repo.find_blob(entry.id()).unwrap();
+                        blob.content() == b"v2-via-raw-fs"
+                    }
+                    Err(_) => false,
+                }
+            },
+            "commit tree to reflect a modification made directly on the real path",
+        );
+    }
+
+    #[test]
+    fn write_back_captures_file_deleted_directly_on_real_path() {
+        let s = store_with_writeback();
+        let (id, _) = s.create(None).unwrap();
+        s.write_file(id, "to_delete.txt", b"bye").unwrap();
+
+        let real = s.workspace_dir(id).join("to_delete.txt");
+        assert!(real.is_file());
+        std::fs::remove_file(&real).unwrap();
+
+        wait_until(
+            || {
+                let (tree_oid, _) = s.commit(id, "wb delete").unwrap();
+                let repo = s.repo.lock();
+                let tree = repo.find_tree(tree_oid).unwrap();
+                tree.get_path(Path::new("to_delete.txt")).is_err()
+            },
+            "commit tree to no longer contain a file deleted directly on the real path",
+        );
+    }
+
+    #[test]
+    fn write_back_captures_file_renamed_directly_on_real_path() {
+        let s = store_with_writeback();
+        let (id, _) = s.create(None).unwrap();
+        s.write_file(id, "old_name.txt", b"payload").unwrap();
+
+        let ws_dir = s.workspace_dir(id);
+        std::fs::rename(ws_dir.join("old_name.txt"), ws_dir.join("new_name.txt")).unwrap();
+
+        wait_until(
+            || {
+                let (tree_oid, _) = s.commit(id, "wb rename").unwrap();
+                let repo = s.repo.lock();
+                let tree = repo.find_tree(tree_oid).unwrap();
+                let new_present = tree
+                    .get_path(Path::new("new_name.txt"))
+                    .map(|entry| {
+                        let blob = repo.find_blob(entry.id()).unwrap();
+                        blob.content() == b"payload"
+                    })
+                    .unwrap_or(false);
+                let old_absent = tree.get_path(Path::new("old_name.txt")).is_err();
+                new_present && old_absent
+            },
+            "commit tree to reflect a rename made directly on the real path (new name present, old name gone)",
+        );
+    }
+
+    #[test]
+    fn write_back_captures_new_subdirectory_with_nested_file_created_directly_on_real_path() {
+        // A single bulk operation (e.g. `mkdir -p a/b && echo hi > a/b/c.txt`,
+        // or a tar/cp -r extraction) can populate a brand-new subdirectory
+        // faster than a per-CREATE-event watch can be registered for each
+        // new level -- exactly the "inotify is not recursive" gap this
+        // module's write-back engine documents. This test exercises that
+        // path end-to-end via `sync_new_subtree`/reconciliation, not just
+        // flat, single-file mutations.
+        let s = store_with_writeback();
+        let (id, _) = s.create(None).unwrap();
+        let ws_dir = s.workspace_dir(id);
+        std::fs::create_dir_all(ws_dir.join("a/b")).unwrap();
+        std::fs::write(ws_dir.join("a/b/c.txt"), b"nested").unwrap();
+
+        wait_until(
+            || {
+                let (tree_oid, _) = s.commit(id, "wb nested create").unwrap();
+                let repo = s.repo.lock();
+                let tree = repo.find_tree(tree_oid).unwrap();
+                match tree.get_path(Path::new("a/b/c.txt")) {
+                    Ok(entry) => {
+                        let blob = repo.find_blob(entry.id()).unwrap();
+                        blob.content() == b"nested"
+                    }
+                    Err(_) => false,
+                }
+            },
+            "commit tree to contain a file nested in a brand-new subdirectory tree",
+        );
+    }
+
+    #[test]
+    fn write_back_never_follows_a_symlink_planted_directly_on_real_path() {
+        // A hostile or merely careless external tool plants a real OS
+        // symlink pointing outside the workspace directly in the tmpfs
+        // projection. Write-back must never read through it into a commit.
+        let s = store_with_writeback();
+        let (id, _) = s.create(None).unwrap();
+        let ws_dir = s.workspace_dir(id);
+
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("secret.txt");
+        std::fs::write(&secret, b"host-only content").unwrap();
+        std::os::unix::fs::symlink(&secret, ws_dir.join("link.txt")).unwrap();
+
+        // Give write-back a real chance to (wrongly) pick this up before
+        // asserting it did not: a plain file written right after the
+        // symlink, waited on the normal way, gives the engine's event loop
+        // and/or reconciliation pass ample opportunity to also have
+        // processed the symlink by the time this returns.
+        std::fs::write(ws_dir.join("sentinel.txt"), b"go").unwrap();
+        wait_until(
+            || {
+                let (tree_oid, _) = s.commit(id, "wb symlink sentinel").unwrap();
+                let repo = s.repo.lock();
+                let tree = repo.find_tree(tree_oid).unwrap();
+                tree.get_path(Path::new("sentinel.txt")).is_ok()
+            },
+            "sentinel file to be captured (proves write-back had a chance to also see the symlink)",
+        );
+
+        let (tree_oid, _) = s.commit(id, "wb symlink final").unwrap();
+        let repo = s.repo.lock();
+        let tree = repo.find_tree(tree_oid).unwrap();
+        assert!(
+            tree.get_path(Path::new("link.txt")).is_err(),
+            "a symlink planted directly at the projected path must never be materialized into a commit"
+        );
     }
 }
 
