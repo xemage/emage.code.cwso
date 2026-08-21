@@ -31,7 +31,7 @@ was carried forward or closed.
 | ID | Source `file:line` | Category | Description | Status | Disposition | Closing task |
 |---|---|---|---|---|---|---|
 | B1 (= D1, P1-1) | `orchestrator/internal/mcp/protocol.go:10` | Maintainability / spec compliance | Hand-rolled MCP protocol subset instead of the official `go-sdk`; only a partial method set is implemented | closed | fixed | C030–C032 |
-| B2 (= P2-1) | `services/cwso-git-shadow/src/main.rs:11` | Architecture | OverlayFS bind-mount layer deferred; shadow files are reachable only via orchestrator→sidecar IPC, so sub-agents that expect a real filesystem path cannot work | open | v1.0-blocker | C020–C025 |
+| B2 (= P2-1) | `services/cwso-git-shadow/src/main.rs` (module doc; marker removed) | Architecture | Was: OverlayFS bind-mount layer deferred; shadow files reachable only via orchestrator→sidecar IPC. Fixed by C021: every shadow workspace is now eagerly materialized onto a real, tmpfs-backed directory (`<storage_root>/<workspace-uuid>/`, ADR-012 "materialise-to-tmpfs") at creation time and kept in sync on every write, so `ls`/`cat`/`pytest`/arbitrary tooling can reach it directly. Write-back of raw external writes at the projected path into the git object store remains open — that is C022, tracked separately, not part of this closure | closed | fixed | C021 |
 | B6 (= P2-7) | scorecard P2-7 (`services/cwso-git-shadow/src/repo.rs`, `query_ast`) | Correctness | `find_references` matches identifier text only — no scope/binding analysis; false positives across shadowed names | open | v1.0-blocker | C040 |
 | B7 (= P2-4) | `services/cwso-git-shadow/src/repo.rs:180` | Correctness | Every shadow commit is an orphan (no parent); workspaces never form a history chain, so per-workspace history and three-way merges are unavailable | open | v1.0-blocker | C041 |
 | B12 (= P2-5) | scorecard P2-5 (`services/cwso-git-shadow/src/main.rs`, socket perms) | Security | UDS permissions are `0o666` because orchestrator and sidecar containers run under different UIDs; acceptable on a private compose-managed bind volume, not acceptable for prod | open | v1.0-blocker | C044 |
@@ -84,7 +84,7 @@ CWSO product debt, and are intentionally not register rows.
 |---|---|
 | `deploy/docker-compose.yml:6` | R-1 |
 | `services/cwso-git-shadow/Cargo.toml:20` | P2-3 (fixed) |
-| `services/cwso-git-shadow/src/main.rs:11` | B2 |
+| `services/cwso-git-shadow/src/main.rs:11` | B2 (fixed; marker text removed, module doc now describes the C021 projection instead) |
 | `services/cwso-git-shadow/src/repo.rs:180` | B7 |
 | `orchestrator/internal/mcp/protocol.go:10` | B1 (fixed) |
 | `orchestrator/internal/shadow/client.go:5` | B13 |
@@ -119,7 +119,7 @@ workspaces + AST, 2026-05; hypothesis **VALIDATED**).
 
 | Scorecard row | Description (abridged) | Register ID | Carried-forward or closed |
 |---|---|---|---|
-| P2-1 | OverlayFS bind-mount deferred; IPC-only shadow files | B2 | carried-forward → v1.0-blocker (C020–C025) |
+| P2-1 | OverlayFS bind-mount deferred; IPC-only shadow files | B2 | **closed** — real filesystem projection implemented via materialise-to-tmpfs (ADR-012, evidence: `services/cwso-git-shadow/src/repo.rs` `ShadowStore::create`/`write_file`/`drop_workspace`/`materialize_write`, C021); write-back into the object store remains open (C022) |
 | P2-2 | No Merkle incremental indexer; every query re-parses | P2-2 | carried-forward → v1.1 |
 | P2-3 | Only Go + Python grammars wired; Rust/TS required | P2-3 | **closed** — four grammars wired in `services/cwso-git-shadow/Cargo.toml` (evidence above) |
 | P2-4 | Orphan commits; no history chain | B7 | carried-forward → v1.0-blocker (C041) |

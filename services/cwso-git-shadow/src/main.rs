@@ -8,9 +8,24 @@
 //! Wire protocol: framed JSON over a Unix domain socket.
 //! Frame = 4-byte big-endian length + JSON body.
 //!
-//! POC-DEBT (P2-1): OverlayFS bind-mount layer is deferred to Phase 4 with
-//! sandbox runners. Today, sub-agents access the virtual FS via orchestrator
-//! → sidecar IPC instead of an OS mount.
+//! Filesystem projection (C021, `docs/decisions/ADR-012-shadow-workspace-
+//! filesystem-projection.md`): each shadow workspace is also eagerly
+//! materialized onto a real, tmpfs-backed directory under
+//! `CWSO_GIT_SHADOW_STORAGE` (`<storage_root>/<workspace-uuid>/`) at
+//! creation time, and kept in sync on every `write_file`, so ordinary tools
+//! (`ls`, `cat`, `pytest`, ...) can reach a shadow workspace at a real path
+//! without going through orchestrator → sidecar IPC at all — see
+//! `repo::ShadowStore::create`/`write_file`/`drop_workspace` and
+//! `repo::materialize_write` for the mechanism and its path-safety
+//! reasoning. This closes the debt-register gap tracked as `B2` ("sub-agents
+//! access the virtual FS via orchestrator → sidecar IPC instead of an
+//! OS-reachable path"), via ADR-012's chosen mechanism (materialise-to-tmpfs)
+//! rather than the OverlayFS bind-mount the original marker named. Write-back of
+//! raw writes made directly at the projected path (by tooling other than
+//! this service's own `write_file`) into the git-shadow blob store is not
+//! yet implemented — that is C022, tracked separately; this service's own
+//! `write_file`/`read_file`/`commit_shadow`/AST-query IPC calls remain the
+//! only supported way to mutate a workspace's git-visible state today.
 
 use std::collections::HashSet;
 use std::io::{Read, Write};
