@@ -52,7 +52,6 @@
 | C024 | Prove projection E2E in CI | qa-engineer | pending | P0 | C022, C023 | 2026-08-12 |
 | C025 | CONDITIONAL: document IPC-only limitation | technical-writer | pending | P0 | C020 (NO-GO) | 2026-08-12 |
 | C033 | Client compatibility matrix (3×2) | qa-engineer | pending | P1 | C032 | 2026-08-12 |
-| C034 | Contract snapshot test in CI | qa-engineer | in_progress | P1 | C032 | 2026-08-20 |
 | C040 | Scope/binding resolution for find_references | backend-developer | pending | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-12 |
 | C041 | Parent-commit tracking per workspace | backend-developer | pending | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-12 |
 | C042 | Three-way merge + conflict matrix | backend-developer | pending | P1 | C041 | 2026-08-12 |
