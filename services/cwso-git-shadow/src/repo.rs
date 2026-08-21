@@ -63,6 +63,14 @@ impl ShadowStore {
             opts.bare(true).initial_head("main");
             Repository::init_opts(&repo_path, &opts)?
         };
+        // C023 startup reconciliation sweep (ADR-012 crash-safety): must run
+        // after `bare.git` exists (so it is correctly recognized as the one
+        // persistent entry to keep) and before `Self` is constructed, i.e.
+        // before this instance's own (always-empty-at-construction, see the
+        // `workspaces` field's doc comment) map could be mistaken for a
+        // record of anything worth preserving. See `sweep_stale_workspace_dirs`.
+        sweep_stale_workspace_dirs(&storage_root)
+            .context("startup reconciliation sweep of shadow storage root")?;
         Ok(Self {
             repo: Mutex::new(repo),
             workspaces: Mutex::new(HashMap::new()),
@@ -410,6 +418,77 @@ impl ShadowStore {
             "supported_languages": ast::supported_languages(),
         })
     }
+}
+
+/// C023 crash-safety: removes every entry directly under `storage_root`
+/// *except* the persistent `bare.git` ODB directory, and reports what it
+/// removed. Called exactly once, synchronously, from `ShadowStore::new`,
+/// immediately after `bare.git` is opened/created.
+///
+/// Why this is safe to do unconditionally, with no diff against "workspaces
+/// this process still considers open": `ShadowStore::new` always constructs
+/// `workspaces` as an empty map (see that field's doc comment) -- there is
+/// no on-disk/ODB-ref record anywhere of *which* per-workspace directories
+/// under `storage_root` belonged to a still-"open" workspace of whatever
+/// process last held `storage_root` open. So by the time any caller can
+/// observe a freshly-constructed `ShadowStore`, every subdirectory other
+/// than `bare.git` is -- by construction, not by heuristic -- left over from
+/// a previous instance and cannot be legitimately claimed by this one.
+/// This holds identically whether the previous instance exited gracefully
+/// (and simply didn't get to run its own `drop_workspace` calls for every
+/// still-open workspace before exiting) or was killed outright (`kill -9`,
+/// container OOM, etc.) -- this sweep does not need to distinguish those
+/// cases, and doesn't try to.
+///
+/// This is expected, routine behavior on every restart -- not a warning-
+/// worthy anomaly -- so a non-empty sweep is logged at `info`, not `warn`.
+/// Per-entry removal failures (e.g. a permissions problem) are logged at
+/// `warn` and skipped rather than aborting the whole sweep, so one stuck
+/// entry cannot prevent the service from starting at all.
+fn sweep_stale_workspace_dirs(storage_root: &Path) -> Result<()> {
+    const PERSISTENT_ENTRY: &str = "bare.git";
+
+    let read_dir = std::fs::read_dir(storage_root)
+        .with_context(|| format!("read storage root {storage_root:?} for startup sweep"))?;
+
+    let mut swept: Vec<PathBuf> = Vec::new();
+    for entry in read_dir {
+        let entry =
+            entry.with_context(|| format!("read directory entry under {storage_root:?}"))?;
+        if entry.file_name() == PERSISTENT_ENTRY {
+            continue;
+        }
+        let path = entry.path();
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let remove_result = if is_dir {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        match remove_result {
+            Ok(()) => swept.push(path),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                tracing::warn!(
+                    path = ?path,
+                    error = %e,
+                    "startup sweep: failed to remove stale entry under shadow storage root"
+                );
+            }
+        }
+    }
+
+    if !swept.is_empty() {
+        tracing::info!(
+            count = swept.len(),
+            paths = ?swept,
+            "startup sweep: removed stale per-workspace projection directories left behind by a \
+             previous cwso-git-shadow instance (graceful shutdown that didn't reach every \
+             drop_workspace, or an unclean crash) -- this is expected, routine startup behavior"
+        );
+    }
+
+    Ok(())
 }
 
 fn check_path(p: &str) -> Result<()> {
@@ -989,6 +1068,119 @@ mod tests {
         let id = Uuid::new_v4();
         assert!(!s.drop_workspace(id));
         assert!(!s.workspace_dir(id).exists());
+    }
+
+    // --- C023: crash-safe startup reconciliation sweep --------------------
+
+    /// The deterministic, library-level crash test required by C023. A real
+    /// `kill -9` gives zero opportunity for any in-process cleanup --
+    /// including any `Drop` impl -- to run at all, so this test must not
+    /// (and does not) rely on `ShadowStore`'s `Drop` behavior (it doesn't
+    /// even implement one) to simulate that: it constructs a real
+    /// `ShadowStore`, materializes a real workspace directory on a real temp
+    /// `storage_root`, then simply lets that `ShadowStore` value go out of
+    /// scope *without ever calling `drop_workspace`* -- exactly what happens
+    /// to in-process state at the instant of an unclean crash, since nothing
+    /// in this crate registers an `atexit`/signal-driven cleanup hook either
+    /// (see `main.rs` and this module's shutdown-behavior tests). A second,
+    /// independent `ShadowStore::new` is then constructed against the exact
+    /// same `storage_root` -- standing in for a process restart against the
+    /// same, still-mounted tmpfs directory -- and the assertion is that its
+    /// own startup sweep, not any cleanup from the first instance, is what
+    /// removes the stale directory.
+    #[test]
+    fn fresh_store_sweeps_directory_left_by_simulated_unclean_crash() {
+        let storage_root = tempfile::tempdir().unwrap().keep();
+
+        let crashed_workspace_dir = {
+            let crashed = ShadowStore::new(storage_root.clone()).unwrap();
+            let (id, _) = crashed.create(None).unwrap();
+            crashed
+                .write_file(id, "hello.txt", b"pre-crash content")
+                .unwrap();
+            let ws_dir = crashed.workspace_dir(id);
+            assert!(
+                ws_dir.is_dir(),
+                "workspace directory must be materialized before the simulated crash"
+            );
+            // Simulate an unclean crash: `crashed` is discarded here, with no
+            // call to `drop_workspace` and no reliance on any `Drop` impl
+            // (there isn't one) -- this is the entire simulated "crash".
+            drop(crashed);
+            ws_dir
+        };
+        assert!(
+            crashed_workspace_dir.is_dir(),
+            "the stale directory must still be present immediately after the simulated crash -- \
+             nothing in this test relied on any cleanup running for it yet"
+        );
+
+        // Simulate a process restart: a brand-new `ShadowStore` against the
+        // same, still-populated `storage_root`.
+        let restarted = ShadowStore::new(storage_root.clone()).unwrap();
+
+        assert!(
+            !crashed_workspace_dir.exists(),
+            "the fresh instance's startup sweep must remove a per-workspace directory left \
+             behind by an unclean crash of a previous instance"
+        );
+        // `bare.git` (the one persistent, non-workspace entry) must survive
+        // the sweep.
+        assert!(
+            storage_root.join("bare.git").is_dir(),
+            "the sweep must never remove the persistent bare.git ODB directory"
+        );
+        // The fresh instance must otherwise be fully usable (sweep does not
+        // corrupt the ODB it just opened).
+        let (id, _) = restarted.create(None).unwrap();
+        assert!(restarted.workspace_dir(id).is_dir());
+    }
+
+    #[test]
+    fn fresh_store_sweeps_multiple_stale_directories_and_leaves_bare_git() {
+        let storage_root = tempfile::tempdir().unwrap().keep();
+
+        let (dir_a, dir_b) = {
+            let crashed = ShadowStore::new(storage_root.clone()).unwrap();
+            let (a, _) = crashed.create(None).unwrap();
+            let (b, _) = crashed.create(None).unwrap();
+            let dirs = (crashed.workspace_dir(a), crashed.workspace_dir(b));
+            drop(crashed); // simulated crash: no drop_workspace for either
+            dirs
+        };
+        assert!(dir_a.is_dir());
+        assert!(dir_b.is_dir());
+
+        let _restarted = ShadowStore::new(storage_root.clone()).unwrap();
+
+        assert!(!dir_a.exists(), "first stale workspace dir must be swept");
+        assert!(!dir_b.exists(), "second stale workspace dir must be swept");
+        assert!(storage_root.join("bare.git").is_dir());
+    }
+
+    #[test]
+    fn new_is_a_no_op_sweep_on_an_already_clean_storage_root() {
+        let storage_root = tempfile::tempdir().unwrap().keep();
+
+        // First construction creates only `bare.git` -- nothing else exists
+        // to sweep.
+        let _first = ShadowStore::new(storage_root.clone()).unwrap();
+        let entries_after_first: Vec<_> = std::fs::read_dir(&storage_root)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(
+            entries_after_first,
+            vec![std::ffi::OsString::from("bare.git")],
+            "a clean storage root must contain only bare.git before any workspace is created"
+        );
+
+        // A second construction against the same, already-clean root must
+        // not remove `bare.git` and must remain fully usable.
+        let second = ShadowStore::new(storage_root.clone()).unwrap();
+        assert!(storage_root.join("bare.git").is_dir());
+        let (id, _) = second.create(None).unwrap();
+        assert!(second.workspace_dir(id).is_dir());
     }
 
     // --- C021: path-safety hardening for real filesystem writes ----------

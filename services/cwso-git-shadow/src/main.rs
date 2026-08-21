@@ -30,6 +30,26 @@
 //! durability/path-safety reasoning. `commit_shadow` reads from that same
 //! in-memory state regardless of whether an edit arrived via `write_file` or
 //! via a raw filesystem mutation this engine observed.
+//!
+//! Lifecycle / crash-safety (C023, same ADR): a workspace's real, projected
+//! directory is created with the workspace (`repo::ShadowStore::create`) and
+//! torn down with it (`repo::ShadowStore::drop_workspace`, which also calls
+//! `WriteBackEngine::unregister_workspace` -- both already existed before
+//! C023 and are unchanged by it). What C023 adds: (1) a startup
+//! reconciliation sweep (`repo::sweep_stale_workspace_dirs`, invoked from
+//! `ShadowStore::new`) that removes every stale per-workspace directory a
+//! previous instance -- crashed or gracefully but incompletely shut down --
+//! left behind under `storage_root`, since this process's in-memory
+//! `workspaces` map always starts empty (see that field's doc comment in
+//! `repo.rs`) and therefore never has anything legitimate to reconcile
+//! against; and (2) confirmation that this binary installs **no** custom
+//! `SIGTERM`/`SIGINT` handler, deliberately: both signals' default
+//! disposition terminates every thread in the process immediately, without
+//! running any of `WriteBackEngine`'s two background threads' code at all,
+//! which is sufficient because neither thread buffers anything that would
+//! need an orderly flush first (see `writeback.rs`'s "Durability" section)
+//! -- see `tests/signal_shutdown.rs` for the live-process test backing this
+//! conclusion, and for the fuller reasoning.
 
 use std::collections::HashSet;
 use std::io::{Read, Write};
