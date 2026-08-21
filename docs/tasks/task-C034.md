@@ -2,11 +2,11 @@
 
 **ID:** C034
 **Owner:** qa-engineer
-**Status:** in_progress
+**Status:** done
 **Priority:** P1
 **Depends on:** C032
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-20
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (C034 row); docs/plans/plan-cwso-v1.0-phase3-protocol-conformance-v1.md
 
 ## Objective
@@ -85,4 +85,56 @@ invent its expectations from memory.
 
 ## Execution notes
 
-<filled during execution>
+Added `orchestrator/internal/server/mcp_contract_snapshot_test.go`
+(`TestMCPContractSnapshot`) and its golden fixture
+`orchestrator/internal/server/testdata/mcp_contract_snapshot_v1.json`, a new
+`go:mcp-contract-snapshot` CI job, and `Makefile` regen targets
+(`mcp-contract-snapshot` / `mcp-contract-snapshot-update`). Distinct from
+C032's `mcp_conformance_test.go` (spec *behavior* per gap-table row): this
+test captures the entire live MCP surface into one JSON fixture and fails
+on any drift, via a single `buildContractSnapshot()` function shared by
+both the assertion and the deliberate-regeneration path (no separate
+hand-maintained "expected" struct). Covers: the full 11-tool inventory
+(name/description/live `InputSchema()`), a fixed probe of all 16 gap-table
+methods (structural shape via a value-stripping `shapeOf()` helper, or
+observed error code), notification recognized/never-emitted sets, every
+`mcp` package error-code constant, and representative error-trigger
+scenarios. Regeneration is deliberate-only, never automatic in CI.
+
+Cross-repo alignment against `em-age/emage.code`'s own snapshot test (its
+task T201) independently re-fetched via the GitLab API: 11-tool set
+matches exactly, plus role-parity, the exact permission-denied message
+format, and the HTTP 403 unrecognized-role behavior all cross-checked
+against real CWSO source at the cited line numbers — no reconciliation
+needed.
+
+Real finding, correctly handled: T198 (`schemas/*.json` drift fix) is
+still pending, not merged — the two files the brief named explicitly
+still materially diverge from the real Go `InputSchema()`s. Per the
+brief's own contingency, did not use `schemas/*.json` as this snapshot's
+baseline; sourced tool schemas from the live `tools/list` response
+instead, documented the deviation in both the test file and the MR,
+recommended T198 be prioritized.
+
+**VERDICT: CONDITIONAL_PASS → resolved** (independent Tech Lead review,
+MR !148). File ownership confirmed exactly 4 files, nothing under
+`orchestrator/internal/*` implementation/`services/*`/`schemas/*`.
+Live-generation (not hand-typed) confirmed via the single-source-of-truth
+design. The drift-detection claim — the single most important thing to
+verify for a snapshot test — was independently reproduced with a
+**different probe than the worker's own** (a `list_dir` tool
+description-string edit rather than the worker's `ping`-handler field
+addition), confirming the test genuinely catches drift rather than being
+scenario-specific or vacuous. Build/vet/fmt/full test suite (18/18
+packages, 39/39 tests in `internal/server`) independently reproduced;
+cross-repo alignment and the T198 finding both independently re-verified
+against source. Two conditions, both resolved before merge: (1) one job
+(`rust:audit`, unrelated to this Go/CI-only diff) was still running at
+review time — confirmed green on a fresh check before merge; (2) the MR
+description's self-reported test count ("24/24") was factually wrong
+(undercounted by ~15) — corrected to the reviewer's own independently
+reproduced count (39 top-level tests, 0 failures), no source files
+changed.
+
+MR !148 (`agent/qa-engineer/C034`), merged to `develop` via merge commit
+`d9f2669d`.
