@@ -319,6 +319,53 @@ e2e:smoke:
     - if: $CI_COMMIT_BRANCH == "develop"
     - if: $CI_COMMIT_BRANCH == "main"
 
+# C024: CG2 close-out. Unlike e2e:smoke above (which drives every stage over
+# the MCP HTTP transport and never touches the real filesystem path),
+# e2e:projection proves the real, projected shadow-workspace path
+# (<storage_root>/<workspace-uuid>/, ADR-012/C021) is reachable and usable
+# by ordinary shell tooling: docker exec into the running cwso-git-shadow
+# container, `ls`/`cat` the real path, run a real (precompiled) `go test`
+# binary against it, `sed` a file in place (bypassing every CWSO tool), then
+# assert commit_shadow (over MCP) captures the edit. See
+# scripts/cwso-projection-e2e.sh's own header for the full stage-by-stage
+# breakdown and for why the "real test command" stage stages its binary
+# under /run/cwso rather than executing in place (the shadow-storage tmpfs
+# mount is `noexec` by Docker's own default -- confirmed live, independent
+# of the runtime image's own missing language toolchains).
+#
+# This job does not reuse .e2e-base/e2e:smoke's own EXIT-trap-based compose
+# teardown pattern: cwso-projection-e2e.sh's own verification recipe
+# (docs/tasks/task-C024.md) is `make up; script; make down` -- the script
+# itself only cleans up the one shadow workspace + staged test binary it
+# creates, so this job's after_script owns tearing down the compose stack,
+# matching that recipe exactly (and running regardless of script exit code,
+# same guarantee e2e:smoke's own trap gives it).
+e2e:projection:
+  extends: .docker-socket
+  stage: e2e
+  image: docker:27
+  needs: ["build:orchestrator", "build:git-shadow", "build:merge-engine"]
+  variables:
+    CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"
+  before_script:
+    - apk add --no-cache bash curl python3 docker-cli-compose iproute2
+    - docker info >/dev/null
+    - export CWSO_BASE_URL="http://$(ip route | awk '/default/ {print $3}'):8080"
+    # Same rationale as e2e:smoke above: local .env.jwt.dev only feeds
+    # scripts/cwso-token.sh; the orchestrator container itself resolves its
+    # JWT secret from CWSO_JWT_SECRET via deploy/docker-compose.ci.yml.
+    - printf '%s' "$CWSO_JWT_SECRET" > .env.jwt.dev
+    - docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml build
+    - docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml up -d
+  script:
+    - bash scripts/cwso-projection-e2e.sh
+  after_script:
+    - docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml down -v --remove-orphans
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+
 # -----------------------------------------------------------------------------
 # Deploy (placeholder)
 # -----------------------------------------------------------------------------
