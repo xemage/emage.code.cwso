@@ -46,7 +46,7 @@
 | T192 | Fix JWT 401 mismatch between orchestrator and `phase2-integration.py` | backend-developer | pending | P1 | — | 2026-08-16 |
 | T197 | Fix `CWSO_IPC_ALLOWED_GIDS` drift (hardcoded gid 100 vs orchestrator's live gid 101) | devops-engineer | pending | P2 | — | 2026-08-19 |
 | T198 | Sync `schemas/*.json` with real MCP tool contracts (create_shadow_workspace/query_ast drift) | technical-writer | pending | P2 | — | 2026-08-20 |
-| C022 | Write-back into git ODB | backend-developer | pending | P0 | C021 | 2026-08-12 |
+| C022 | Write-back into git ODB | backend-developer | in_progress | P0 | C021 | 2026-08-21 |
 | C023 | Projection lifecycle + crash safety | backend-developer | pending | P0 | C021 | 2026-08-12 |
 | C024 | Prove projection E2E in CI | qa-engineer | pending | P0 | C022, C023 | 2026-08-12 |
 | C025 | CONDITIONAL: document IPC-only limitation | technical-writer | pending | P0 | C020 (NO-GO) | 2026-08-12 |

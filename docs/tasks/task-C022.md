@@ -2,7 +2,7 @@
 
 **ID:** C022
 **Owner:** backend-developer
-**Status:** pending
+**Status:** in_progress
 **Priority:** P0
 **Depends on:** C021
 **Created:** 2026-08-12
