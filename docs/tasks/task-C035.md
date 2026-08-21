@@ -2,11 +2,11 @@
 
 **ID:** C035
 **Owner:** backend-developer
-**Status:** in_progress
+**Status:** done
 **Priority:** P0
 **Depends on:** C022
 **Created:** 2026-08-21
-**Completed:** —
+**Completed:** 2026-08-21
 **Based on:** `docs/DEBT-REGISTER.md` row R-3; independent Security Engineer review of C022's MR !153; docs/decisions/ADR-012-shadow-workspace-filesystem-projection.md
 
 ## Objective
@@ -174,4 +174,55 @@ been to sequence, not parallelize, tasks with this much file-ownership overlap.
 
 ## Execution notes
 
-<filled during execution>
+Generalized C021's linear write-side fd-anchored primitives
+(`open_root_dir`/`openat_dir_nofollow`/`openat_leaf_nofollow`) to a
+recursive read walk: new `EntryOpen` enum (`Dir`/`File`/`Symlink`/
+`Vanished`/`Other`) and `open_entry_nofollow` — every directory entry
+opened via `openat(..., O_NOFOLLOW)` relative to its parent's already-open
+fd, two independently `O_NOFOLLOW`-guarded attempts (`O_DIRECTORY|
+O_NOFOLLOW` first, falling back to a generic `O_NOFOLLOW|O_NONBLOCK` open
+on `ENOTDIR`), classified via `fstat` on the resulting fd rather than any
+path-based `stat`/`symlink_metadata` call. `fdopendir_dup`/
+`next_dir_entry_name` enumerate directory contents via `fdopendir` on a
+duped fd, never `std::fs::read_dir` on a path string. Both call sites
+hardened: the reconciliation pass (`scan_workspace_tree`/`scan_dir_into`)
+and the inotify handler's single-file sync (new `read_real_file` in
+`writeback.rs`, replacing the old `symlink_metadata`+`fs::read` pair).
+Symlink-skip/non-UTF-8-skip policy unchanged — only the enforcement
+mechanism changed. No new dependency (`libc`, already used by C021).
+
+Real, disclosed negative methodology result: the first race-test attempt
+(mirroring C021's own write-side racer style) did NOT reproduce the
+pre-fix leak even at 50,000 iterations/5s. Switched to an atomic
+`renameat2(..., RENAME_EXCHANGE)` racer — no intermediate "resolves to
+nothing" gap, unlike remove-then-recreate — which reliably reproduced the
+leak against the pre-fix code in well under 200ms and passed cleanly
+against the fix. Flagged this methodology substitution explicitly for
+reviewer confirmation rather than deciding unilaterally. 38/38 tests pass.
+
+**VERDICT: CONDITIONAL_PASS (Tech Lead) + PASS (Security Engineer)** —
+Tech Lead's conditions were purely procedural (confirm CI terminal-green;
+deferred final authorization to the parallel Security review). Both
+reviewers independently reproduced the before/after race distinction from
+scratch, in separate worktrees, confirming ~0.04s failure on the pre-fix
+code and a clean pass on the fix. Both independently assessed the
+`renameat2` methodology question and converged: the substitution is sound,
+and the negative result on the weaker racer is itself informative — the
+gap was structurally real and correctly escalated to blocker status, but
+practically reachable only via deliberately adversarial code calling an
+atomic kernel primitive ordinary tools never invoke against a name this
+scan is actively reading. Security Engineer additionally confirmed the
+fix's correctness does not depend on any assumption about actor identity —
+it closes the TOCTOU class structurally, holding even if C024 later
+changes who has filesystem access, unlike the "same actor already has
+access" reasoning R-3 was originally accepted (then rejected) under. CI
+confirmed genuinely terminal-green (pipeline `2780494629`, `rust:audit`/
+`go:audit` both green, empty `Cargo.lock` diff) before merge.
+
+MR !160 (`agent/backend-developer/C035`), merged to `develop` via merge
+commit `f5abd6e0`. This closes the entire CG1 filesystem-projection
+security chain: C020 (ADR-012) → C021 (write-side, SEC-001 fixed) → C022
+(write-back, R-3/R-5 disclosed) → C023 (lifecycle/crash-safety) → C035
+(read-side, R-3 closed) — five sequential tasks, five independent review
+rounds, zero rubber-stamped verdicts. Unblocks **C024** (prove the
+projection end-to-end in CI — the last task in gate CG2).
