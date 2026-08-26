@@ -2,11 +2,11 @@
 
 **ID:** C024
 **Owner:** qa-engineer
-**Status:** in_progress
+**Status:** done
 **Priority:** P0
 **Depends on:** C022, C023
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-21
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (C024 row, §1.5); docs/plans/plan-cwso-v1.0-phase2-real-filesystem-v1.md
 
 ## Objective
@@ -80,4 +80,43 @@ with the transcript; do not annotate it away.
 
 ## Execution notes
 
-<filled during execution>
+Added `scripts/cwso-mcp-call.py` (real MCP HTTP/token-minting helper,
+reusing `scripts/cwso-token.sh`'s pattern) and `scripts/cwso-projection-e2e.sh`
+(~461 lines), plus a Go fixture (`scripts/fixtures/go/greet/`) and a new
+`e2e:projection` CI job. Transport split: `create_shadow_workspace`/
+`commit_shadow` over the real MCP HTTP transport; the actual proof steps
+(`ls`/`cat`/a real compiled test command/a `sed`-based editor edit) via
+`docker exec` into the live `cwso-git-shadow` container, the only place the
+real projected path is reachable from. Distinct from and non-duplicative
+of C018's `cwso-smoke-test.sh`.
+
+Two judgment calls resolved within scope: (1) the shadow tmpfs is `noexec`
+and the `git-shadow` runtime image has no compiler toolchain — both the
+intended consequence of C019's hardening — worked around by pre-compiling
+a static Go test binary outside the container and running it from the
+exec-allowed `/run/cwso` volume, still validating real content at the real
+materialized path. Documented as `docs/DEBT-REGISTER.md` row **R-6**
+(`wontfix`, deferred per the reviewer's explicit recommendation — loosening
+would trade away already-reviewed security posture for marginal
+convenience with no current consumer). (2) found and fixed a CI-only
+bind-mount bug (same class as `CWSO_WORKSPACE_HOST`) by building the Go
+fixture via `docker create`+`docker cp`+`docker start -a` instead of a
+host bind-mount, verified in both local dev and live CI.
+
+**VERDICT: CONDITIONAL_PASS** (independent Tech Lead review, MR !163) —
+content fully approved as-is, zero code changes required: every claim
+independently reproduced (built the real image, ran the real stack, forced
+the deliberate-failure path, verified idempotent cleanup by directly
+inspecting container/tmpfs state); both judgment calls confirmed
+legitimate; confirmed the test genuinely asserts against real content at
+the real materialized path, not a decoy copy; file ownership confirmed
+clean. One procedural condition: the MR's pipeline was red at review time
+from `e2e:smoke`/`e2e:phase2` (the same "Errno 111 Connection refused"
+transient pattern seen repeatedly this session, confirmed unrelated —
+`e2e:projection` itself was green, all 8 stages, 65s) — resolved by
+retrying both jobs sequentially, each succeeding on the first retry with
+the same signature, full pipeline confirmed genuinely green before merge.
+
+MR !163 (`agent/qa-engineer/C024`), merged to `develop` via merge commit
+`5ffeec60`. This closes gate CG2 ("real filesystem") — the entire
+C020→C035→C024 chain is complete, reviewed, and merged.
