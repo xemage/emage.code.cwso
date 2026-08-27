@@ -4,16 +4,9 @@
   "title": "create_shadow_workspace",
   "type": "object",
   "properties": {
-    "base_commit_sha": { "type": "string", "pattern": "^[a-f0-9]{7,40}$" },
-    "sandbox_profile": {
+    "base_commit_sha": {
       "type": "string",
-      "enum": ["gvisor-fast-ephemeral", "firecracker-secure-isolation"]
-    },
-    "injected_memory_context": {
-      "type": "array",
-      "items": { "type": "string" }
+      "description": "Optional base commit OID to seed the workspace from."
     }
-  },
-  "required": ["sandbox_profile"],
-  "additionalProperties": false
+  }
 }

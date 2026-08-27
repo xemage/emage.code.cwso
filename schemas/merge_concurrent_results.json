@@ -15,6 +15,10 @@
       "enum": ["ast_semantic_only", "prefer_theirs", "prefer_ours", "fail_rapidly_on_conflict"],
       "default": "ast_semantic_only"
     },
+    "rollout_session_id": {
+      "type": "string",
+      "description": "Optional rollout session id for programmatic reward attachment (T136)"
+    },
     "merge_inputs": {
       "type": "array",
       "minItems": 1,
