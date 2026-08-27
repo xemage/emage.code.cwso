@@ -2,7 +2,7 @@
 
 **ID:** T197
 **Owner:** devops-engineer
-**Status:** pending
+**Status:** in_progress
 **Priority:** P2 — not blocking, defense-in-depth hygiene (see severity note below)
 **Depends on:** —
 **Created:** 2026-08-19

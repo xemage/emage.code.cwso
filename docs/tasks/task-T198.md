@@ -2,7 +2,7 @@
 
 **ID:** T198
 **Owner:** technical-writer
-**Status:** pending
+**Status:** in_progress
 **Priority:** P2 — doc-sync, not blocking anything
 **Depends on:** —
 **Created:** 2026-08-20

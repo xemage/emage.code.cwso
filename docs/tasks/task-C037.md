@@ -2,7 +2,7 @@
 
 **ID:** C037
 **Owner:** technical-writer
-**Status:** pending
+**Status:** in_progress
 **Priority:** P2
 **Depends on:** —
 **Created:** 2026-08-26
