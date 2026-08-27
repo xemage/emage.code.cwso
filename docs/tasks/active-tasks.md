@@ -43,7 +43,6 @@
 | T187 | TD-03 Residual: Reduce handleBrokerSSE to ≤4 Parameters | backend-developer | pending | P2 | — | 2026-08-13 |
 | T188 | TD-10 Fix SSE Telemetry Test Stderr-Capture Race | qa-engineer | pending | P2 | — | 2026-08-13 |
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
-| T192 | Fix JWT 401 mismatch between orchestrator and `phase2-integration.py` | backend-developer | pending | P1 | — | 2026-08-16 |
 | C025 | CONDITIONAL: document IPC-only limitation | technical-writer | pending | P0 | C020 (NO-GO) | 2026-08-12 |
 | C040 | Scope/binding resolution for find_references | backend-developer | pending | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-12 |
 | C041 | Parent-commit tracking per workspace | backend-developer | pending | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-12 |
