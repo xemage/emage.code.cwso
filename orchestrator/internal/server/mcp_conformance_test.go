@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -266,6 +267,63 @@ func TestConformanceResourcesEnabledSpecShape(t *testing.T) {
 		if _, ok := centry[field]; !ok {
 			t.Fatalf("expected ResourceContents field %q, got: %v", field, centry)
 		}
+	}
+}
+
+// TestConformanceResourcesListEmptyMarshalsToJSONArrayNotNull is the C036
+// regression test: closes the bug found by C033's real-client testing
+// (docs/artifacts/mcp-client-compatibility-v1.md Cross-cutting Finding A)
+// where handleResourcesList's result slice was declared `var resources
+// []mcp.Resource` — a Go nil slice. `len(nil) == 0` is indistinguishable
+// from `len([]T{}) == 0` at the Go level, so a test asserting only on
+// `len(resources)` or on `resources == nil` after unmarshaling into
+// `[]any` would NOT have caught this: `encoding/json` unmarshals a JSON
+// `[]` into a non-nil, zero-length `[]any{}`, but it decodes a JSON `null`
+// into an untyped nil `any` — the type assertion `result["resources"].([]any)`
+// would then fail (ok == false) too, which is a Go-level proxy, not a
+// direct inspection of the bytes actually sent on the wire. This test
+// instead inspects the raw marshaled response bytes returned by
+// s.Handle directly, the same bytes CWSO writes to stdout/the HTTP body,
+// to assert the literal JSON shape: `"resources":[]`, never
+// `"resources":null`.
+//
+// Uses newSpikeServer(t, true) (ASTSpikeResourcesEnabled) with zero
+// subscriptions created — the exact "zero active AST-spike/sparse-agent
+// subscriptions" condition the bug report names as the common case that
+// triggers the nil-slice marshaling behavior.
+func TestConformanceResourcesListEmptyMarshalsToJSONArrayNotNull(t *testing.T) {
+	s := newSpikeServer(t, true)
+
+	raw, err := s.Handle(context.Background(), nil, []byte(`{"jsonrpc":"2.0","id":1,"method":"resources/list"}`))
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	// Direct wire-bytes inspection: the bug's symptom is specifically the
+	// literal substring "resources":null appearing in the marshaled
+	// response; assert it is absent and "resources":[] is present.
+	body := string(raw)
+	if strings.Contains(body, `"resources":null`) {
+		t.Fatalf("resources/list marshaled a nil slice as null (regression of C036's fix), got raw response: %s", body)
+	}
+	if !strings.Contains(body, `"resources":[]`) {
+		t.Fatalf("expected literal \"resources\":[] in the marshaled response, got: %s", body)
+	}
+
+	// Belt-and-suspenders: decode only as far as the raw "resources" field
+	// (json.RawMessage, not []any) so no further unmarshaling step can mask
+	// or reinterpret null vs. [] before the assertion — compare the exact
+	// bytes CWSO produced for that field.
+	var env struct {
+		Result struct {
+			Resources json.RawMessage `json:"resources"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		t.Fatalf("unmarshal response %s: %v", raw, err)
+	}
+	if got := strings.TrimSpace(string(env.Result.Resources)); got != "[]" {
+		t.Fatalf("expected result.resources raw JSON to be exactly \"[]\", got %q (raw response: %s)", got, body)
 	}
 }
 

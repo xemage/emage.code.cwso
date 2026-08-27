@@ -927,7 +927,13 @@ func (s *Server) handleResourcesList(req *mcp.Request) *mcp.Response {
 	if errResp, ok := s.resourcesEnabled(req); !ok {
 		return errResp
 	}
-	var resources []mcp.Resource
+	// Non-nil, explicitly-empty slice — mirrors handleResourceTemplatesList's
+	// make([]mcp.ResourceTemplate, 0, 2) pattern below. A nil slice marshals
+	// to JSON `null`; this marshals to `[]`, which is what the MCP spec
+	// (and schema-strict clients such as wong2/mcp-cli's Zod-validated SDK)
+	// require for an empty resources/list result. See
+	// docs/artifacts/mcp-client-compatibility-v1.md Cross-cutting Finding A.
+	resources := make([]mcp.Resource, 0, 2)
 	if s.spikeSubs != nil {
 		for _, sub := range s.spikeSubs.List() {
 			resources = append(resources, mcp.Resource{
