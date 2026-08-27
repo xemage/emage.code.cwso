@@ -48,6 +48,8 @@
 | T198 | Sync `schemas/*.json` with real MCP tool contracts (create_shadow_workspace/query_ast drift) | technical-writer | pending | P2 | — | 2026-08-20 |
 | C025 | CONDITIONAL: document IPC-only limitation | technical-writer | pending | P0 | C020 (NO-GO) | 2026-08-12 |
 | C033 | Client compatibility matrix (3×2) | qa-engineer | in_progress | P1 | C032 | 2026-08-26 |
+| C036 | Fix `resources/list` nil-slice-marshals-to-null bug (crashes wong2/mcp-cli) | backend-developer | pending | P1 | — | 2026-08-26 |
+| C037 | Document OAuth-fallback/bearer-auth limitation as client-general, not VS-Code-specific | technical-writer | pending | P2 | — | 2026-08-26 |
 | C040 | Scope/binding resolution for find_references | backend-developer | pending | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-12 |
 | C041 | Parent-commit tracking per workspace | backend-developer | pending | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-12 |
 | C042 | Three-way merge + conflict matrix | backend-developer | pending | P1 | C041 | 2026-08-12 |
