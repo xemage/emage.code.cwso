@@ -91,12 +91,13 @@ services:
   # host uid without help. This service does the one privileged operation
   # (chown to the orchestrator image's own `cwso` uid/gid, looked up live
   # from the image's /etc/passwd, not hardcoded -- Alpine assigns system
-  # uid/gid dynamically based on base-image state, and this codebase has at
+  # uid/gid dynamically based on base-image state, and this codebase had at
   # least one existing example of a hardcoded-vs-actual uid/gid drift:
-  # git-shadow/merge-engine's CWSO_IPC_ALLOWED_GIDS below is "0,100" but the
-  # orchestrator image's actual cwso gid is 101 as of alpine:3.20 --
-  # pre-existing, out of scope for T191, not touched here, but a cautionary
-  # example against hardcoding) that an unprivileged host user cannot
+  # git-shadow/merge-engine's CWSO_IPC_ALLOWED_GIDS below used to be "0,100"
+  # while the orchestrator image's actual cwso gid is 101 as of alpine:3.20 --
+  # out of scope for T191 when this comment was written, corrected separately
+  # under T197 to "0,101", with scripts/check-ipc-gid-drift.sh added as a
+  # regression check against this drifting again on a future rebuild) that an unprivileged host user cannot
   # (verified live: `chgrp` as the host user fails with "Operation not
   # permitted"), in its own throwaway, capability-minimal container, without
   # ever weakening the orchestrator's own cap_drop/read_only/
@@ -355,7 +356,18 @@ services:
     container_name: cwso-git-shadow
     environment:
       CWSO_IPC_ALLOWED_UIDS: "0,100"
-      CWSO_IPC_ALLOWED_GIDS: "0,100"
+      # T197: corrected from the stale "0,100" -- live-reverified (`docker run
+      # --rm --entrypoint id cwso/orchestrator:dev cwso`) that the
+      # orchestrator image's actual `cwso` group is gid=101, not 100 (uid and
+      # gid are assigned independently by Alpine's `addgroup -S`/`adduser -S`
+      # in deploy/Dockerfile.orchestrator and are not guaranteed to match).
+      # This was latent drift, not an active gap: allows() in
+      # services/cwso-git-shadow/src/main.rs is `uid OR gid`, and the UID
+      # entry above already matched, so the orchestrator's IPC connections
+      # were never actually blocked by the wrong GID value. Regression check:
+      # scripts/check-ipc-gid-drift.sh (asserts this value against the live
+      # image so this can't silently drift again).
+      CWSO_IPC_ALLOWED_GIDS: "0,101"
     volumes:
       - cwso-runtime:/run/cwso
     tmpfs:
@@ -387,7 +399,12 @@ services:
       CWSO_MERGE_ENGINE_SOCKET: "/run/cwso/merge-engine.sock"
       CWSO_GIT_SHADOW_SOCKET: "/run/cwso/git-shadow.sock"
       CWSO_IPC_ALLOWED_UIDS: "0,100"
-      CWSO_IPC_ALLOWED_GIDS: "0,100"
+      # T197: same fix and rationale as git-shadow's CWSO_IPC_ALLOWED_GIDS
+      # above -- corrected stale "0,100" to the live-reverified gid=101;
+      # latent drift only (allows() in services/cwso-merge-engine/src/ipc.rs
+      # is `uid OR gid` and the UID entry already matched). Regression check:
+      # scripts/check-ipc-gid-drift.sh.
+      CWSO_IPC_ALLOWED_GIDS: "0,101"
     volumes:
       - cwso-runtime:/run/cwso
     read_only: true

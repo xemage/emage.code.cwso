@@ -82,6 +82,33 @@ All notable changes to this project are documented in this file.
   - No `orchestrator/*`/`services/*`/`scripts/*`/`deploy/*` files were
     touched — this is a schema-only documentation sync.
 
+### Deployment (T197)
+- **`fix(deploy)`**: Corrected `CWSO_IPC_ALLOWED_GIDS` config drift on the
+  `git-shadow` and `merge-engine` services in `deploy/docker-compose.yml`:
+  the hardcoded value was `"0,100"`, but the orchestrator image's actual,
+  live `cwso` group is `gid=101` (re-verified via `docker run --rm
+  --entrypoint id cwso/orchestrator:dev cwso`), not `100` -- discovered
+  incidentally during T191. This was **latent drift, not an active
+  access-control gap**: `allows()` in `services/cwso-git-shadow/src/main.rs`
+  and `services/cwso-merge-engine/src/ipc.rs` is an OR of the UID and GID
+  allowlists (`allowed_uids.contains(uid) || allowed_gids.contains(gid)`),
+  and `CWSO_IPC_ALLOWED_UIDS` (`"0,100"`) already matched the orchestrator's
+  real `uid=100`, so IPC connections were never actually blocked by the
+  stale GID entry. Fixed both services' `CWSO_IPC_ALLOWED_GIDS` to `"0,101"`
+  and left the OR-logic and UID allowlists untouched (the GID check is
+  intentional defense-in-depth, not redundant). Checked
+  `cwso-sparse`/`cwso-hal`/`cwso-rollout`'s `ipc.rs` for the same pattern:
+  all three share identical `allows()`/env-var-parsing code, but none of
+  them are wired into `deploy/docker-compose.yml` with
+  `CWSO_IPC_ALLOWED_GIDS` at all (they fall back to their own process's live
+  `geteuid()`/`getegid()` when the env var is unset) -- out of scope, not
+  affected. Added `scripts/check-ipc-gid-drift.sh` as a regression check:
+  it builds/inspects `cwso/orchestrator:dev`, extracts its live `cwso`
+  uid/gid, and asserts both are covered by `git-shadow`'s and
+  `merge-engine`'s `CWSO_IPC_ALLOWED_UIDS`/`CWSO_IPC_ALLOWED_GIDS` in
+  `deploy/docker-compose.yml` -- exits non-zero on drift, verified locally
+  against both the fixed value (pass) and the original stale value (fail).
+
 ### Added (C018)
 - **`test`**: Added `scripts/cwso-smoke-test.sh` -- the v1.0
   definition-of-done executable. From an already-running stack (`make up`),
