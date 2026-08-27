@@ -2,11 +2,11 @@
 
 **ID:** C033
 **Owner:** qa-engineer
-**Status:** in_progress
+**Status:** done
 **Priority:** P1
 **Depends on:** C032
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-08-27
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (C033 row); docs/plans/plan-cwso-v1.0-phase3-protocol-conformance-v1.md
 
 ## Objective
@@ -79,4 +79,45 @@ and propose a substitute real client — do not silently test fewer than three.
 
 ## Execution notes
 
-<filled during execution>
+Before dispatch, the orchestrator ran a real environment check (no assumption): no X
+server reachable in this sandbox at all; Cursor's CLI is only a non-functional
+agent-wrapper stub, not a real IDE install; VS Code Server is genuinely present and
+live-connected (confirmed via `code --status`) but has no scriptable/headless path to
+drive its MCP-capable extensions; Claude Code CLI is a confirmed-real, installed MCP
+client; Node/npx are available for the official MCP Inspector.
+
+Produced `docs/artifacts/mcp-client-compatibility-v1.md`: 3 genuinely real,
+independently-implemented clients — Claude Code CLI, MCP Inspector (`--cli` mode,
+v1.0.2), and `@wong2/mcp-cli` (third-party, SDK-based) — over both stdio and
+Streamable HTTP (6 cells, 30 checks). Cursor ruled out as a confirmed stub; VS Code
+investigated in genuine depth and correctly ruled out on evidence (a live, connected
+Desktop session with real MCP-relevant extensions installed, but no way to drive it
+from this session) rather than silently substituted. A plausible bonus 4th client
+(`cline` npm CLI) was identified but deliberately not pursued once 3 real clients
+already satisfied the requirement, to avoid spending a live billed credential on a
+non-required row — flagged explicitly as a judgment call.
+
+Surfaced two genuine, reproducible protocol-conformance bugs, neither fixed here
+(out of scope) but logged as new tasks: **C036** (`resources/list` nil-slice-marshals-
+to-null bug, crashes `wong2/mcp-cli` outright) and **C037** (the OAuth-fallback/401-
+parsing failure mode already documented for VS Code is not VS-Code-specific).
+
+**VERDICT: CONDITIONAL_PASS → resolved** across two independent Tech Lead review
+rounds (MR !166). First round independently reproduced both bugs byte-for-byte and
+confirmed the matrix/client-selection reasoning, with two narrow conditions: an
+arithmetic error in the acceptance-criteria table (11 of 30 → correctly 8 of 30,
+22 PASS/6 FAIL/2 N/A) and an MCP Inspector `2.4.0` exclusion claim that didn't
+reproduce for the reviewer. Both corrected directly, independently re-verified by
+the orchestrator before pushing (personally re-tallied the 30 cells; personally
+reproduced `2.4.0` launching cleanly twice from a local package cache). Edited the
+artifact in place under its existing `-v1` filename rather than bumping to `-v2`,
+reasoned and disclosed in a corrigendum note (not yet merged/published at correction
+time; the two dependent task briefs cite it only for Findings A/B, unchanged by
+either fix). Second round confirmed both fixes and the versioning call, and found
+one further self-referential arithmetic slip in the fix's own explanatory text —
+resolved by iterating to an actual, verified fixed point rather than guessing a
+digit, applied directly given its purely mechanical nature.
+
+MR !166 (`agent/qa-engineer/C033`), merged to `develop` via merge commit `8cdf4566`.
+Closes gate CG3 ("Protocol") — the entire C030→C034→C033 chain is complete. Both
+CG2 and CG3 are now closed, fully unblocking Phase 4 (C040–C044, "Correctness").
