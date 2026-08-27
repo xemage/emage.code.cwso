@@ -44,11 +44,11 @@
 | T188 | TD-10 Fix SSE Telemetry Test Stderr-Capture Race | qa-engineer | pending | P2 | — | 2026-08-13 |
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
 | C025 | CONDITIONAL: document IPC-only limitation | technical-writer | pending | P0 | C020 (NO-GO) | 2026-08-12 |
-| C040 | Scope/binding resolution for find_references | backend-developer | pending | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-12 |
-| C041 | Parent-commit tracking per workspace | backend-developer | pending | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-12 |
+| C040 | Scope/binding resolution for find_references | backend-developer | in_progress | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-27 |
+| C041 | Parent-commit tracking per workspace | backend-developer | in_progress | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-27 |
 | C042 | Three-way merge + conflict matrix | backend-developer | pending | P1 | C041 | 2026-08-12 |
-| C043 | Connection pooling in shadow client | backend-developer | pending | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-12 |
-| C044 | UDS perms 0o660 or documented limitation | backend-developer | pending | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-12 |
+| C043 | Connection pooling in shadow client | backend-developer | in_progress | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-27 |
+| C044 | UDS perms 0o660 or documented limitation **[re-scoped — see task-C044.md]** | backend-developer | in_progress | P1 | C024, C033, C034 (CG2+CG3) | 2026-08-27 |
 | C050 | Write the single user guide | technical-writer | pending | P1 | C040–C044 | 2026-08-12 |
 | C051 | Delete the five superseded guides | technical-writer | pending | P1 | C050 | 2026-08-12 |
 | C052 | Receive emage.code deployment docs (T403) | technical-writer | pending | P1 | C050, T403 | 2026-08-12 |
