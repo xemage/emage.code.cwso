@@ -120,6 +120,27 @@ If this returns JSON tool data, server/auth are good.
 
 ## 7. Fix for "Dynamic Client Registration not supported"
 
+**General cause (not VS-Code-specific):** CWSO's `/mcp` endpoint authenticates
+with a bearer-only HS256 JWT scheme and does not implement the MCP spec's
+optional OAuth 2.1 authorization framework (see
+`docs/artifacts/mcp-gap-analysis-v1.md`, Ambiguity #5 — this is a deliberate,
+spec-legal design choice, not a bug). The practical consequence is that **any
+MCP client whose only remote-auth mechanism is OAuth** — not just VS Code —
+will fall back to an OAuth discovery/client-registration flow whenever it
+doesn't send a valid `Authorization: Bearer` header, and that fallback cannot
+succeed against CWSO's endpoint. VS Code's fallback shows up as the
+"Dynamic Client Registration not supported" prompt described below. A second,
+independently tested real client, `@wong2/mcp-cli`, hits the same underlying
+class of failure over Streamable HTTP and fares *worse*: it has no option to
+send a static bearer header at all, and its OAuth-fallback path crashes trying
+to JSON-parse CWSO's plain-text `401` response body as an OAuth error document,
+rather than degrading to a recoverable "enter a client ID" prompt the way VS
+Code does (see `docs/artifacts/mcp-client-compatibility-v1.md`, Cross-cutting
+Finding B). If you hit an OAuth or client-registration error against CWSO's
+HTTP endpoint from a client other than VS Code, this is the same known
+limitation — check that client for a static bearer/header-injection option
+instead of relying on its OAuth discovery path.
+
 If VS Code shows:
 
 - "Dynamic Client Registration not supported"
