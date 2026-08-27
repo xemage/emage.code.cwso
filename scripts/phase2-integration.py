@@ -78,14 +78,51 @@ def load_local_jwt_secret() -> str | None:
 
 
 def resolve_jwt_secret() -> str:
-    configured = os.environ.get("CWSO_JWT_SECRET", "").strip()
-    if configured:
-        return configured
-    if not os.environ.get("CI"):
-        local = load_local_jwt_secret()
-        if local:
-            os.environ["CWSO_JWT_SECRET"] = local
-            return local
+    """Derive the JWT secret this script signs with, matching whichever
+    source the orchestrator container itself actually loads its secret from
+    for the active compose profile (T192).
+
+    Precedence is intentionally mode-dependent because the orchestrator gets
+    its secret from a different source in each mode:
+
+    - CI (`docker-compose.ci.yml` overlay, only included when `CI` is set):
+      the orchestrator's own environment is populated directly from the CI
+      job's `CWSO_JWT_SECRET` variable (see `.gitlab-ci.yml` and the
+      `environment: CWSO_JWT_SECRET: ${CWSO_JWT_SECRET}` passthrough in
+      `docker-compose.ci.yml`) -- no local `.env.jwt.dev` exists on an
+      ephemeral runner, so that env var must win here too.
+    - Local (`docker-compose.yml` only, no CI overlay): the orchestrator
+      NEVER reads a host `CWSO_JWT_SECRET` env var -- it only reads
+      `/run/secrets/jwt_secret`, staged verbatim from `.env.jwt.dev` by the
+      `jwt-secret-fix` service (T191). A `CWSO_JWT_SECRET` value that
+      happens to already be exported in the calling shell (e.g. mirrored
+      from CI for local parity by a dev environment's shell rc) is invisible
+      to the local orchestrator container and must NOT be allowed to shadow
+      the file-derived secret here -- doing so silently signs every RPC this
+      script makes with a secret the running orchestrator was never
+      configured with, producing a deterministic 401 on the first
+      authenticated call (`tools/list`) regardless of how healthy the stack
+      otherwise is (T192).
+    """
+    in_ci = bool(os.environ.get("CI"))
+    if in_ci:
+        configured = os.environ.get("CWSO_JWT_SECRET", "").strip()
+        if configured:
+            return configured
+
+    local = load_local_jwt_secret()
+    if local:
+        os.environ["CWSO_JWT_SECRET"] = local
+        return local
+
+    if not in_ci:
+        # No local .env.jwt.dev to defer to -- fall back to any explicitly
+        # configured env var (still not authoritative for a compose-managed
+        # local orchestrator, but there is nothing better to try).
+        configured = os.environ.get("CWSO_JWT_SECRET", "").strip()
+        if configured:
+            return configured
+
     generated = base64.b64encode(secrets.token_bytes(32)).decode()
     os.environ["CWSO_JWT_SECRET"] = generated
     return generated

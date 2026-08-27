@@ -4,6 +4,36 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Fixed (T192)
+- **`scripts/phase2-integration.py`**: fixed a JWT signing/verification
+  mismatch that made `make smoke-local` fail its first authenticated MCP
+  call (`tools/list`) with a deterministic `401 invalid token`, even against
+  a healthy, correctly-bootstrapped stack. Root cause: `resolve_jwt_secret()`
+  unconditionally prioritized any pre-set `CWSO_JWT_SECRET` environment
+  variable over `.env.jwt.dev`'s content, in *every* mode — but the local
+  (non-CI) orchestrator container started by `deploy/docker-compose.yml`
+  never reads a host `CWSO_JWT_SECRET` env var at all; it only reads
+  `/run/secrets/jwt_secret`, staged verbatim from `.env.jwt.dev` by the
+  `jwt-secret-fix` service (T191). Whenever a calling shell happened to
+  already have `CWSO_JWT_SECRET` exported for unrelated reasons (e.g.
+  mirroring the CI variable of the same name for local parity), the test
+  client silently signed every RPC with that stray value while the running
+  orchestrator verified against the file-derived secret, guaranteeing a
+  401 regardless of stack health. Fixed by making the env-var/file
+  precedence mode-dependent: CI (`docker-compose.ci.yml` overlay, which
+  threads `CWSO_JWT_SECRET` straight into the orchestrator's environment
+  per `.gitlab-ci.yml`) still prefers the env var; local/non-CI runs now
+  prefer `.env.jwt.dev` — matching the source `config.go`
+  (`orchestrator/internal/config/config.go:124-132`) actually loads its
+  secret from in each mode. `config.go` was audited and found not to need
+  any change — its "read the whole trimmed file/secret content as one
+  opaque string" behavior already agrees with `scripts/cwso-token.sh`
+  (C013), which was left untouched and re-verified still accepted by a
+  running orchestrator container. Verified via live `make smoke-local`
+  runs, with and without the CI overlay, and with/without a pre-set stray
+  `CWSO_JWT_SECRET` in the calling shell (see `docs/tasks/task-T192.md`
+  execution notes for full transcripts).
+
 ### Fixed (T198)
 - **`docs(schemas)`**: Synced `schemas/*.json` with the real, live MCP tool
   contracts in `orchestrator/internal/tools/*.go` (`InputSchema()`), closing

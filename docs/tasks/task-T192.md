@@ -123,4 +123,138 @@ rather than shipping a narrow patch that doesn't address the real cause.
 
 ## Execution notes
 
-<filled during execution>
+### Root cause (confirmed via live A/B reproduction, not guessed)
+
+Both `config.go` (via the docker-compose-staged `/run/secrets/jwt_secret`
+copy of `.env.jwt.dev`) and `scripts/cwso-token.sh` (which reads
+`.env.jwt.dev` directly, unconditionally) already agreed on the same
+opaque secret value — the entire trimmed file content, including the
+literal `JWT_SECRET=` key prefix, since neither actually parses `KEY=VALUE`.
+That part of the system was **not** the bug, contrary to the brief's initial
+hypothesis about `config.go:127-128` vs `phase2-integration.py:64-77` line
+parsing.
+
+The actual bug was in `resolve_jwt_secret()` (phase2-integration.py, a few
+lines above the cited range): it checked `os.environ.get("CWSO_JWT_SECRET")`
+*first*, in every mode (CI or not), before ever consulting
+`.env.jwt.dev` via `load_local_jwt_secret()`. This is correct for CI (where
+`deploy/docker-compose.ci.yml` threads that exact env var straight into the
+orchestrator container's environment, per its own header comment and
+`.gitlab-ci.yml`'s `CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"`
+job variable) — but wrong for local/non-CI runs, where the orchestrator
+(`deploy/docker-compose.yml`, no CI overlay) *never* reads a host
+`CWSO_JWT_SECRET` env var at all; it only reads `/run/secrets/jwt_secret`,
+staged verbatim from `.env.jwt.dev` by the `jwt-secret-fix` service (T191).
+
+This repo's own dev environment happens to export
+`CWSO_JWT_SECRET=ci-ephemeral-secret-not-used-in-prod-ci-only` in
+`~/.bashrc` (mirroring the CI variable for local parity), which is present
+in every shell session here — so the bug reproduced 100% deterministically,
+exactly matching the brief's evidence log, independent of any C019 diff.
+
+Confirmed by live A/B test, no code changes yet:
+```
+$ echo $CWSO_JWT_SECRET
+ci-ephemeral-secret-not-used-in-prod-ci-only
+$ make smoke-local
+...
+--- 1. tools/list shows shadow tools ---
+  unexpected response: {'_http_status': 401, '_body': 'invalid token\n'}
+make: *** [Makefile:128: smoke-local] Error 1
+
+$ env -u CWSO_JWT_SECRET make smoke-local     # same code, just unset the stray env var
+...
+--- 1. tools/list shows shadow tools ---
+  OK  shadow tools registered
+...
+  PHASE 2 INTEGRATION TEST: PASS
+```
+This isolated the root cause to `resolve_jwt_secret()`'s env-var-vs-file
+precedence before any patch was written.
+
+### What was changed and why
+
+- **`scripts/phase2-integration.py`** (`resolve_jwt_secret()`): precedence
+  is now mode-dependent instead of unconditional. In CI
+  (`os.environ.get("CI")` truthy — matches `resolve_compose_files()`'s own
+  existing CI-overlay gating), a configured `CWSO_JWT_SECRET` still wins
+  first (matches `docker-compose.ci.yml`'s env passthrough). Outside CI,
+  `.env.jwt.dev` (via the existing, unmodified `load_local_jwt_secret()`)
+  is now tried *before* any pre-set `CWSO_JWT_SECRET`, matching what the
+  local orchestrator container actually derives its secret from. A stray
+  env var is only used as a last-resort fallback (non-CI, no local file),
+  and random generation remains the final fallback in both modes. No
+  change to `load_local_jwt_secret()` itself — its current "return the
+  whole trimmed line, including the `KEY=` prefix" behavior for a
+  single-line file is exactly what keeps it in agreement with
+  `config.go`'s and `cwso-token.sh`'s equally-unparsed handling of the same
+  file; "fixing" it to strip the `KEY=` prefix would have reintroduced a
+  new mismatch against `config.go`, which was intentionally left untouched
+  (see below).
+- **`orchestrator/internal/config/config.go`**: **not modified.** Audited
+  and confirmed its secret-parsing path (lines ~124-132) is not the wrong
+  side — it already agrees with `scripts/cwso-token.sh`'s independently
+  working approach (both treat the whole trimmed file/secret content as an
+  opaque string, prefix included). Changing it to properly parse
+  `KEY=VALUE` would have been a real improvement in isolation, but would
+  have silently broken `scripts/cwso-token.sh` (C013, MR !116) as
+  collateral damage, which the brief explicitly guards against. Left as-is
+  per the rails: fix the side that's actually wrong.
+- **`CHANGELOG.md`**: added an `### Fixed (T192)` entry under `## Unreleased`
+  (inserted above the existing `### Fixed (T198)` entry, newest-first per
+  this file's existing convention).
+
+### Verification (real, not assumed)
+
+All three runs below were executed in this worktree with Docker/Compose
+available (`docker compose` v5.3.1); full transcripts captured during this
+session:
+
+1. **Before the fix**, with the dev environment's real (pre-existing)
+   `CWSO_JWT_SECRET` still exported: `make smoke-local` reproduced the
+   exact reported 401 on `tools/list` (see A/B test above) — confirms the
+   bug is real and live, not hypothetical.
+2. **After the fix**, same shell, same stray `CWSO_JWT_SECRET` still
+   exported (not unset — this is the realistic condition the fix has to
+   survive): `make smoke-local` ran the full Phase 2 suite (workspace
+   creation/isolation, Go/Python AST queries, commit, permission-gate
+   check, teardown) and printed `PHASE 2 INTEGRATION TEST: PASS`.
+3. **CI-mode regression check**: `CI=1 make smoke-local` with a real local
+   `.env.jwt.dev` present initially produced a 401 — traced to a *test
+   artifact*, not a fix regression: `jwt-secret-fix` stages
+   `/run/secrets/jwt_secret` from any locally-present `.env.jwt.dev`
+   regardless of the CI overlay (a real CI runner has no such file), so the
+   orchestrator's file-first precedence in `config.go` picked the file
+   secret while my CI-mode Python precedence (deliberately) picked the CI
+   env var — a divergence that can only happen when both a local secret
+   file and CI-style env var coexist, which is not how the actual GitLab CI
+   runner is provisioned (no host `.env.jwt.dev`, per `.gitlab-ci.yml`).
+   Confirmed by removing (moving aside, not deleting) `.env.jwt.dev` to
+   faithfully simulate an ephemeral CI checkout, then re-running
+   `CI=1 make smoke-local`: full suite passed, `PHASE 2 INTEGRATION TEST:
+   PASS`. `.env.jwt.dev` was restored immediately after.
+4. **`scripts/cwso-token.sh` (C013) re-verified per its own acceptance
+   bar**: started the stack directly via `docker compose up`, minted a
+   token with `bash scripts/cwso-token.sh --role worker --ttl 300`, and
+   POSTed a `tools/list` RPC to the running orchestrator's `/mcp` endpoint
+   with that token — got `HTTP 200` (not 401), confirming the script is
+   unaffected (it was not modified).
+
+### Acceptance criteria
+
+1. `make smoke-local` passes `tools/list` (no 401) — **met**, verified live
+   (see #2 above), with the realistic stray-env-var condition present.
+2. Fix is in the loading/parsing logic, not a loosening of server-side
+   validation — **met**; `orchestrator/internal/transport/http.go`'s
+   `verifyJWT()`/`authMiddleware()` were not touched.
+3. `scripts/cwso-token.sh` still works — **met**, re-verified (see #4
+   above); the file itself was not modified.
+4. `git diff --stat` against `origin/develop` touches only files under
+   "File ownership" plus this brief — **met**:
+   `scripts/phase2-integration.py`, `CHANGELOG.md`,
+   `docs/tasks/task-T192.md`. `orchestrator/internal/config/config.go` was
+   intentionally left unchanged (see above).
+
+### Blocker status
+
+None.
