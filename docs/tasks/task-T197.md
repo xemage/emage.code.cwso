@@ -2,11 +2,11 @@
 
 **ID:** T197
 **Owner:** devops-engineer
-**Status:** in_progress
+**Status:** done
 **Priority:** P2 — not blocking, defense-in-depth hygiene (see severity note below)
 **Depends on:** —
 **Created:** 2026-08-19
-**Completed:** —
+**Completed:** 2026-08-27
 **Based on:** Discovered incidentally during T191 (`.env.jwt.dev` permission fix, MR
 !132) — the worker looked up the orchestrator image's live `cwso` uid/gid while
 implementing T191's fix and found it doesn't match this pre-existing compose config.
