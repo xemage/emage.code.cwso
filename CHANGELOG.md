@@ -4,6 +4,84 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Fixed (T198)
+- **`docs(schemas)`**: Synced `schemas/*.json` with the real, live MCP tool
+  contracts in `orchestrator/internal/tools/*.go` (`InputSchema()`), closing
+  the drift flagged by the C018 smoke-test worker and independently
+  re-verified by the orchestrator before this task was dispatched.
+  - **`schemas/create_shadow_workspace.json`**: removed `sandbox_profile`
+    (enum) and `injected_memory_context` (array) — neither exists in
+    `CreateShadowWorkspace.InputSchema()` nor is read anywhere in
+    `Execute()`; the only real property is the already-present, always-
+    optional `base_commit_sha`. Dropped the schema's `"required":
+    ["sandbox_profile"]` (the real tool requires nothing) and its
+    `"additionalProperties": false` (the real `InputSchema()` never sets
+    this constraint for this tool). Also dropped the `pattern` on
+    `base_commit_sha` (`^[a-f0-9]{7,40}$`) since the real `Execute()` does
+    not validate the SHA's shape — the schema was constraining the field
+    more tightly than the server actually does.
+  - **`schemas/query_ast.json`**: added the two properties the schema was
+    missing entirely, `workspace_uuid` and `path` (both actually
+    **required** by `QueryAST.InputSchema()`/`Execute()`), moved
+    `target_symbol` from required to optional (matching the real
+    contract), and removed `language_context`/`path_filter` — investigated
+    and confirmed genuinely dead: `Execute()`'s argument struct doesn't
+    declare either field, so `json.Unmarshal` silently drops them even if
+    a caller sends them, and neither reaches the `query_ast` sidecar RPC
+    call (which only forwards `workspace_uuid`/`path`/`query_type`/
+    `target_symbol`); `shadow_tools_test.go`'s `TestQueryASTExecute` also
+    makes no reference to either field. No evidence they're reserved for
+    a near-term feature — flagged here rather than silently dropped.
+    Removed `"additionalProperties": false` for the same reason as above
+    (the real `InputSchema()` doesn't set it for this tool).
+  - **`schemas/merge_concurrent_results.json`**: added the previously
+    missing optional `rollout_session_id` string property ("Optional
+    rollout session id for programmatic reward attachment (T136)"),
+    copied verbatim from `MergeConcurrentResults.InputSchema()`. This
+    schema's `"required"` and top-level/nested `"additionalProperties":
+    false` were already correct and are unchanged — `merge_tools.go`'s
+    own `InputSchema()` explicitly sets both, unlike the shadow-tool
+    schemas above.
+  - **`schemas/dispatch_concurrent_jobs.json`**: checked against
+    `DispatchConcurrentJobs.InputSchema()` in
+    `orchestrator/internal/tools/dispatch_tools.go` — structure (properties,
+    `required`, enum values, and `"additionalProperties": false`, which that
+    tool's own `InputSchema()` also sets explicitly) matched, but a Tech
+    Lead review of this task caught one real wording drift this pass
+    missed: the `sandbox_profile` property's `description` read "Server
+    policy is enforced server-side" where the Go source says "Server policy
+    enforces routing" — cosmetically minor, not semantically misleading,
+    but a genuine mismatch nonetheless. Corrected to match
+    `dispatch_tools.go` verbatim.
+  - **Judgment call on `additionalProperties`**: rather than applying a
+    single blanket choice across every schema file, each file now mirrors
+    its own tool's real `InputSchema()` exactly — `create_shadow_workspace`
+    and `query_ast` no longer set `additionalProperties` at all (matching
+    `shadow_tools.go`, which never sets it for either tool), while
+    `merge_concurrent_results` and `dispatch_concurrent_jobs` keep
+    `additionalProperties: false` (matching `merge_tools.go`/
+    `dispatch_tools.go`, which set it explicitly). A blanket `false` across
+    every file is exactly the pattern that drifted silently for
+    `create_shadow_workspace`/`query_ast` in the first place; matching each
+    tool's own source 1:1 is mechanical rather than an editorial policy
+    layered on top, and so is the least likely to drift again.
+  - Every other file under `schemas/*.json` was checked against its
+    corresponding Go `InputSchema()`; no drift beyond the four files above
+    was found. `schemas/README.md`'s table (listing `read_file_sync.json`,
+    `write_file_sync.json`, and `list_dir.json` as existing schema files)
+    is itself stale — those three files do not exist in `schemas/` — but
+    `README.md` is outside this task's `schemas/*.json` + `CHANGELOG.md`
+    file ownership, so it is flagged here rather than edited.
+  - Cross-checked against `scripts/cwso-smoke-test.sh` (C018): the
+    `create_shadow_workspace` (`{}`), `query_ast` (`workspace_uuid`,
+    `path`, `query_type`, `target_symbol` all present), and
+    `merge_concurrent_results` (`source_workspace_uuids` with 2 items,
+    one `merge_inputs` entry with all 5 nested fields, no
+    `rollout_session_id`) payloads the script actually sends and asserts
+    `[PASS]` on all validate cleanly against the corrected schemas above.
+  - No `orchestrator/*`/`services/*`/`scripts/*`/`deploy/*` files were
+    touched — this is a schema-only documentation sync.
+
 ### Added (C018)
 - **`test`**: Added `scripts/cwso-smoke-test.sh` -- the v1.0
   definition-of-done executable. From an already-running stack (`make up`),
