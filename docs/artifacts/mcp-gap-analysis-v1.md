@@ -225,7 +225,12 @@ here — resolution belongs to C031 or a future architecture decision.
      rather than the spec's OAuth 2.1-based authorization framework (`basic/authorization`).
      Per that spec page, "Authorization is OPTIONAL for MCP implementations," so a custom
      scheme is spec-legal; recorded because C031 (or a future authZ-focused task) may need
-     this fact and it does not otherwise appear in the three required tables.
+     this fact and it does not otherwise appear in the three required tables. For concrete,
+     real-client impact evidence of this interoperability cost — not just the abstract
+     spec-legality note — see `docs/artifacts/mcp-client-compatibility-v1.md` (C033),
+     Cross-cutting Finding B: at least one independently-tested real client (`@wong2/mcp-cli`)
+     hits this exact wall over Streamable HTTP and fails worse than a recoverable prompt,
+     crashing outright rather than degrading gracefully.
 
 6. **`ping` response shape.** `server.go:817` replies to `ping` with `{"pong": true}`.
    Spec's `PingRequest` expects an `EmptyResult` (`{}`) — schema.ts does not define a
