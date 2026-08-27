@@ -2,11 +2,11 @@
 
 **ID:** T198
 **Owner:** technical-writer
-**Status:** in_progress
+**Status:** done
 **Priority:** P2 — doc-sync, not blocking anything
 **Depends on:** —
 **Created:** 2026-08-20
-**Completed:** —
+**Completed:** 2026-08-27
 **Based on:** Discovered by the C018 worker (task C018, the v1.0 end-to-end smoke
 test) while implementing `scripts/cwso-smoke-test.sh` against `schemas/*.json` per
 its own task brief's instruction to "use the exact JSON shapes from `schemas/`". The

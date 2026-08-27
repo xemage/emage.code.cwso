@@ -2,11 +2,11 @@
 
 **ID:** C036
 **Owner:** backend-developer
-**Status:** pending
+**Status:** done
 **Priority:** P1
 **Depends on:** —
 **Created:** 2026-08-26
-**Completed:** —
+**Completed:** 2026-08-27
 **Based on:** `docs/artifacts/mcp-client-compatibility-v1.md` (C033) § "Cross-cutting findings," Finding A
 
 ## Objective

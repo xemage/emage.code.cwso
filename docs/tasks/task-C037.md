@@ -2,11 +2,11 @@
 
 **ID:** C037
 **Owner:** technical-writer
-**Status:** in_progress
+**Status:** done
 **Priority:** P2
 **Depends on:** —
 **Created:** 2026-08-26
-**Completed:** —
+**Completed:** 2026-08-27
 **Based on:** `docs/artifacts/mcp-client-compatibility-v1.md` (C033) § "Cross-cutting findings," Finding B; `docs/user/installation-v3.md` §7; `docs/artifacts/mcp-gap-analysis-v1.md`'s HS256-bearer-scheme note
 
 ## Objective
