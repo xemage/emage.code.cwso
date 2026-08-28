@@ -47,8 +47,7 @@
 | T199 | Wire `ErrorObj.conflict_matrix` into `mergeengine.Client` and surface it to MCP callers | backend-developer | pending | P2 | — | 2026-08-28 |
 | T200 | Reconcile `local-docker-desktop-guide.md` with the current `make up` flow | technical-writer | pending | P2 | C052 (merged) | 2026-08-28 |
 | T201 | Reconcile root README.md with the new CONTRIBUTING.md; fix broken TECHNICAL-DEBT.md link | technical-writer | pending | P2 | C053 (merged) | 2026-08-28 |
-| C054 | Verify guide commands on clean machine | qa-engineer | in_progress | P1 | C050, C051, C052, C053 (all merged) | 2026-08-28 |
-| C060 | Debt register: zero unclassified rows | technical-writer | pending | P0 | C050–C054 (CG4) | 2026-08-12 |
+| C060 | Debt register: zero unclassified rows | technical-writer | pending | P0 | C050–C054 (CG4, closed) | 2026-08-28 |
 | C061 | Security pass closing T010 | security-engineer | pending | P0 | C050–C054 (CG4) | 2026-08-12 |
 | C062 | Release v1.0.0 | devops-engineer | pending | P0 | C060, C061, C063 | 2026-08-12 |
 | C063 | Publish docs/LIMITATIONS.md | technical-writer | pending | P0 | C060 | 2026-08-12 |
@@ -61,6 +60,15 @@
 > 2026-08-13, incl. the three open-question decisions; C019 was added by decision 3).
 > C025 activates only on an ADR-012 NO-GO. Gate dependencies (CG0–CG4) are noted inline.
 > CG0 (C001–C005, C030) cleared 2026-08-16 — see `docs/tasks/completed-tasks.md`.
+> CG2 (C020–C024, "real filesystem") and CG3 (C030–C034, "Protocol") both cleared
+> 2026-08-27. Phase 4 "Correctness" (C040–C044, C042) cleared 2026-08-28 — see
+> `docs/tasks/completed-tasks.md`. **CG4 ("One document", C050–C054) cleared 2026-08-28**
+> — C050 (single user guide), C051 (delete superseded guides), C052 (receive emage.code
+> deployment docs, T403 paired handover), C053 (contributor/user doc separation), and
+> C054 (clean-machine command verification, zero genuine failures) all merged; see
+> `docs/tasks/completed-tasks.md` for full review history. Unblocks C060–C063 (the
+> release-gate chain: debt-register closure, security pass closing T010, publish
+> `docs/LIMITATIONS.md`, release v1.0.0).
 
 > ¹ **RESOLVED 2026-08-20.** Tracked condition (originated CONDITIONAL_PASS, Tech Lead
 > review of C010/MR !113, 2026-08-16; refined CONDITIONAL_PASS, Tech Lead review of
