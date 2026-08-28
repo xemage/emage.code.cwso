@@ -35,7 +35,7 @@ was carried forward or closed.
 | B6 (= P2-7) | scorecard P2-7 (`services/cwso-git-shadow/src/repo.rs`, `query_ast`) | Correctness | `find_references` matches identifier text only — no scope/binding analysis; false positives across shadowed names | open | v1.0-blocker | C040 |
 | B7 (= P2-4) | `services/cwso-git-shadow/src/repo.rs` (`Workspace.head`, `ShadowStore::commit`) | Correctness | Was: every shadow commit was an orphan (no parent); workspaces never formed a history chain, so per-workspace history and three-way merges were unavailable. Fixed by C041: `Workspace` now tracks its own `head: Option<Oid>` (seeded from the base commit at `create` time, or `None` for a base-less workspace); `ShadowStore::commit` reads that as the sole parent for the next commit, then advances `head` to the new commit's oid only after `repo.commit` succeeds. A base-less workspace's first commit is still a genuine root commit (`head` starts `None`); every commit after that — in the same workspace, or continuing from a seeded base commit — forms a real parent-child chain, unblocking C042's three-way merge | closed | fixed | C041 |
 | B12 (= P2-5) | scorecard P2-5 (`services/cwso-git-shadow/src/main.rs`, socket perms) | Security | UDS permissions are `0o666` because orchestrator and sidecar containers run under different UIDs; acceptable on a private compose-managed bind volume, not acceptable for prod | open | v1.0-blocker | C044 |
-| B13 (= P2-6) | `orchestrator/internal/shadow/client.go:5` | Performance | One TCP-style request-per-connection model — no pooling, no pipelining; will throttle under concurrent dispatch | open | v1.0-blocker | C043 |
+| B13 (= P2-6) | `orchestrator/internal/shadow/client.go` (marker removed; see `Client.acquire`/`Client.release`) | Performance | Was: one TCP-style request-per-connection model, all RPCs serialized through a single `Client.mu` — no pooling, no pipelining; would throttle under concurrent dispatch. Fixed by C043: `Client` now holds a bounded pool of persistent UDS connections (`sem` + `idle`, default size 8, configurable via `NewClientWithPoolSize` or `CWSO_SHADOW_POOL_SIZE`); each `Call` checks out one connection exclusively for its round trip and returns it for reuse afterward, so synchronization is per-connection rather than global and up to `poolSize` RPCs are genuinely concurrent. Verified by `internal/shadow/client_test.go`'s `TestSoakConcurrentDispatch` (32 concurrent calls over a pool of 4, race-detector clean) | closed | fixed | C043 |
 | B11 | `orchestrator/internal/rollout/evaluator_swebench.go:64` | Functionality | SWE-bench/SWE-Gym evaluator is a stub — harness launch deferred; returns neutral reward | open | v1.1 | — |
 | P2-2 | scorecard P2-2 (planning item, no code marker) | Performance | Merkle-hash incremental indexer not implemented; every AST query re-parses the file. Fine at PoC sizes (<1k LOC), will not scale | open | v1.1 | — |
 | R-1 (= P1-5) | `deploy/docker-compose.yml:6` | Security | File-based JWT secret (`../.env.jwt.dev`) acceptable for dev/compose; production needs external secret management (Vault/SOPS). v1.0 is local-only, so this is acceptable **if documented** | open | v1.0-blocker (document) | C063 |
@@ -162,7 +162,7 @@ CWSO product debt, and are intentionally not register rows.
 | `services/cwso-git-shadow/src/main.rs:11` | B2 (fixed; marker text removed, module doc now describes the C021 projection instead) |
 | `services/cwso-git-shadow/src/repo.rs:180` | B7 (fixed; marker removed, `Workspace.head` + chained `ShadowStore::commit` now implement parent tracking) |
 | `orchestrator/internal/mcp/protocol.go:10` | B1 (fixed) |
-| `orchestrator/internal/shadow/client.go:5` | B13 |
+| `orchestrator/internal/shadow/client.go:5` | B13 (fixed; marker text removed, package doc now describes the C043 connection pool instead) |
 | `orchestrator/internal/rollout/evaluator_swebench.go:64` | B11 |
 | `services/cwso-git-shadow/src/repo.rs` (`scan_workspace_tree`'s "Residual TOCTOU" doc comment, C022) | R-3 (fixed; marker text removed, doc comment now describes the C035 fd-anchored fix instead) |
 | `services/cwso-git-shadow/src/repo.rs` (`scan_workspace_tree`'s "Non-UTF-8 filenames" doc comment, C022) | R-4 |
@@ -202,7 +202,7 @@ workspaces + AST, 2026-05; hypothesis **VALIDATED**).
 | P2-3 | Only Go + Python grammars wired; Rust/TS required | P2-3 | **closed** — four grammars wired in `services/cwso-git-shadow/Cargo.toml` (evidence above) |
 | P2-4 | Orphan commits; no history chain | B7 | **closed** — parent-commit chaining implemented via `Workspace.head` + `ShadowStore::commit` (evidence above, C041) |
 | P2-5 | UDS perms `0o666` across differing UIDs | B12 | carried-forward → v1.0-blocker (C044) |
-| P2-6 | One connection per RPC; no pooling | B13 | carried-forward → v1.0-blocker (C043) |
+| P2-6 | One connection per RPC; no pooling | B13 | **closed** — bounded connection pool implemented in `orchestrator/internal/shadow/client.go` (evidence above, C043) |
 | P2-7 | `find_references` is text matching, not scope resolution | B6 | carried-forward → v1.0-blocker (C040) |
 | P2-8 | `base_tree` stored but never read | P2-8 | carried-forward → v1.1 |
 
