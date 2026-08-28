@@ -44,7 +44,7 @@
 | T188 | TD-10 Fix SSE Telemetry Test Stderr-Capture Race | qa-engineer | pending | P2 | — | 2026-08-13 |
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
 | C025 | CONDITIONAL: document IPC-only limitation | technical-writer | pending | P0 | C020 (NO-GO) | 2026-08-12 |
-| C042 | Three-way merge + conflict matrix | backend-developer | pending | P1 | C041 (merged) | 2026-08-28 |
+| C042 | Three-way merge + conflict matrix | backend-developer | in_progress | P1 | C041 (merged) | 2026-08-28 |
 | C050 | Write the single user guide | technical-writer | pending | P1 | C040–C044 | 2026-08-12 |
 | C051 | Delete the five superseded guides | technical-writer | pending | P1 | C050 | 2026-08-12 |
 | C052 | Receive emage.code deployment docs (T403) | technical-writer | pending | P1 | C050, T403 | 2026-08-12 |
