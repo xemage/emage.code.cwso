@@ -33,6 +33,43 @@ use crate::writeback::WriteBackEngine;
 pub struct ShadowStore {
     repo: Mutex<Repository>,
     workspaces: Mutex<HashMap<Uuid, Workspace>>,
+    /// SEV-C041-001: per-workspace serialization for `commit()`. `commit()`
+    /// reads a workspace's tracked `head`, builds a tree, calls
+    /// `repo.commit`, and only then advances `head` -- a span of several
+    /// operations, not one atomic step. The `workspaces` lock above only
+    /// protects the workspace-map lookup itself (acquired and released
+    /// twice, briefly, at the start and end of `commit()`), so two
+    /// concurrent `commit()` calls against the *same* workspace could both
+    /// read the same stale `head`, both commit against that same parent,
+    /// and have the loser's commit silently dropped from the chain (still
+    /// present in the ODB, but unreachable from `head` and thus invisible
+    /// to any future ancestor-walk) once the winner overwrites `head` last.
+    /// This side-table gives every workspace id its own `Arc<Mutex<()>>`,
+    /// looked up (or inserted) under a brief lock on the table itself, then
+    /// held by `commit()` for the *entire* read-head -> build-tree ->
+    /// `repo.commit` -> advance-head span -- serializing same-workspace
+    /// commits without serializing commits against different workspaces
+    /// (each workspace's entry is an independent `Mutex`, so a lock held
+    /// for workspace A never blocks a concurrent commit against workspace
+    /// B). See `commit`'s doc comment for the full guarantee and
+    /// `docs/DEBT-REGISTER.md` row R-7.
+    ///
+    /// Lifecycle: entries are never removed, including by `drop_workspace`.
+    /// A dropped workspace's UUID is never reused (`Uuid::new_v4` per
+    /// `create` call), so a stale entry can never be mistakenly acquired
+    /// for a different, later workspace -- it just sits unused, one
+    /// `Arc<Mutex<()>>` (a handful of words) per workspace ever created for
+    /// the lifetime of the process. Actively cleaning up on
+    /// `drop_workspace` would need to guard against a commit that is
+    /// already mid-flight (holding the `Arc` it looked up) racing a
+    /// concurrent drop-then-recreate-under-a-different-uuid -- impossible
+    /// here since UUIDs aren't reused, but the cleanup code would still
+    /// have to be written defensively against it, for a bound (this
+    /// service's total distinct-workspaces-ever-created count) that is
+    /// already small relative to process lifetime in every deployment this
+    /// service targets. Deliberately left as an unbounded-but-negligible
+    /// side-table rather than adding that complexity for no real payoff.
+    commit_locks: Mutex<HashMap<Uuid, Arc<Mutex<()>>>>,
     /// Root of the tmpfs-backed projection tree; each workspace gets
     /// `storage_root/<uuid>/` (see `workspace_dir`).
     storage_root: PathBuf,
@@ -50,6 +87,19 @@ struct Workspace {
     /// path within the shadow repo (workspace_uuid → in-memory file map)
     files: HashMap<String, Oid>,
     base_tree: Option<Oid>,
+    /// C041: the commit `commit()` should use as this workspace's sole
+    /// parent the next time it is called, and the running "current HEAD" of
+    /// this workspace's own commit chain -- *not* necessarily the same thing
+    /// as `base_tree`'s commit forever, since it advances every time
+    /// `commit()` succeeds (see that method). `None` means this workspace
+    /// has no commit yet to chain from: either it was created with no base
+    /// (`create(None)`) and has never been committed, in which case its next
+    /// commit is legitimately a root commit with no parent, or it *was*
+    /// seeded from a base commit, in which case this is `Some(<that
+    /// commit's oid>)` from the moment `create` returns -- so a workspace's
+    /// very first `commit()` call continues that base commit's history
+    /// rather than starting a disconnected one.
+    head: Option<Oid>,
 }
 
 impl ShadowStore {
@@ -74,6 +124,7 @@ impl ShadowStore {
         Ok(Self {
             repo: Mutex::new(repo),
             workspaces: Mutex::new(HashMap::new()),
+            commit_locks: Mutex::new(HashMap::new()),
             storage_root,
             writeback: OnceLock::new(),
         })
@@ -107,13 +158,17 @@ impl ShadowStore {
     // against; `dispatch` below remains the only externally reachable
     // (IPC) caller.
     pub(crate) fn create(&self, base: Option<String>) -> Result<(Uuid, Option<Oid>)> {
-        let base_tree = if let Some(sha) = base {
+        // C041: capture the base *commit*'s own oid, not just its tree, so
+        // it can seed this workspace's `head` below -- a workspace created
+        // from an existing commit must chain its own first `commit()` off
+        // that commit, not treat it as parentless.
+        let (base_commit, base_tree) = if let Some(sha) = base {
             let oid = Oid::from_str(&sha).with_context(|| format!("bad sha {sha}"))?;
             let repo = self.repo.lock();
             let commit = repo.find_commit(oid)?;
-            Some(commit.tree_id())
+            (Some(oid), Some(commit.tree_id()))
         } else {
-            None
+            (None, None)
         };
         let id = Uuid::new_v4();
         let ws_dir = self.workspace_dir(id);
@@ -125,6 +180,7 @@ impl ShadowStore {
         let mut ws = Workspace {
             files: HashMap::new(),
             base_tree,
+            head: base_commit,
         };
         // Seed files map from base tree, if any, materializing each blob to
         // the real workspace directory as we go.
@@ -280,10 +336,62 @@ impl ShadowStore {
         }))
     }
 
+    /// C041: builds a tree from the workspace's current `files` map and
+    /// commits it, chaining onto the workspace's tracked `head` (this
+    /// workspace's own previous commit, or the base commit it was created
+    /// from) as the sole parent -- or with *no* parent, as a legitimate root
+    /// commit, iff `head` is still `None` (a workspace created with no base
+    /// that has never been committed before). `head` is read once up front
+    /// and only advanced to the new commit's oid *after* `repo.commit`
+    /// actually succeeds, so a failed commit attempt never leaves the
+    /// workspace's chain pointing at a commit that doesn't exist.
+    ///
+    /// SEV-C041-001 (HIGH, fixed here, see `docs/DEBT-REGISTER.md` row R-7):
+    /// the read-head -> build-tree -> `repo.commit` -> advance-head sequence
+    /// above is several separate operations, not one atomic step, so it must
+    /// never run concurrently against the *same* workspace -- two racing
+    /// callers could otherwise both read the same stale `head`, both commit
+    /// against that same parent, and have whichever one advances `head`
+    /// last silently orphan the other's commit from the workspace's own
+    /// chain (still present in the ODB, but unreachable by walking `head`
+    /// backwards, and thus invisible to any future `git log`/ancestor
+    /// walk -- exactly the kind of state C042's three-way merge depends on
+    /// `head` correctly reflecting). This method now acquires this
+    /// workspace's own entry in `commit_locks` (see that field's doc
+    /// comment) and holds it for this call's *entire* body, so two
+    /// `commit()` calls against the same `id` always serialize. Commits
+    /// against *different* workspace ids use different `Arc<Mutex<()>>`
+    /// entries and therefore never block each other -- this fix does not
+    /// reintroduce a single global commit lock, which would defeat the
+    /// point of C043's connection pooling. Regression coverage:
+    /// `concurrent_commits_against_one_workspace_never_lose_a_commit` (an
+    /// 8-thread adversarial probe) and
+    /// `concurrent_commits_against_different_workspaces_are_not_serialized`.
     fn commit(&self, id: Uuid, message: &str) -> Result<(Oid, Oid)> {
+        // Look up (or lazily create) this workspace's own commit lock under
+        // a brief lock on the side-table itself, then drop that lock
+        // immediately -- the side-table lock only ever guards the
+        // map-lookup/insert, never the commit body below.
+        let commit_lock = {
+            self.commit_locks
+                .lock()
+                .entry(id)
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        // Held for the full span of this method: every other `commit()`
+        // call against this same workspace id blocks here until this one
+        // returns (including on an early `?` error return, since the guard
+        // is dropped by `Drop` regardless of exit path). A workspace id
+        // that no longer exists in `self.workspaces` still safely acquires
+        // and releases its own lock entry here; the "no such workspace"
+        // check just below is what actually rejects it.
+        let _commit_guard = commit_lock.lock();
+
         let wss = self.workspaces.lock();
         let ws = wss.get(&id).ok_or_else(|| anyhow!("no such workspace"))?;
         let entries: Vec<(String, Oid)> = ws.files.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        let parent_oid = ws.head;
         drop(wss);
 
         let repo = self.repo.lock();
@@ -311,11 +419,29 @@ impl ShadowStore {
         let tree_oid = idx.write_tree_to(&repo)?;
         let tree = repo.find_tree(tree_oid)?;
         let sig = git2::Signature::now("cwso-shadow", "shadow@cwso.invalid")?;
-        // Parent: workspace base_commit if present? For PoC we orphan-commit.
-        let parents: Vec<git2::Commit> = vec![];
-        let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
-        // POC-DEBT P2-4: orphan commits per workspace; chained history added in T029.
+        // Resolve the tracked HEAD (if any) to a real `git2::Commit` *before*
+        // building the parent-refs slice below, so its lifetime outlives the
+        // `repo.commit` call that borrows from it.
+        let parent_commit = parent_oid.map(|oid| repo.find_commit(oid)).transpose()?;
+        let parent_refs: Vec<&git2::Commit> = parent_commit.iter().collect();
         let commit_oid = repo.commit(None, &sig, &sig, message, &tree, &parent_refs)?;
+        drop(parent_commit);
+        drop(tree);
+        drop(repo);
+
+        // Advance this workspace's chain to the commit that was just made.
+        // A missing workspace here (raced against a concurrent
+        // `drop_workspace` between the lock above and this one) is a
+        // harmless no-op, matching this module's existing pattern elsewhere
+        // (e.g. `wb_apply_write`) for the same race -- the commit itself
+        // already succeeded and its oid is still returned to the caller.
+        // This write is itself still guarded by `_commit_guard` (held until
+        // the end of this function), so it cannot race a concurrent
+        // `commit()` against the same workspace id -- only against
+        // `drop_workspace`, which is the documented, harmless race above.
+        if let Some(ws) = self.workspaces.lock().get_mut(&id) {
+            ws.head = Some(commit_oid);
+        }
         Ok((tree_oid, commit_oid))
     }
 
@@ -1288,6 +1414,274 @@ mod tests {
         let (tree, commit) = s.commit(id, "test").unwrap();
         assert!(!tree.is_zero());
         assert!(!commit.is_zero());
+    }
+
+    // --- C041: parent-commit tracking per workspace -----------------------
+
+    /// A workspace created with no base (`create(None)`) has never had a
+    /// commit, so its very first `commit()` call must produce a real root
+    /// commit -- zero parents -- not an accidental one, and not fail. This
+    /// is the "must not regress" half of C041's brief: the pre-fix code
+    /// always built an empty `parents` vec, so this case already passed by
+    /// construction, but the fix must preserve it exactly (rather than, say,
+    /// only handling the "has a base" case and leaving a fresh workspace's
+    /// first commit broken).
+    #[test]
+    fn first_commit_in_fresh_workspace_is_a_root_commit() {
+        let s = store();
+        let (id, _) = s.create(None).unwrap();
+        s.write_file(id, "hello.txt", b"v1").unwrap();
+        let (_tree, commit_oid) = s.commit(id, "root commit").unwrap();
+
+        let repo = s.repo.lock();
+        let commit = repo.find_commit(commit_oid).unwrap();
+        assert_eq!(
+            commit.parent_count(),
+            0,
+            "a workspace's first commit, with no base, must be a genuine root commit"
+        );
+    }
+
+    /// Two sequential commits in the *same* workspace must form a real
+    /// parent-child chain: the second commit's sole parent must be the
+    /// first commit's oid, not orphaned. This is C041's core acceptance
+    /// criterion -- `git log` (or, here, `git2::Commit::parent_id`) must
+    /// show linkage, and this is exactly what C042's three-way merge will
+    /// walk to find a common ancestor.
+    #[test]
+    fn sequential_commits_in_one_workspace_form_a_parent_chain() {
+        let s = store();
+        let (id, _) = s.create(None).unwrap();
+
+        s.write_file(id, "hello.txt", b"v1").unwrap();
+        let (_tree1, commit1) = s.commit(id, "first commit").unwrap();
+
+        s.write_file(id, "hello.txt", b"v2").unwrap();
+        let (_tree2, commit2) = s.commit(id, "second commit").unwrap();
+
+        assert_ne!(commit1, commit2, "each commit must have a distinct oid");
+
+        let repo = s.repo.lock();
+        let c1 = repo.find_commit(commit1).unwrap();
+        assert_eq!(
+            c1.parent_count(),
+            0,
+            "the first commit is still a root commit"
+        );
+
+        let c2 = repo.find_commit(commit2).unwrap();
+        assert_eq!(
+            c2.parent_count(),
+            1,
+            "the second commit must have exactly one parent"
+        );
+        assert_eq!(
+            c2.parent_id(0).unwrap(),
+            commit1,
+            "the second commit's parent must be the workspace's own first commit"
+        );
+    }
+
+    /// A third commit continues the same chain (parent linkage isn't a
+    /// one-shot fluke of exactly two commits): `head` must keep advancing
+    /// across every successful `commit()` call.
+    #[test]
+    fn third_commit_continues_the_same_chain() {
+        let s = store();
+        let (id, _) = s.create(None).unwrap();
+
+        s.write_file(id, "f.txt", b"v1").unwrap();
+        let (_, c1) = s.commit(id, "c1").unwrap();
+        s.write_file(id, "f.txt", b"v2").unwrap();
+        let (_, c2) = s.commit(id, "c2").unwrap();
+        s.write_file(id, "f.txt", b"v3").unwrap();
+        let (_, c3) = s.commit(id, "c3").unwrap();
+
+        let repo = s.repo.lock();
+        assert_eq!(repo.find_commit(c2).unwrap().parent_id(0).unwrap(), c1);
+        assert_eq!(repo.find_commit(c3).unwrap().parent_id(0).unwrap(), c2);
+    }
+
+    /// A workspace created *from* an existing commit (`create(Some(sha))`)
+    /// must chain its own first commit onto that base commit, rather than
+    /// treating "first commit in this workspace" and "root commit" as
+    /// synonyms -- the base commit is real history, not something this
+    /// workspace's chain should disconnect from.
+    #[test]
+    fn workspace_created_from_base_commit_chains_onto_it() {
+        let s = store();
+        let (seed_id, _) = s.create(None).unwrap();
+        s.write_file(seed_id, "seed.txt", b"seed").unwrap();
+        let (_, base_commit) = s.commit(seed_id, "base").unwrap();
+
+        let (id, _) = s.create(Some(base_commit.to_string())).unwrap();
+        s.write_file(id, "new.txt", b"new").unwrap();
+        let (_, next_commit) = s.commit(id, "continues base").unwrap();
+
+        let repo = s.repo.lock();
+        let next = repo.find_commit(next_commit).unwrap();
+        assert_eq!(
+            next.parent_count(),
+            1,
+            "a workspace seeded from a base commit must chain onto it, not root itself"
+        );
+        assert_eq!(next.parent_id(0).unwrap(), base_commit);
+    }
+
+    // --- SEV-C041-001: per-workspace commit serialization -----------------
+    //
+    // Security Engineer finding (independent review of C041, reproduced
+    // 5/5 runs with an adversarial 8-thread probe against the pre-fix
+    // code): unsynchronized concurrent `commit()` calls against the SAME
+    // workspace could silently orphan a commit from the parent chain --
+    // both racers read the same stale `ws.head`, both commit successfully
+    // against that same parent, and whichever advanced `ws.head` last
+    // "won", leaving the other's commit unreachable by walking `head`
+    // backwards (still present in the ODB, invisible to any ancestor
+    // walk). See `commit`'s doc comment and `docs/DEBT-REGISTER.md` row
+    // R-7. The two tests below are that probe, made a permanent regression
+    // test, plus a companion test proving the fix does not regress
+    // cross-workspace concurrency back to a single global commit lock.
+
+    /// The adversarial probe itself: 8 threads, synchronized via a
+    /// `Barrier` so they all call `commit()` against the SAME workspace as
+    /// close to simultaneously as this platform allows, repeated over
+    /// several independent iterations (fresh store/workspace each time) to
+    /// build confidence this is not a one-shot fluke either way. After all
+    /// 8 threads complete, walks `parent_id`/`parent_count` from the
+    /// workspace's final `head` back to the root and asserts ALL 8
+    /// commits are reachable -- not just "no panic", zero lost commits.
+    ///
+    /// Confirmed (see this task's execution notes in
+    /// `docs/tasks/task-C041.md`) to reliably FAIL against the pre-fix
+    /// `commit()` (no per-workspace serialization) and to reliably PASS
+    /// against the fix below.
+    #[test]
+    fn concurrent_commits_against_one_workspace_never_lose_a_commit() {
+        use std::collections::HashSet;
+        use std::sync::Barrier;
+
+        const THREADS: usize = 8;
+        const ITERATIONS: usize = 20;
+
+        for iteration in 0..ITERATIONS {
+            let s = store();
+            let (id, _) = s.create(None).unwrap();
+
+            let barrier = Arc::new(Barrier::new(THREADS));
+            let handles: Vec<_> = (0..THREADS)
+                .map(|i| {
+                    let s = s.clone();
+                    let barrier = barrier.clone();
+                    std::thread::spawn(move || {
+                        // Distinct content per thread so each thread's write
+                        // is unambiguous; the barrier below is what forces
+                        // all 8 `commit()` calls to actually overlap rather
+                        // than happening to run sequentially by scheduling
+                        // luck.
+                        s.write_file(id, "f.txt", format!("thread-{i}").as_bytes())
+                            .unwrap();
+                        barrier.wait();
+                        s.commit(id, &format!("iteration {iteration} thread {i}"))
+                            .unwrap()
+                    })
+                })
+                .collect();
+
+            let mut commit_oids: Vec<Oid> = Vec::with_capacity(THREADS);
+            for h in handles {
+                let (_, commit_oid) = h.join().unwrap();
+                commit_oids.push(commit_oid);
+            }
+            assert_eq!(
+                commit_oids.iter().collect::<HashSet<_>>().len(),
+                THREADS,
+                "iteration {iteration}: all 8 commit() calls must produce distinct oids"
+            );
+
+            let head = {
+                let wss = s.workspaces.lock();
+                wss.get(&id)
+                    .unwrap()
+                    .head
+                    .expect("workspace must have a head after 8 successful commits")
+            };
+            let repo = s.repo.lock();
+            let mut reachable: HashSet<Oid> = HashSet::new();
+            let mut cursor = Some(head);
+            while let Some(oid) = cursor {
+                reachable.insert(oid);
+                let commit = repo.find_commit(oid).unwrap();
+                cursor = match commit.parent_count() {
+                    0 => None,
+                    1 => Some(commit.parent_id(0).unwrap()),
+                    n => panic!(
+                        "iteration {iteration}: commit {oid} has {n} parents; this chain must \
+                         always be linear"
+                    ),
+                };
+            }
+            drop(repo);
+
+            for (i, oid) in commit_oids.iter().enumerate() {
+                assert!(
+                    reachable.contains(oid),
+                    "iteration {iteration}: thread {i}'s commit {oid} is NOT reachable by \
+                     walking parent_id from the workspace's final head -- this is \
+                     SEV-C041-001 (a concurrent commit silently orphaned from the chain)"
+                );
+            }
+            assert_eq!(
+                reachable.len(),
+                THREADS,
+                "iteration {iteration}: expected a linear chain of exactly {THREADS} commits \
+                 reachable from head, got {}",
+                reachable.len()
+            );
+        }
+    }
+
+    /// Companion to the probe above: proves the per-workspace lock does
+    /// NOT regress into a single global commit lock. A commit against
+    /// workspace `b` must complete promptly even while workspace `a`'s
+    /// commit lock is being held (simulated here by acquiring `a`'s
+    /// `commit_locks` entry directly, standing in for an in-flight
+    /// `commit()` call against `a`) -- if the fix had accidentally
+    /// serialized all workspaces behind one lock, this would hang until
+    /// the held guard is dropped (never, within this test), and the
+    /// `recv_timeout` below would fail. This is exactly the throttling
+    /// C043's connection-pool change exists to remove, so this fix must
+    /// not reintroduce it at this layer.
+    #[test]
+    fn concurrent_commits_against_different_workspaces_are_not_serialized() {
+        let s = store();
+        let (a, _) = s.create(None).unwrap();
+        let (b, _) = s.create(None).unwrap();
+        s.write_file(a, "f.txt", b"a").unwrap();
+        s.write_file(b, "f.txt", b"b").unwrap();
+
+        let a_lock = {
+            s.commit_locks
+                .lock()
+                .entry(a)
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        let _held = a_lock.lock();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let s2 = s.clone();
+        std::thread::spawn(move || {
+            let result = s2.commit(b, "commit to workspace b");
+            let _ = tx.send(result);
+        });
+
+        let result = rx.recv_timeout(std::time::Duration::from_secs(5)).expect(
+            "commit() against a DIFFERENT workspace blocked while an unrelated \
+                 workspace's commit lock was held -- the per-workspace lock must never \
+                 regress into a single global commit lock",
+        );
+        result.expect("commit against workspace b must still succeed");
     }
 
     // --- C021: filesystem projection lifecycle ---------------------------

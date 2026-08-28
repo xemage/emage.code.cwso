@@ -33,7 +33,7 @@ was carried forward or closed.
 | B1 (= D1, P1-1) | `orchestrator/internal/mcp/protocol.go:10` | Maintainability / spec compliance | Hand-rolled MCP protocol subset instead of the official `go-sdk`; only a partial method set is implemented | closed | fixed | C030–C032 |
 | B2 (= P2-1) | `services/cwso-git-shadow/src/main.rs` (module doc; marker removed) | Architecture | Was: OverlayFS bind-mount layer deferred; shadow files reachable only via orchestrator→sidecar IPC. Fixed by C021: every shadow workspace is now eagerly materialized onto a real, tmpfs-backed directory (`<storage_root>/<workspace-uuid>/`, ADR-012 "materialise-to-tmpfs") at creation time and kept in sync on every write, so `ls`/`cat`/`pytest`/arbitrary tooling can reach it directly. Write-back of raw external writes at the projected path into the git object store (the remaining half of the original gap) is now also fixed by C022: `services/cwso-git-shadow/src/writeback.rs`'s `WriteBackEngine` (inotify-driven, with a periodic hash-based reconciliation backstop per ADR-012) folds create/modify/delete/rename mutations made directly at the real path back into `Workspace.files`, so `commit_shadow` captures them regardless of how the edit arrived | closed | fixed | C021, C022 |
 | B6 (= P2-7) | scorecard P2-7 (`services/cwso-git-shadow/src/repo.rs`, `query_ast`) | Correctness | `find_references` matches identifier text only — no scope/binding analysis; false positives across shadowed names | open | v1.0-blocker | C040 |
-| B7 (= P2-4) | `services/cwso-git-shadow/src/repo.rs:180` | Correctness | Every shadow commit is an orphan (no parent); workspaces never form a history chain, so per-workspace history and three-way merges are unavailable | open | v1.0-blocker | C041 |
+| B7 (= P2-4) | `services/cwso-git-shadow/src/repo.rs` (`Workspace.head`, `ShadowStore::commit`) | Correctness | Was: every shadow commit was an orphan (no parent); workspaces never formed a history chain, so per-workspace history and three-way merges were unavailable. Fixed by C041: `Workspace` now tracks its own `head: Option<Oid>` (seeded from the base commit at `create` time, or `None` for a base-less workspace); `ShadowStore::commit` reads that as the sole parent for the next commit, then advances `head` to the new commit's oid only after `repo.commit` succeeds. A base-less workspace's first commit is still a genuine root commit (`head` starts `None`); every commit after that — in the same workspace, or continuing from a seeded base commit — forms a real parent-child chain, unblocking C042's three-way merge | closed | fixed | C041 |
 | B12 (= P2-5) | scorecard P2-5 (`services/cwso-git-shadow/src/main.rs`, socket perms) | Security | UDS permissions are `0o666` because orchestrator and sidecar containers run under different UIDs; acceptable on a private compose-managed bind volume, not acceptable for prod | open | v1.0-blocker | C044 |
 | B13 (= P2-6) | `orchestrator/internal/shadow/client.go:5` | Performance | One TCP-style request-per-connection model — no pooling, no pipelining; will throttle under concurrent dispatch | open | v1.0-blocker | C043 |
 | B11 | `orchestrator/internal/rollout/evaluator_swebench.go:64` | Functionality | SWE-bench/SWE-Gym evaluator is a stub — harness launch deferred; returns neutral reward | open | v1.1 | — |
@@ -52,6 +52,8 @@ was carried forward or closed.
 | R-4 | `services/cwso-git-shadow/src/writeback.rs` (`handle_event`'s non-UTF-8 filename branch) | Robustness | A file created/renamed directly at a shadow workspace's real path with a non-UTF-8 name is silently skipped by write-back (logged at `warn`, no error surfaced to the caller) and can never be captured into a `commit_shadow` result. This is a pre-existing, system-wide constraint C022 does not introduce or worsen — `Workspace.files` is `HashMap<String, Oid>` and the IPC protocol carries every path as a JSON string end-to-end, so `write_file` itself already could not represent such a path either — but C022 is the first code path that can *observe* such a name arriving via raw filesystem tooling (rather than only ever receiving paths that were already JSON-string-encoded), so it is called out explicitly here rather than left implicit | open | v1.1 | — |
 | R-5 | `services/cwso-git-shadow/src/writeback.rs` (rename-handling doc comment, "Accepted, documented race") | Correctness | Rename is decomposed into two independent operations (`MOVED_FROM` → delete, `MOVED_TO` → create/sync), not one atomic move — independent Tech Lead review of C022's MR (!153) endorsed this design (no cookie-correlation) as sound, but identified a real, narrow race: the delete-half and create-half are two separate critical sections, and a `commit()` landing in the gap between them could observe the affected file as missing under *both* its old and new path (a transient full disappearance), self-resolving on the next event or reconciliation tick. Non-blocking; a future hardening (not required for v1.0) would batch same-tick, same-`inotify`-cookie `MOVED_FROM`/`MOVED_TO` pairs into one atomic delete+create under a single lock acquisition | open | v1.1 | — |
 | R-6 | `deploy/docker-compose.yml` (`git-shadow`'s `tmpfs:` mount) + `deploy/Dockerfile.git-shadow` (minimal runtime image) | Test infrastructure | C024's real-filesystem E2E proof discovered the shadow projection's tmpfs mount is `noexec` and the `git-shadow` runtime image carries no compiler/toolchain — both the direct, intended consequence of C019's deliberate hardening (`cap_drop: ["ALL"]`, `network_mode: "none"`, `read_only: true`, minimal base image), not an oversight. C024 works around this correctly, not around the constraint's substance: it pre-compiles a static test binary (`CGO_ENABLED=0`) outside the container and runs it from the exec-allowed `/run/cwso` volume, passing in the real, materialized workspace path so the test's own assertions still validate real content at the real location — only the compiled binary's own inode location changed to satisfy `noexec`, not what is being validated. Independent Tech Lead review of C024's MR (!163) explicitly recommended **deferring** any change here rather than opening a new task: loosening `noexec` or adding a toolchain to the runtime image would trade away already-reviewed security posture for marginal test-harness convenience, with no current consumer anywhere in the roadmap. Documented here as a conscious, reviewed constraint — not a plan to fix it | closed | wontfix | C024 |
+| R-7 | `services/cwso-git-shadow/src/repo.rs` (`ShadowStore::commit`) | Concurrency | SEV-C041-001 (HIGH), found by independent Security Engineer review of C041 and adversarially reproduced 5/5 runs with an 8-thread concurrent-`commit()` probe: the pre-fix `commit()` read a workspace's tracked `head`, built a tree, called `repo.commit`, and only then advanced `head` — several separate operations, not one atomic step — and the only lock in play (`ShadowStore.workspaces`) protected just the workspace-map lookup itself, briefly, at the start and end of the call, not the full span. Two concurrent `commit()` calls against the SAME workspace could both read the same stale `head`, both commit successfully against that same parent, and have whichever advanced `head` last silently orphan the other's commit from the chain (still present in the git object database, but unreachable by walking `parent_id` back from `head`, invisible to `git log` and to C042's future three-way merge). This was latent, not live, only because `orchestrator/internal/shadow/client.go` (row B13, above: "one TCP-style request-per-connection model — no pooling, no pipelining") serialized every shadow RPC through one global mutex — C043 removes that global mutex via bounded connection pooling, which would have turned this from latent to live on the sanctioned concurrent-dispatch path. Fixed within this same task (not deferred) by adding `ShadowStore.commit_locks: Mutex<HashMap<Uuid, Arc<Mutex<()>>>>`, a per-workspace serialization primitive looked up/inserted under a brief lock on the side-table itself, then held by `commit()` for the entire read-head → build-tree → `repo.commit` → advance-head span; commits against different workspace ids use independent `Arc<Mutex<()>>` entries and remain fully concurrent (no regression of the throughput C043 exists to unlock). Regression coverage: `concurrent_commits_against_one_workspace_never_lose_a_commit` (the reproduced 8-thread adversarial probe, looped over 20 iterations, walking `parent_id`/`parent_count` from the final `head` to assert zero lost commits — confirmed to reliably fail against the pre-fix code, 5/5 runs, and to reliably pass against the fix, 8/8 runs) and `concurrent_commits_against_different_workspaces_are_not_serialized` (proves the fix does not regress into a single global commit lock) | closed | fixed | C041 |
+| R-8 | `services/cwso-git-shadow/src/repo.rs` (`ShadowStore.commit_locks`) | Resource management | Non-blocking MEDIUM finding from the independent Security Engineer re-review of R-7/C041's fix (adversarial-probe re-verification round): `commit_locks: Mutex<HashMap<Uuid, Arc<Mutex<()>>>>` never evicts an entry once a workspace's first commit inserts one — `drop_workspace` does not remove the corresponding `commit_locks` entry, so the side-table grows by one small entry (a `Uuid` key + an `Arc<Mutex<()>>`) per distinct workspace ever committed-to, for the lifetime of the process, never shrinking. Confirmed not currently exploitable as an unbounded-growth DoS: workspace creation already sits behind the existing upstream rate limiter (row D6, `orchestrator/internal/transport/http.go`, 60 req/min per IP), which caps the practical growth rate; each leaked entry is small and fixed-size (no per-entry unbounded data). Tracked as a follow-up hardening item (e.g. evict the `commit_locks` entry in `drop_workspace`, or switch to a weak-reference/LRU-bounded side-table), not required for v1.0 | open | v1.1 | — |
 
 ### Notes on the `fixed` rows (verification evidence)
 
@@ -67,6 +69,25 @@ was carried forward or closed.
   unit tests present. The stale `POC-DEBT P2-3` comment on
   `services/cwso-git-shadow/Cargo.toml:20` is removed by the debt-closing work;
   this register does not touch code.
+- **B7 — orphan commits / parent-chain tracking: `fixed` (C041).**
+  `services/cwso-git-shadow/src/repo.rs`'s `Workspace` struct gained a `head:
+  Option<Oid>` field; `ShadowStore::create` seeds it from the base commit's
+  oid when the workspace has one (`None` otherwise), and `ShadowStore::commit`
+  resolves the tracked `head` to a `git2::Commit` and passes it as the sole
+  parent to `repo.commit`, advancing `head` to the freshly made commit's oid
+  only after that call succeeds. The `POC-DEBT P2-4` marker at the old
+  `repo.rs:180` orphan-commit line is removed (`grep -n "P2-4"
+  services/cwso-git-shadow/src/repo.rs` = no hits). Regression coverage:
+  `first_commit_in_fresh_workspace_is_a_root_commit` (a base-less workspace's
+  first commit still has zero parents), `sequential_commits_in_one_workspace_form_a_parent_chain`
+  and `third_commit_continues_the_same_chain` (`git2::Commit::parent_id`
+  confirms real linkage across two and three sequential commits), and
+  `workspace_created_from_base_commit_chains_onto_it` (a workspace seeded from
+  an existing commit chains its own first commit onto that base rather than
+  rooting itself). Independently confirmed against the real on-disk object
+  store with the `git` CLI (`git log --graph --oneline --parents
+  <second-commit-oid>` showed `second -> first` linkage with `first` having no
+  `parent` line), not only via `git2`'s own API.
 - **D6 — rate limiting: `fixed`.** `orchestrator/internal/transport/http.go`
   implements per-IP token-bucket rate limiting: import of
   `golang.org/x/time/rate` (line 21), `newRateLimiterStore(ctx)` (line 183),
@@ -74,6 +95,28 @@ was carried forward or closed.
   connection limiting (lines 210–214), and the section comment
   `// --- Rate limiting middleware (T029 remediation #7) ---` (line 665)
   documenting the default of 60 requests/minute.
+- **R-7 — concurrent-commit lost-update race: `fixed` (C041).**
+  `services/cwso-git-shadow/src/repo.rs`'s `ShadowStore` gained a
+  `commit_locks: Mutex<HashMap<Uuid, Arc<Mutex<()>>>>` side-table;
+  `ShadowStore::commit` now looks up (or lazily inserts) its workspace's
+  own `Arc<Mutex<()>>` under a brief lock on that table, then holds the
+  resulting guard for the method's entire read-head → build-tree →
+  `repo.commit` → advance-head span, so two `commit()` calls against the
+  same workspace id can never interleave through that span, while commits
+  against different workspace ids use independent lock entries and remain
+  fully concurrent. `commit`'s doc comment now describes this guarantee
+  and cites SEV-C041-001. Regression coverage:
+  `concurrent_commits_against_one_workspace_never_lose_a_commit` (an
+  8-thread, barrier-synchronized adversarial probe run over 20 internal
+  iterations, walking `parent_id`/`parent_count` from the workspace's
+  final `head` back to the root after every iteration and asserting all 8
+  commits are reachable) and
+  `concurrent_commits_against_different_workspaces_are_not_serialized`
+  (proves an in-flight lock on one workspace never blocks a commit against
+  a different one). The adversarial probe was confirmed, by temporarily
+  bypassing the new lock in `commit()` and restoring it afterward, to
+  reliably fail on its very first iteration against the pre-fix code (5/5
+  isolated runs) and to reliably pass against the fix (8/8 isolated runs).
 - **R-3 — read-side TOCTOU: `fixed` (C035).** `services/cwso-git-shadow/src/repo.rs`
   generalizes C021's write-side fd-anchored primitives
   (`open_root_dir`/`openat_dir_nofollow`/`openat_leaf_nofollow`) to a
@@ -117,7 +160,7 @@ CWSO product debt, and are intentionally not register rows.
 | `deploy/docker-compose.yml:6` | R-1 |
 | `services/cwso-git-shadow/Cargo.toml:20` | P2-3 (fixed) |
 | `services/cwso-git-shadow/src/main.rs:11` | B2 (fixed; marker text removed, module doc now describes the C021 projection instead) |
-| `services/cwso-git-shadow/src/repo.rs:180` | B7 |
+| `services/cwso-git-shadow/src/repo.rs:180` | B7 (fixed; marker removed, `Workspace.head` + chained `ShadowStore::commit` now implement parent tracking) |
 | `orchestrator/internal/mcp/protocol.go:10` | B1 (fixed) |
 | `orchestrator/internal/shadow/client.go:5` | B13 |
 | `orchestrator/internal/rollout/evaluator_swebench.go:64` | B11 |
@@ -157,7 +200,7 @@ workspaces + AST, 2026-05; hypothesis **VALIDATED**).
 | P2-1 | OverlayFS bind-mount deferred; IPC-only shadow files | B2 | **closed** — real filesystem projection implemented via materialise-to-tmpfs (ADR-012, evidence: `services/cwso-git-shadow/src/repo.rs` `ShadowStore::create`/`write_file`/`drop_workspace`/`materialize_write`, C021); write-back into the object store remains open (C022) |
 | P2-2 | No Merkle incremental indexer; every query re-parses | P2-2 | carried-forward → v1.1 |
 | P2-3 | Only Go + Python grammars wired; Rust/TS required | P2-3 | **closed** — four grammars wired in `services/cwso-git-shadow/Cargo.toml` (evidence above) |
-| P2-4 | Orphan commits; no history chain | B7 | carried-forward → v1.0-blocker (C041) |
+| P2-4 | Orphan commits; no history chain | B7 | **closed** — parent-commit chaining implemented via `Workspace.head` + `ShadowStore::commit` (evidence above, C041) |
 | P2-5 | UDS perms `0o666` across differing UIDs | B12 | carried-forward → v1.0-blocker (C044) |
 | P2-6 | One connection per RPC; no pooling | B13 | carried-forward → v1.0-blocker (C043) |
 | P2-7 | `find_references` is text matching, not scope resolution | B6 | carried-forward → v1.0-blocker (C040) |
