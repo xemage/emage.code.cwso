@@ -18,7 +18,11 @@ remediation plan; LOW becomes tracked debt.
 
 ## Inputs
 
-- T010 (`docs/tasks/task-T010.md` — the original audit scope)
+- T010's original scope (no `docs/tasks/task-T010.md` brief exists — it predates this
+  project's brief-file convention; reconstruct scope from
+  `docs/plans/feature-operator-dashboard.md` — "T010 | SE: Security audit (auth on
+  dashboard, no secret leakage in JSON)" — and `docs/decisions/ADR-011-operator-dashboard.md`,
+  which names the specific dashboard security gate T010 was meant to enforce)
 - `SECURITY.md`, `docs/artifacts/security-baseline-v2.md`
 - The full v1.0 surface: `orchestrator/`, `services/`, `deploy/`, `scripts/` (including the new C012/C013/C016/C017 scripts)
 - OWASP Top 10 checklist (security-guidelines.md)

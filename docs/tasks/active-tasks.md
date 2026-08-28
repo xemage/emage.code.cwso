@@ -47,8 +47,8 @@
 | T199 | Wire `ErrorObj.conflict_matrix` into `mergeengine.Client` and surface it to MCP callers | backend-developer | pending | P2 | — | 2026-08-28 |
 | T200 | Reconcile `local-docker-desktop-guide.md` with the current `make up` flow | technical-writer | pending | P2 | C052 (merged) | 2026-08-28 |
 | T201 | Reconcile root README.md with the new CONTRIBUTING.md; fix broken TECHNICAL-DEBT.md link | technical-writer | pending | P2 | C053 (merged) | 2026-08-28 |
-| C060 | Debt register: zero unclassified rows | technical-writer | pending | P0 | C050–C054 (CG4, closed) | 2026-08-28 |
-| C061 | Security pass closing T010 | security-engineer | pending | P0 | C050–C054 (CG4) | 2026-08-12 |
+| C060 | Debt register: zero unclassified rows | technical-writer | in_progress | P0 | C050–C054 (CG4, closed) | 2026-08-28 |
+| C061 | Security pass closing T010 **[fresh full-surface audit — see note ³]** | security-engineer | in_progress | P0 | C050–C054 (CG4) | 2026-08-28 |
 | C062 | Release v1.0.0 | devops-engineer | pending | P0 | C060, C061, C063 | 2026-08-12 |
 | C063 | Publish docs/LIMITATIONS.md | technical-writer | pending | P0 | C060 | 2026-08-12 |
 
@@ -108,5 +108,31 @@
 > only, no duplicate work exists under either name in either repo (confirmed via grep in
 > both repos' active/completed task ledgers). C052 is unblocked on the T403 side; only
 > C050 (this repo) remains as its blocker.
+
+> ³ **T010 investigated 2026-08-28 (orchestrator, at the coordinator's request) before
+> dispatching C061.** Findings: T010 was never actually started — zero evidence of any
+> audit work (no branch, no MR, no artifact matching its scope anywhere in the repo).
+> It was created 2026-08-06 as the security gate for the operator-dashboard feature
+> chain (T001–T010, scoped per `docs/plans/feature-operator-dashboard.md`: "auth on
+> dashboard, no secret leakage in JSON"), but the feature shipped in release v0.6.0 the
+> same day without the audit ever running (`T001-T009` were archived; T010 was
+> conspicuously left `in_review` and never touched again).
+> `docs/archive/artifacts/security-phase5-audit-v1.md` was investigated as a possible
+> match (its name is suggestive) and confirmed **unrelated** — it is task T071's output
+> from 2026-05-23, over two months before T010 existed, auditing an entirely different
+> code surface (dispatch/Wasm-scoring-plugin/telemetry from an earlier, unrelated
+> "Phase 5" numbering scheme). This is a deliberate, documented carry-forward decision,
+> not neglect: task C004 (Phase 0) discovered T010 as the sole `in_review` ledger
+> anomaly; the human-approved v1.0 roadmap (2026-08-13) explicitly chose to defer its
+> resolution to C061 rather than reopen it mid-roadmap — see
+> `docs/checkpoints/checkpoint-020-v1.0-planning-complete.md` and
+> `docs/checkpoints/checkpoint-021-v1.0-approved.md`'s "Open / carried over" tables,
+> both annotated "Closed by C061 in Phase 6." **Decision: C061 proceeds as a fresh,
+> full-v1.0-surface OWASP audit** (already how its brief was scoped — JWT auth,
+> secret handling, the C015 workspace mount, C044's socket-permission outcome,
+> container hardening, MCP-boundary input validation — none of which existed in their
+> current form on 2026-08-06), not a resumption of T010's narrow original scope.
+> `docs/tasks/task-C061.md`'s stale reference to a nonexistent `task-T010.md` brief was
+> corrected in the same edit that dispatched C061.
 
 Per-task briefs live alongside this file as `task-T001.md`, `task-T002.md`, …, `task-C001.md`, …
