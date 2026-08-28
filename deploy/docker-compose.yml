@@ -451,9 +451,39 @@ services:
       # UDS control-plane path, matching the name the orchestrator now also reads via
       # CWSO_ROLLOUT_SOCKET (orchestrator/internal/config/config.go, set on the
       # orchestrator service as of C014) for future trajectory-drain wiring.
+      #
+      # SEC-C044-001 (Security review of C044, fixed here): this value is now
+      # genuinely unreachable. Below, the `cwso-runtime:/run/cwso` volume mount that
+      # backed this path has been removed, and `read_only: true` means the image's own
+      # `/run/cwso` directory (deploy/Dockerfile.rollout) is not writable either — the
+      # IPC listener thread in services/cwso-rollout/src/main.rs (`ipc::run`) will fail
+      # to bind() this socket at startup and log one non-fatal error
+      # ("cwso-rollout IPC server exited"); the HTTP proxy is unaffected and starts
+      # normally. Left set (rather than unset) deliberately: config.rs's own built-in
+      # default (SOCKET_DEFAULT) resolves to this exact same path, so unsetting this
+      # var would not change the behavior above, only make the intent less explicit to
+      # a future reader. If/when a real trajectory-drain feature needs this control
+      # plane, it must come back with its own deliberately-scoped writable mount (see
+      # the removed-volume note below) — not a re-add of the shared cwso-runtime mount.
       CWSO_ROLLOUT_SOCKET: "/run/cwso/rollout.sock"
-    volumes:
-      - cwso-runtime:/run/cwso
+    # SEC-C044-001 (HIGH, security review of C044): this service previously mounted the
+    # same `cwso-runtime` named volume that backs both the git-shadow and merge-engine
+    # UDS sockets (`/run/cwso/git-shadow.sock`, `/run/cwso/merge-engine.sock`). Both
+    # sidecars' `IpcAuthzPolicy::allows()` (services/cwso-git-shadow/src/main.rs,
+    # services/cwso-merge-engine/src/ipc.rs) authorizes a peer if its uid OR its gid is
+    # allow-listed. `rollout`'s image (deploy/Dockerfile.rollout, Debian
+    # `addgroup --system` / `adduser --system`) coincidentally lands on the identical
+    # uid=100/gid=101 as the orchestrator's own Alpine-assigned `cwso` identity, which is
+    # exactly what CWSO_IPC_ALLOWED_UIDS/GIDS on those two sidecars allow-list — so a
+    # compromised `rollout` container, despite having zero code today that dials either
+    # socket (see comment above; this was speculative wiring for a future
+    # trajectory-drain feature that doesn't exist yet), would have passed both sidecars'
+    # authorization checks purely by identity coincidence. No volume, no reachable
+    # sockets: `rollout` has no filesystem path to either `.sock` file at all now. A
+    # future feature that legitimately needs this access must mount a distinct volume
+    # (or a narrowly-scoped subset of this one) under an identity that is deliberately
+    # pinned and distinct from uid=100/gid=101 — never a reuse of that coincidental
+    # match. See SECURITY.md, "Sidecar IPC authorization", for the full writeup.
     read_only: true
     cap_drop: ["ALL"]
     security_opt:
