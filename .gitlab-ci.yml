@@ -189,6 +189,31 @@ rust:audit:
     - if: $CI_COMMIT_BRANCH == "develop"
     - if: $CI_COMMIT_BRANCH == "main"
 
+# SEC-C044-002 (follow-up security review of C044): scripts/check-ipc-gid-drift.sh
+# (see SECURITY.md, "Sidecar IPC authorization" point 4, and docs/DEBT-REGISTER.md
+# row R-7) existed and worked but was never wired into CI, so a future orchestrator
+# image rebuild that shifts the `cwso` uid/gid again (the exact class of drift T197
+# fixed once already) could silently reintroduce the same problem with no automated
+# signal. Unlike go:audit/rust:audit above, this script needs a live Docker daemon —
+# it runs `docker build`/`docker run --rm --entrypoint id cwso/orchestrator:dev cwso`
+# internally (builds the orchestrator image itself if not already present locally) —
+# so it needs the `.docker-socket` (`dind`-tagged) runner and a docker-cli image, the
+# same infrastructure build:orchestrator/.docker-base use below, not the plain
+# `docker`-tagged golang/rust images the other two audit jobs use.
+security:ipc-gid-drift:
+  extends: .docker-socket
+  stage: audit
+  image: docker:27
+  before_script:
+    - apk add --no-cache bash
+    - docker info >/dev/null
+  script:
+    - bash scripts/check-ipc-gid-drift.sh
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+
 # -----------------------------------------------------------------------------
 # Build container images
 # -----------------------------------------------------------------------------

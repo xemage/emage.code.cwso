@@ -34,8 +34,9 @@ was carried forward or closed.
 | B2 (= P2-1) | `services/cwso-git-shadow/src/main.rs` (module doc; marker removed) | Architecture | Was: OverlayFS bind-mount layer deferred; shadow files reachable only via orchestrator→sidecar IPC. Fixed by C021: every shadow workspace is now eagerly materialized onto a real, tmpfs-backed directory (`<storage_root>/<workspace-uuid>/`, ADR-012 "materialise-to-tmpfs") at creation time and kept in sync on every write, so `ls`/`cat`/`pytest`/arbitrary tooling can reach it directly. Write-back of raw external writes at the projected path into the git object store (the remaining half of the original gap) is now also fixed by C022: `services/cwso-git-shadow/src/writeback.rs`'s `WriteBackEngine` (inotify-driven, with a periodic hash-based reconciliation backstop per ADR-012) folds create/modify/delete/rename mutations made directly at the real path back into `Workspace.files`, so `commit_shadow` captures them regardless of how the edit arrived | closed | fixed | C021, C022 |
 | B6 (= P2-7) | `services/cwso-git-shadow/src/ast.rs` (`find_references` / `resolve_references`) | Correctness | Was: `find_references` matched identifier text only — no scope/binding analysis; false positives across shadowed names. Fixed by C040: `resolve_references` (`services/cwso-git-shadow/src/ast.rs`) builds a real per-file lexical scope tree (nearest-enclosing-scope binding resolution) for all four wired grammars (Go, Python, Rust, TypeScript); an occurrence is only reported when it resolves to a real, in-scope declaration, honestly excluding orphaned/out-of-scope text matches and member/attribute/method-call-site access (which would require type inference, deferred to v1.1) rather than guessing. Definition sites remain always-reported (unambiguous). Regression-tested against a 17-case shadowed-name fixture set (nested-scope shadowing, same method name on different receivers, shadowed imports) covering all four grammars, zero false positives | closed | fixed | C040 |
 | B7 (= P2-4) | `services/cwso-git-shadow/src/repo.rs` (`Workspace.head`, `ShadowStore::commit`) | Correctness | Was: every shadow commit was an orphan (no parent); workspaces never formed a history chain, so per-workspace history and three-way merges were unavailable. Fixed by C041: `Workspace` now tracks its own `head: Option<Oid>` (seeded from the base commit at `create` time, or `None` for a base-less workspace); `ShadowStore::commit` reads that as the sole parent for the next commit, then advances `head` to the new commit's oid only after `repo.commit` succeeds. A base-less workspace's first commit is still a genuine root commit (`head` starts `None`); every commit after that — in the same workspace, or continuing from a seeded base commit — forms a real parent-child chain, unblocking C042's three-way merge | closed | fixed | C041 |
-| B12 (= P2-5) | scorecard P2-5 (`services/cwso-git-shadow/src/main.rs`, socket perms) | Security | UDS permissions are `0o666` because orchestrator and sidecar containers run under different UIDs; acceptable on a private compose-managed bind volume, not acceptable for prod | open | v1.0-blocker | C044 |
+| B12 (= P2-5) | `services/cwso-git-shadow/src/main.rs:104`, `services/cwso-merge-engine/src/ipc.rs:31` | Security | Was: UDS permissions reported as `0o666` (world read-write) in the phase-2 scorecard, plus no shared-GID story across orchestrator/sidecar UIDs. C044 live-reverified against a running compose stack (2026-08-27) that both claims are stale: both sockets have been bound `0o660` since the sidecars' first commit, and T197 already corrected `CWSO_IPC_ALLOWED_GIDS` to the live orchestrator image gid. See verification note below | closed | fixed | C044 |
 | B13 (= P2-6) | `orchestrator/internal/shadow/client.go` (marker removed; see `Client.acquire`/`Client.release`) | Performance | Was: one TCP-style request-per-connection model, all RPCs serialized through a single `Client.mu` — no pooling, no pipelining; would throttle under concurrent dispatch. Fixed by C043: `Client` now holds a bounded pool of persistent UDS connections (`sem` + `idle`, default size 8, configurable via `NewClientWithPoolSize` or `CWSO_SHADOW_POOL_SIZE`); each `Call` checks out one connection exclusively for its round trip and returns it for reuse afterward, so synchronization is per-connection rather than global and up to `poolSize` RPCs are genuinely concurrent. Verified by `internal/shadow/client_test.go`'s `TestSoakConcurrentDispatch` (32 concurrent calls over a pool of 4, race-detector clean) | closed | fixed | C043 |
+| R-9 | `deploy/docker-compose.yml` (`rollout` service block) | Security | Independent Security Engineer re-review of C044 (SEC-C044-001, HIGH) found the opt-in `rollout` service shared the same uid=100/gid=101 `cwso` identity as orchestrator/git-shadow/merge-engine (coincidental: Debian `addgroup --system` landing on the same numbers as Alpine's independently-assigned identity) *and* mounted the same `cwso-runtime` volume the `git-shadow`/`merge-engine` sockets live on — since `IpcAuthzPolicy::allows()` is `uid OR gid`, a compromised `rollout` container would have passed both sidecars' authorization check despite having zero code that dials either socket today. Distinct from B12 (which is about the sockets' own permission bits and GID alignment, both still correct) — this is about an unrelated service's unnecessary *reachability* to those same sockets. (Renumbered from this fix commit's original R-7 to R-9 during merge with develop — R-7 and R-8 were independently claimed by C041's SEV-C041-001 fix and its own follow-up, merged to develop first; no content change, ID collision only) | closed | fixed | C044 (follow-up) |
 | B11 | `orchestrator/internal/rollout/evaluator_swebench.go:64` | Functionality | SWE-bench/SWE-Gym evaluator is a stub — harness launch deferred; returns neutral reward | open | v1.1 | — |
 | P2-2 | scorecard P2-2 (planning item, no code marker) | Performance | Merkle-hash incremental indexer not implemented; every AST query re-parses the file. Fine at PoC sizes (<1k LOC), will not scale | open | v1.1 | — |
 | R-1 (= P1-5) | `deploy/docker-compose.yml:6` | Security | File-based JWT secret (`../.env.jwt.dev`) acceptable for dev/compose; production needs external secret management (Vault/SOPS). v1.0 is local-only, so this is acceptable **if documented** | open | v1.0-blocker (document) | C063 |
@@ -117,6 +118,67 @@ was carried forward or closed.
   bypassing the new lock in `commit()` and restoring it afterward, to
   reliably fail on its very first iteration against the pre-fix code (5/5
   isolated runs) and to reliably pass against the fix (8/8 isolated runs).
+- **B12 — UDS socket perms + shared GID: `fixed` (C044).** The phase-2
+  scorecard's `0o666` claim did not match shipped code even at the time it was
+  written: `services/cwso-git-shadow/src/main.rs:104` and
+  `services/cwso-merge-engine/src/ipc.rs:31` both call
+  `std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o660))`
+  immediately after `UnixListener::bind`, present since each sidecar's first
+  commit (`35c556e`). The GID-alignment half was separately closed by T197
+  (merged, PASS; `deploy/docker-compose.yml` `CWSO_IPC_ALLOWED_GIDS` corrected
+  `"0,100"` → `"0,101"` to match the orchestrator image's real live gid, with
+  `scripts/check-ipc-gid-drift.sh` added as a regression check). C044
+  independently re-verified both claims live against a real running
+  `docker compose -f deploy/docker-compose.yml up -d --build` stack
+  (2026-08-27), rather than trusting the source read alone:
+  - `docker exec cwso-git-shadow stat -c '%a %U:%G %n' /run/cwso/git-shadow.sock`
+    → `660 cwso:cwso /run/cwso/git-shadow.sock`
+  - `docker exec cwso-merge-engine stat -c '%a %U:%G %n' /run/cwso/merge-engine.sock`
+    → `660 cwso:cwso /run/cwso/merge-engine.sock`
+  - `docker exec cwso-git-shadow id` / `cwso-merge-engine id` / `cwso-orchestrator id`
+    → all three report `uid=100(cwso) gid=101(cwso) groups=101(cwso)` (same
+    effective identity across all three containers in this build)
+  - `bash scripts/check-ipc-gid-drift.sh` → exit 0, `OK` for both
+    `CWSO_IPC_ALLOWED_UIDS`/`CWSO_IPC_ALLOWED_GIDS` on both services against
+    the live orchestrator `cwso` uid=100/gid=101
+  - `scripts/cwso-smoke-test.sh` → all 7 stages PASS, including
+    `merge_concurrent_results` (outcome=success, status=merged), which
+    exercises the orchestrator→git-shadow and orchestrator→merge-engine IPC
+    paths over these exact sockets end-to-end
+  No code change was needed or made; this row is closed on the strength of
+  reproduced live evidence, not the static-source finding alone.
+  **Follow-up note (2026-08-28):** independent re-review of this same task
+  found a related but distinct gap — not a regression of this row's claims
+  (sockets are still genuinely `0o660` with correct GID alignment) — where
+  the opt-in `rollout` service coincidentally shared the orchestrator's
+  uid/gid and could reach these sockets via the shared `cwso-runtime`
+  volume. See row **R-9** for that finding and its fix (SEC-C044-001).
+- **R-9 — `rollout`'s coincidental IPC reachability: `fixed` (C044
+  follow-up).** (Renumbered from this fix's original R-7 during merge with
+  develop — R-7/R-8 were independently claimed by C041's SEV-C041-001 fix
+  and its follow-up, merged first; no content change, ID collision only.) `deploy/docker-compose.yml`'s `rollout` service block no
+  longer mounts `cwso-runtime:/run/cwso` — the only path either `git-shadow`
+  or `merge-engine`'s UDS sockets were reachable through from that
+  container. Verification:
+  - `docker compose -f deploy/docker-compose.yml --profile rollout config`
+    — resolved `rollout` service definition has no `cwso-runtime` volume
+    entry.
+  - `docker compose -f deploy/docker-compose.yml --profile rollout up -d
+    --build` (with the default stack also up) — `rollout` container reaches
+    healthy via its own `/healthz` HTTP probe (unrelated to the removed
+    mount); `docker exec cwso-rollout ls /run/cwso` reports the directory
+    exists (baked into the image, `deploy/Dockerfile.rollout`) but is empty
+    — no `.sock` files visible, confirming no path to either sidecar socket
+    at the container level, not just in the compose file text.
+  - Default (non-`rollout`-profile) stack smoke test
+    (`scripts/cwso-smoke-test.sh`) still passes all 7 stages — removing an
+    unused mount from an opt-in, non-default service has no effect on the
+    default stack.
+  - `scripts/check-ipc-gid-drift.sh` still exits `0` — this fix does not
+    touch `git-shadow`/`merge-engine`'s own allowlists or identity, only
+    `rollout`'s reachability to them.
+  See `SECURITY.md`, "Sidecar IPC authorization" point 8, for the full
+  writeup.
 - **R-3 — read-side TOCTOU: `fixed` (C035).** `services/cwso-git-shadow/src/repo.rs`
   generalizes C021's write-side fd-anchored primitives
   (`open_root_dir`/`openat_dir_nofollow`/`openat_leaf_nofollow`) to a
@@ -201,7 +263,7 @@ workspaces + AST, 2026-05; hypothesis **VALIDATED**).
 | P2-2 | No Merkle incremental indexer; every query re-parses | P2-2 | carried-forward → v1.1 |
 | P2-3 | Only Go + Python grammars wired; Rust/TS required | P2-3 | **closed** — four grammars wired in `services/cwso-git-shadow/Cargo.toml` (evidence above) |
 | P2-4 | Orphan commits; no history chain | B7 | **closed** — parent-commit chaining implemented via `Workspace.head` + `ShadowStore::commit` (evidence above, C041) |
-| P2-5 | UDS perms `0o666` across differing UIDs | B12 | carried-forward → v1.0-blocker (C044) |
+| P2-5 | UDS perms `0o666` across differing UIDs | B12 | **closed** — scorecard claim did not match shipped code; both sockets live-reverified `0o660` with correct GID alignment (evidence above, C044) |
 | P2-6 | One connection per RPC; no pooling | B13 | **closed** — bounded connection pool implemented in `orchestrator/internal/shadow/client.go` (evidence above, C043) |
 | P2-7 | `find_references` is text matching, not scope resolution | B6 | **closed** — real scope/binding resolution implemented via `resolve_references` (evidence above, C040) |
 | P2-8 | `base_tree` stored but never read | P2-8 | carried-forward → v1.1 |

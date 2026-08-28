@@ -38,6 +38,12 @@ it is a static-source read only. Do not skip your own verification pass (Step 1 
 on the strength of this note alone; confirm it yourself against the real running
 containers before touching any tracked file.
 
+> **Backend-developer update (2026-08-27, execution):** independently re-verified live
+> against a real running `docker compose` stack — this finding is confirmed accurate on
+> every point (both sockets `0o660`, GID allowlists live-correct, IPC round-trips
+> end-to-end via the smoke test's `merge_concurrent_results` stage). See "Execution
+> notes" at the bottom of this file for full transcripts. No code fix was needed.
+
 ## Objective
 
 Given the finding above, this task is now:
@@ -161,4 +167,258 @@ Report blockers as: type + severity + one proposed mitigation. Max 2 retries.
 
 ## Execution notes
 
-<filled during execution>
+**Outcome: the orchestrator's pre-dispatch finding was independently confirmed live.**
+This closed out as a verification + documentation task, with no code changes to
+`services/cwso-git-shadow/**` or `services/cwso-merge-engine/**` and no `deploy/docker-compose.yml`
+GID edits — none were needed.
+
+### 1. Live verification performed (2026-08-27)
+
+Brought up a real stack from this worktree:
+```
+bash scripts/cwso-bootstrap-secrets.sh          # generates .env.jwt.dev (gitignored, not committed)
+docker compose -f deploy/docker-compose.yml up -d --build
+```
+
+Socket permission bits:
+```
+$ docker exec cwso-git-shadow stat -c '%a %U:%G %n' /run/cwso/git-shadow.sock
+660 cwso:cwso /run/cwso/git-shadow.sock
+$ docker exec cwso-merge-engine stat -c '%a %U:%G %n' /run/cwso/merge-engine.sock
+660 cwso:cwso /run/cwso/merge-engine.sock
+```
+
+Effective container identities:
+```
+$ docker exec cwso-git-shadow id
+uid=100(cwso) gid=101(cwso) groups=101(cwso)
+$ docker exec cwso-merge-engine id
+uid=100(cwso) gid=101(cwso) groups=101(cwso)
+$ docker exec cwso-orchestrator id
+uid=100(cwso) gid=101(cwso) groups=101(cwso)
+```
+All three containers in this build resolve to the same `uid=100/gid=101`, so the
+orchestrator's connections satisfy `CWSO_IPC_ALLOWED_UIDS` directly (`0,100`), independent
+of the GID allowlist — consistent with the "uid OR gid" `allows()` semantics and with
+T197's own note that the GID entry was latent drift, not a live gap.
+
+GID drift regression check:
+```
+$ bash scripts/check-ipc-gid-drift.sh
+Live orchestrator 'cwso' identity: uid=100 gid=101
+OK: git-shadow CWSO_IPC_ALLOWED_UIDS="0,100" contains live uid=100
+OK: git-shadow CWSO_IPC_ALLOWED_GIDS="0,101" contains live gid=101
+OK: merge-engine CWSO_IPC_ALLOWED_UIDS="0,100" contains live uid=100
+OK: merge-engine CWSO_IPC_ALLOWED_GIDS="0,101" contains live gid=101
+$ echo $?
+0
+```
+
+Smoke test (`scripts/cwso-smoke-test.sh`), all 7 stages, including
+`merge_concurrent_results` which round-trips both sockets end-to-end:
+```
+[PASS] health
+[PASS] create_shadow_workspace (workspace_uuid=960bcdec-9d20-43f1-8056-065b3ebc2afc)
+[PASS] write_shadow_file
+[PASS] query_ast (find_definition SmokeGreet -> 1 hit(s))
+[PASS] commit_shadow (commit_oid=ddcb9234e899a7185e4c4f8587089339937f5af8)
+[PASS] merge_concurrent_results (outcome=success, status=merged)
+[PASS] teardown (dropped 960bcdec-9d20-43f1-8056-065b3ebc2afc)
+CWSO SMOKE TEST: ALL STAGES PASS
+```
+The script's own EXIT trap tore the stack down (`docker compose down -v --remove-orphans`)
+cleanly afterward — verified with a final `docker ps`/`docker volume ls` (no CWSO
+containers or volumes left running).
+
+### 2. Conclusion vs. the orchestrator's pre-dispatch finding
+
+Confirmed, with independent live evidence, not just corrected source-reading: both
+sidecar sockets are genuinely `0o660` in a real running stack, and the currently-deployed
+`CWSO_IPC_ALLOWED_UIDS`/`CWSO_IPC_ALLOWED_GIDS` values in `deploy/docker-compose.yml`
+genuinely match the live orchestrator image's `cwso` uid/gid, with IPC actually
+round-tripping (not just "listener bound" — the full MCP flow through both sidecars via
+`merge_concurrent_results` passed). No regression or container/image variant was found
+that the static finding missed. Per the brief's fallback rails, this means the original
+"implement the fix" mandate does not apply — this stayed a verification + doc-correction
+task throughout, and no fallback implementation branch of the brief was triggered.
+
+### 3. What was changed
+
+- `docs/DEBT-REGISTER.md`: B12 row corrected from `0o666`/`open`/`v1.0-blocker` to
+  `closed`/`fixed`, with `file:line` citations and a new evidence note in the "Notes on
+  the `fixed` rows" section quoting the live command output above (not the static-source
+  claim alone). Phase-2 historical scorecard row for P2-5 updated to match.
+- `SECURITY.md`: new "Sidecar IPC authorization (Unix domain sockets)" section — socket
+  permission bits, the peer-credential `uid OR gid` allowlist mechanism
+  (`CWSO_IPC_ALLOWED_UIDS`/`CWSO_IPC_ALLOWED_GIDS`), where those values come from (live
+  image uid/gid lookup, never hardcoded), the drift regression check
+  (`scripts/check-ipc-gid-drift.sh`), and a summary of this task's live verification
+  evidence. `SECURITY.md` had zero prior mentions of sockets/UDS/IPC.
+- `docs/tasks/task-C044.md` (this file): this Execution notes section.
+- No changes to `services/cwso-git-shadow/**`, `services/cwso-merge-engine/**`, or
+  `deploy/docker-compose.yml` — verification found no gap requiring them.
+- `.env.jwt.dev` was generated locally by `scripts/cwso-bootstrap-secrets.sh` to bring the
+  stack up; it is `.gitignore`d (`.env*` pattern) and was never staged or committed.
+
+### 4. Acceptance criteria
+
+1. Live-verified evidence that sockets are `0o660` with working IPC — **met**, see
+   transcripts above; no genuine limitation was found, so no fallback documentation of a
+   limitation was needed.
+2. Smoke test passes — **met**, all 7 stages PASS.
+3. `docs/DEBT-REGISTER.md` B12 = `fixed`, with evidence cited — **met**.
+4. `SECURITY.md` has a real IPC-authorization section that did not exist before this
+   task — **met**.
+
+### Blocker status
+None.
+
+### 5. Addendum (2026-08-28) — follow-up fix for SEC-C044-001/002/003
+
+Independent Security Engineer re-review of this task's C044 verification pass (sections
+1–4 above) found a real gap the original verification-only pass missed. This addendum
+documents the fix, applied as a **new, separate commit** on this same branch (not an
+amendment to the original commit).
+
+**Finding recap.**
+- **SEC-C044-001 (HIGH):** the opt-in `rollout` service in `deploy/docker-compose.yml`
+  (`profiles: ["rollout"]`, not part of the default stack) shared the same uid=100/gid=101
+  `cwso` identity as orchestrator/git-shadow/merge-engine (coincidental: Debian
+  `addgroup --system`/`adduser --system` in `deploy/Dockerfile.rollout` landing on the same
+  numbers as Alpine's independently-assigned identity in `deploy/Dockerfile.orchestrator`)
+  and mounted the same `cwso-runtime` volume both sidecar sockets live on. Because
+  `IpcAuthzPolicy::allows()` (`services/cwso-git-shadow/src/main.rs`,
+  `services/cwso-merge-engine/src/ipc.rs`) is `uid OR gid`, a compromised `rollout`
+  container would have passed both sidecars' authorization check purely on that numeric
+  coincidence — despite having zero code today that dials either socket (speculative,
+  provisioned wiring for a not-yet-built trajectory-drain feature).
+- **SEC-C044-002 (MEDIUM):** `scripts/check-ipc-gid-drift.sh` existed and worked (confirmed
+  in the original pass, section 1 above) but was not wired into CI.
+- **SEC-C044-003 (MEDIUM):** the "must match the orchestrator container's actual, live
+  identity" phrasing added to `SECURITY.md` by the original commit overstated
+  exclusivity/uniqueness — the allowlist is a numeric check, not an
+  orchestrator-specific one, exactly as SEC-C044-001 demonstrated.
+- Two LOW findings, folded into this same pass per the delegation brief's explicit
+  direction (not opened as separate tasks): the undocumented `uid=0` allowlist entry, and
+  the undocumented fail-open/fail-closed behavior of `IpcAuthzPolicy::from_env()`.
+
+**Scope note.** C044's original file ownership was docs-only. This fix required touching
+`deploy/docker-compose.yml` (the `rollout` service's `volumes:` entry only) and
+`.gitlab-ci.yml` (one new CI job only) — both explicitly authorized by the orchestrator for
+this follow-up, scoped narrowly as described in the dispatch brief. No other service block
+or CI job was touched.
+
+**Fix — SEC-C044-001.** Removed the `cwso-runtime:/run/cwso` volume mount from the
+`rollout` service block in `deploy/docker-compose.yml`. `rollout` now has no filesystem
+path to either `.sock` file. Decided to **remove the mount, not pin a distinct
+uid/gid or document as accepted risk** (per explicit direction: nothing currently uses
+this access, so removing the unused attack surface is safest; a real future feature can
+add scoped access back deliberately). `CWSO_ROLLOUT_SOCKET` was deliberately **left set**
+(not removed) — removing it would not change runtime behavior at all, since
+`services/cwso-rollout/src/config.rs`'s own built-in default resolves to the identical
+path; leaving it explicit, with a comment explaining it is now unreachable, is more honest
+to a future reader than silently relying on the same value resolving via a different code
+path. Live-confirmed consequence (see verification below): the sidecar's IPC listener
+thread (`services/cwso-rollout/src/ipc.rs`, spawned unconditionally in
+`services/cwso-rollout/src/main.rs`) fails to `bind()` this now-unreachable path at
+startup and logs one non-fatal error; the HTTP proxy (gated separately by
+`CWSO_ROLLOUT_PROXY_ENABLED`) is unaffected and the container reports healthy via its own
+`/healthz`.
+
+**Fix — SEC-C044-002.** Added `security:ipc-gid-drift` to `.gitlab-ci.yml`'s `audit` stage,
+running `scripts/check-ipc-gid-drift.sh`. Because the script needs a live Docker daemon
+(`docker build`/`docker run --entrypoint id`), the job extends `.docker-socket` (the
+`dind`-tagged runner) with a `docker:27` image — the same infrastructure pattern
+`build:orchestrator`/`.docker-base` use — rather than the plain `docker`-tagged
+golang/rust images `go:audit`/`rust:audit` use, since this script's needs differ from
+theirs. Gated the same way as the other audit-stage jobs: MR pipelines plus `develop`/
+`main` branch pipelines.
+
+**Fix — SEC-C044-003 + LOW items.** `SECURITY.md`'s "Sidecar IPC authorization" section
+was updated: point 3 corrected to state the allowlist is a numeric check (not
+orchestrator-exclusive), with a dedicated correction paragraph naming SEC-C044-003
+explicitly; a new point 4 addendum documents the CI wiring; a new point 5 documents the
+`uid=0` allowlist entry's purpose (operator root-context debugging access — no process in
+the default stack currently connects as uid=0, since every Dockerfile ends in `USER cwso`
+before the sidecar's own listener starts); a new point 6 documents
+`IpcAuthzPolicy::from_env()`'s actual behavior, read directly from
+`services/cwso-git-shadow/src/main.rs` and `services/cwso-merge-engine/src/ipc.rs` (both
+identical): **unset → fails closed** (falls back to the process's own
+`geteuid()`/`getegid()`, effectively authorizing nobody but itself); **malformed/empty →
+fails closed** (`parse_id_csv()` returns `Err`, propagated via `?` in `main()`, so the
+sidecar refuses to start rather than run permissively); **non-Linux build target only
+(`#[cfg(not(target_os = "linux"))]`) → fails open** (`Ok(true)`, `SO_PEERCRED` is
+Linux-only) — flagged explicitly as not a live concern since every shipped Dockerfile
+builds on a Linux base image, not silently treated as fine. A renumbered point 8 documents
+the SEC-C044-001 finding and fix as a named, resolved risk (not a silently-dropped mount).
+
+**DEBT-REGISTER update.** Added a new row **R-7** (`closed`/`fixed`, `deploy/docker-compose.yml`
+rollout service block) for SEC-C044-001, following the same closed/fixed-with-evidence
+pattern as prior rows (e.g. R-3/R-5's C022-follow-up shape) — a new row rather than folding
+into B12, since this is a distinct issue (reachability via identity coincidence) from B12's
+subject (the sockets' own permission bits and GID alignment, both still correctly `0o660`/
+aligned and not reopened by this finding). B12's own evidence note gained a one-paragraph
+cross-reference to R-7 so a reader of B12 alone is not left thinking this class of finding
+was missed entirely.
+
+**Verification (real output, reproduced 2026-08-28).**
+
+1. `docker compose -f deploy/docker-compose.yml --profile rollout config` — resolved
+   `rollout` service definition has no `volumes:` key at all (confirmed via a
+   `python3 -c "import yaml; ..."` parse of the resolved config, not just a text grep).
+
+2. `docker compose -f deploy/docker-compose.yml --profile rollout up -d --build` (default
+   stack + rollout profile together) — all four containers reached a running/healthy
+   state (`cwso-orchestrator`, `cwso-rollout` both report `(healthy)`; `cwso-git-shadow`/
+   `cwso-merge-engine` have no healthcheck defined, matching their pre-existing config).
+   `docker exec cwso-rollout ls -la /run/cwso` shows the directory exists (baked into
+   `deploy/Dockerfile.rollout`) but is **empty** — no `.sock` file, confirming no mount and
+   no reachable socket at the container level, not just in the compose file text.
+   `docker inspect cwso-rollout --format '{{json .Mounts}}'` returns `[]` (no mounts at
+   all), while the same inspect on `cwso-git-shadow` still shows the `cwso-runtime` volume
+   mounted at `/run/cwso` as before (git-shadow/merge-engine unaffected). `docker logs
+   cwso-rollout` shows exactly the predicted one-time non-fatal error
+   (`"cwso-rollout IPC server exited","error":"bind cwso-rollout socket
+   \"/run/cwso/rollout.sock\""`) immediately followed by the proxy starting normally
+   (`"starting rollout proxy"`, `"cwso-rollout proxy listening"`). `docker exec cwso-rollout
+   id` / `docker exec cwso-orchestrator id` both report `uid=100(cwso) gid=101(cwso)
+   groups=101(cwso)` — live-confirms the identity-coincidence premise of SEC-C044-001 was
+   real, not hypothetical. Torn down cleanly after with
+   `docker compose -f deploy/docker-compose.yml --profile rollout down -v
+   --remove-orphans` (confirmed via `docker ps -a`/`docker volume ls` showing nothing
+   `cwso`-related left).
+
+3. `bash scripts/cwso-smoke-test.sh` (default, non-`rollout`-profile stack; run against the
+   already-up stack from step 2, before rollout-specific teardown) — all 7 stages
+   `[PASS]` (health, create_shadow_workspace, write_shadow_file, query_ast, commit_shadow,
+   merge_concurrent_results outcome=success/status=merged, teardown). Confirms removing
+   `rollout`'s mount did not affect the default stack. Note: the script's own `docker
+   compose ... down -v --remove-orphans` EXIT trap does not target profile-gated services
+   it did not start (`rollout` was left running after this step, by design of `docker
+   compose down` scoping to active-by-default services) — cleaned up separately in step 2's
+   explicit `--profile rollout down`.
+
+4. `glab ci lint` — `✓ CI/CD YAML is valid!`. Additionally cross-checked by loading both
+   `.gitlab-ci.yml` and `deploy/docker-compose.yml` with `python3 -c "import yaml; ..."`
+   (both parse cleanly).
+
+5. `bash scripts/check-ipc-gid-drift.sh` (run against the live stack from step 2) — exits
+   `0`: `Live orchestrator 'cwso' identity: uid=100 gid=101`, all four `OK:` lines for
+   `git-shadow`/`merge-engine` × `CWSO_IPC_ALLOWED_UIDS`/`CWSO_IPC_ALLOWED_GIDS`. Confirms
+   this fix (reachability-only) did not disturb the identity-allowlist alignment T197
+   fixed.
+
+**Files changed (this addendum's commit):** `deploy/docker-compose.yml` (rollout service's
+`volumes:` entry removed + explanatory comments), `.gitlab-ci.yml` (new
+`security:ipc-gid-drift` job), `SECURITY.md` ("Sidecar IPC authorization" section: point 3
+correction, new points 5/6/8, point 4 CI-wiring addendum, point 7 renumbered from the
+original point 5), `docs/DEBT-REGISTER.md` (new row R-7, B12 evidence cross-reference),
+`docs/tasks/task-C044.md` (this addendum).
+
+**Blocker status:** None. The fail-open path found in
+`IpcAuthzPolicy::from_env()` (non-Linux `SO_PEERCRED` fallback) was evaluated per the
+dispatch brief's explicit instruction not to silently wave off a fail-open finding — it is
+called out here and in `SECURITY.md` point 6 as a real fail-open behavior, but is not
+routed as a new finding for the orchestrator because it is unreachable in every shipped
+deployment target (all `deploy/Dockerfile.*` build on Linux base images); flagged for
+revisiting only if a non-Linux build target is ever added to the deployment matrix.
