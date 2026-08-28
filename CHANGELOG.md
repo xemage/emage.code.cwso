@@ -30,6 +30,27 @@ All notable changes to this project are documented in this file.
   `docs/user/installation-v3.md` to `docs/user/README.md` (same section,
   "Point CWSO at your own repository" under "Daily use").
 
+### Docs (C052)
+- **`docs(user)`**: Received the six CWSO deployment guides relocated out of emage.code's
+  `docs/deployment/` by emage.code's T403 (paired handover; emage.code is a
+  knowledge-projection layer, not the CWSO orchestrator, so full deployment
+  documentation does not belong there) and folded them into this repo's single
+  documentation tree under `docs/user/deployment/`: `local-docker-desktop-guide.md`,
+  `gcp-cloud-run-guide.md`, `proxmox-lxc-guide.md`,
+  `cwso-overview-and-agent-integration-guide.md`,
+  `cwso-emage-orchestrator-connection-guide.md`, `troubleshooting-guide.md`. Added
+  `docs/user/deployment/README.md` as a provenance/index file (source repo + original
+  path per guide, validation status, and a flagged content overlap between
+  `local-docker-desktop-guide.md`'s older manual flow and `docs/user/README.md`'s current
+  `make up` flow — not resolved, per task brief, logged as follow-up task T200). Linked
+  all six from a new "Deployment guides" section in `docs/user/README.md`. Filenames
+  already matched this repo's convention (kebab-case, no version suffixes) — no renames
+  needed. Fixed three path-prefix mentions (`docs/deployment/...` →
+  `docs/user/deployment/...`) in `cwso-overview-and-agent-integration-guide.md` that
+  described the guides' old emage.code location; same-directory cross-links between the
+  six guides needed no changes. No substantive content edits were made to any received
+  guide. See `docs/tasks/task-C052.md` execution notes for full detail.
+
 ### Documentation (C053)
 - **`docs`**: Added a root [`CONTRIBUTING.md`](CONTRIBUTING.md) — the single
   contributor-process reference, covering build/test (`make build`/`make
