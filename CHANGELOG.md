@@ -4,6 +4,29 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Documentation (C053)
+- **`docs`**: Added a root [`CONTRIBUTING.md`](CONTRIBUTING.md) — the single
+  contributor-process reference, covering build/test (`make build`/`make
+  test`/`make lint`/`make fmt`), branching and merge requests (linking
+  `docs/branching.md` and `.github/instructions/git-workflow.instructions.md`),
+  the task process (linking `docs/tasks/active-tasks.md`,
+  `docs/tasks/completed-tasks.md`, and `AGENTS.md`), the debt register
+  (linking `docs/DEBT-REGISTER.md` and the `POC-DEBT` tagging convention),
+  and the docs-vs-code layout (contributor docs at root + `docs/`, user docs
+  at `docs/user/`, application source under `orchestrator/`/`services/`/
+  `schemas/`/`deploy/`/`scripts/`). Added exactly one cross-link each way
+  between the contributor and user documentation sides, per this project's
+  doc-consolidation rails: `docs/user/README.md` links to CONTRIBUTING.md
+  ("contributing"), and `CONTRIBUTING.md` links to `docs/user/README.md`
+  ("using CWSO"). `docs/user/README.md` (C050) was read in full and found to
+  already be free of contributor-process content (no task-brief, debt-
+  register-mechanics, or contributor-branching material had leaked into it),
+  so no content was moved. No `docs/dev/` tree was created — contributor
+  docs stay at root + `docs/` per the existing layout. Root `README.md` was
+  left untouched (out of this task's file ownership); its own pre-existing
+  "Contributing" section and stale `TECHNICAL-DEBT.md` link are unrelated
+  and unaffected.
+
 ### Fixed (T192)
 - **`scripts/phase2-integration.py`**: fixed a JWT signing/verification
   mismatch that made `make smoke-local` fail its first authenticated MCP
