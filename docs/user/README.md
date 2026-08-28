@@ -231,6 +231,25 @@ it:
 docker compose -f deploy/docker-compose.yml --profile rollout up -d
 ```
 
+## Deployment guides
+
+The [Install](#install) section above covers the default, current local flow (`make up`
+via Docker Compose). Additional deployment guides — for other environments, and for
+wiring CWSO into an emage.code orchestrator — were received from emage.code (task T403)
+and live under [`docs/user/deployment/`](deployment/README.md):
+
+- [Local Docker Desktop guide](deployment/local-docker-desktop-guide.md) — an older,
+  more manual Docker Compose flow (`deploy/docker-compose-t226.yml`) than the `make up`
+  flow above; see the provenance index for a note on this overlap
+- [GCP Cloud Run guide](deployment/gcp-cloud-run-guide.md) — not yet validated end-to-end
+- [Proxmox LXC guide](deployment/proxmox-lxc-guide.md) — not yet validated end-to-end
+- [CWSO overview and emage.code agent integration guide](deployment/cwso-overview-and-agent-integration-guide.md)
+- [Connect CWSO to the emage.code orchestrator](deployment/cwso-emage-orchestrator-connection-guide.md) — validated
+- [Deployment troubleshooting guide](deployment/troubleshooting-guide.md)
+
+See [`deployment/README.md`](deployment/README.md) for provenance and validation status
+of each.
+
 ## Troubleshoot
 
 Start with `make doctor` — every `[WARN]`/`[FAIL]` line it prints comes with
