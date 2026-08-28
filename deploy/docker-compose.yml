@@ -313,7 +313,7 @@ services:
       # C015: CWSO_WORKSPACE_HOST points the orchestrator at the developer's own
       # repository on the host; defaults to ../sample-workspace so the smoke
       # test needs no configuration. Mount is read-write (rw) -- see
-      # docs/user/installation-v3.md, "Point CWSO at your own repository", for
+      # docs/user/README.md, "Point CWSO at your own repository" (Daily use), for
       # what read-write means in practice (shadow workspaces, not this mount,
       # are where agent edits actually land -- this mount is the source of
       # truth agents branch *from*) and how to append `:ro` here instead for a

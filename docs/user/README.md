@@ -1,5 +1,7 @@
 # CWSO — User Guide
 
+> Moved from (deleted, C051): `installation-v1.md`, `installation-v2.md`, `installation-v3.md`, `ide-integration-v1.md`, `ide-integration-v2.md` — superseded by this guide; see git history for their content.
+
 This is the single guide for getting CWSO running locally and connecting an MCP
 client to it. It documents the **current, post-Phase-1** flow only: one command
 (`make up`) to stand up the whole stack, one config paste to connect a client.

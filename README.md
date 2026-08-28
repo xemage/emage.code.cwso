@@ -43,13 +43,11 @@ At runtime, CWSO provides:
 
 ## How to use CWSO
 
-See **[docs/user/installation-v3.md](docs/user/installation-v3.md)** for the Linux + VS Code setup guide,
-or **[docs/user/installation-v2.md](docs/user/installation-v2.md)** for the comprehensive v0.4.0 reference.
-For **Cursor / VS Code** MCP wiring and troubleshooting, see
-**[docs/user/ide-integration-v2.md](docs/user/ide-integration-v2.md)**.
+See **[docs/user/README.md](docs/user/README.md)** for the single user guide:
+prerequisites, install, MCP client configuration, verification, daily use, and
+troubleshooting.
 
-<!-- NOTE: profiles removed in v0.8.0 (C010); one-command `make up` adopted in v1.0 (C016);
-     this block must stay identical in README.md and installation-v3.md -->
+<!-- NOTE: profiles removed in v0.8.0 (C010); one-command `make up` adopted in v1.0 (C016) -->
 ```bash
 make up
 python3 scripts/phase2-integration.py
@@ -212,11 +210,7 @@ For Wasm-specific operations guidance, see
 [docs/artifacts/wasm-scoring-runtime-ops-v1.md](docs/artifacts/wasm-scoring-runtime-ops-v1.md).
 
 ## Documentation
-- **[Installation & usage (v3)](docs/user/installation-v3.md)** — Linux + VS Code guide with MCP auth troubleshooting
-- **[Installation & usage (v2)](docs/user/installation-v2.md)** — comprehensive v0.4.0 reference guide
-- **[Installation & usage (v1)](docs/user/installation-v1.md)** — v0.3.0 quick reference
-- **[IDE integration (v2)](docs/user/ide-integration-v2.md)** — Cursor / VS Code + CWSO MCP troubleshooting
-- **[IDE integration (v1)](docs/user/ide-integration-v1.md)** — legacy reference
+- **[User guide](docs/user/README.md)** — prerequisites, install, MCP client configuration, verification, daily use, and troubleshooting
 - [Requirements (v2, current)](docs/artifacts/requirements-v2.md) · [Requirements v1 (archived)](docs/archive/artifacts/requirements-v1.md)
 - [Next-Gen blueprint](docs/artifacts/cwso-nextgen-blueprint-v1.md)
 - [Rollout / Polar architecture](docs/artifacts/rollout-architecture-v1.md)
