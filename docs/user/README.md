@@ -265,4 +265,6 @@ its own one-line fix. A few things it won't catch, plus common `/mcp` errors:
   yet; this section is the current source of truth for known gaps.
 
 For CWSO's internals and architecture, start at the project
-[`README.md`](../../README.md).
+[`README.md`](../../README.md). Looking to work on CWSO itself rather than
+just run it — build/test, branching, the task process, or the debt
+register? See [contributing](../../CONTRIBUTING.md).
