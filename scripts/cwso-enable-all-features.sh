@@ -30,4 +30,4 @@ echo "  docker compose -f deploy/docker-compose.yml --profile phase2 --profile p
 echo "    up -d --force-recreate orchestrator"
 echo ""
 echo "Note: HAL, sparse, and rollout sidecars need separate containers/sockets."
-echo "See docs/user/installation-v1.md and ide-integration-v1.md."
+echo "See docs/user/README.md."

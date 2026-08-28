@@ -4,6 +4,32 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Documentation (C051)
+- **`docs(user)`**: Deleted the five superseded user guides
+  (`docs/user/installation-v1.md`, `installation-v2.md`, `installation-v3.md`,
+  `docs/user/ide-integration-v1.md`, `ide-integration-v2.md`), now that
+  `docs/user/README.md` (C050) is their single, current replacement. Deleted
+  rather than archived — a prior emage.code audit found archived docs still
+  surface in search, and git history already preserves the deleted content.
+  Updated every live inbound reference found by a file-by-file read of the
+  likely reference sites (root `README.md`'s "How to use CWSO" and
+  "Documentation" sections; the deprecated `scripts/cwso-enable-all-features.sh`
+  help text) to point at `docs/user/README.md` instead. Added a one-line
+  "moved from" note to `docs/user/README.md` listing the five deleted files.
+  Historical mentions of the old filenames inside `CHANGELOG.md`'s own past
+  entries, `docs/tasks/task-C016.md`, `docs/tasks/task-C050.md`,
+  `docs/tasks/active-tasks.md`'s footnote ¹, and the immutable, versioned
+  artifact `docs/artifacts/mcp-client-compatibility-v1.md` were left
+  untouched — they describe what those files were named and did at the time
+  those past changes/observations actually happened, and rewriting them to a
+  name that didn't exist yet at that point in history would misrepresent the
+  record rather than fix a broken link. Orchestrator's own repo-wide grep
+  sweep (the worker's toolset has no `grep`) additionally found and fixed one
+  live reference the file-by-file read missed: `deploy/docker-compose.yml`'s
+  `CWSO_WORKSPACE_HOST` mount comment, updated from
+  `docs/user/installation-v3.md` to `docs/user/README.md` (same section,
+  "Point CWSO at your own repository" under "Daily use").
+
 ### Documentation (C053)
 - **`docs`**: Added a root [`CONTRIBUTING.md`](CONTRIBUTING.md) — the single
   contributor-process reference, covering build/test (`make build`/`make
