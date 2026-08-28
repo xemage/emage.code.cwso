@@ -45,9 +45,9 @@
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
 | C025 | CONDITIONAL: document IPC-only limitation | technical-writer | pending | P0 | C020 (NO-GO) | 2026-08-12 |
 | T199 | Wire `ErrorObj.conflict_matrix` into `mergeengine.Client` and surface it to MCP callers | backend-developer | pending | P2 | — | 2026-08-28 |
-| C050 | Write the single user guide | technical-writer | pending | P1 | C040–C044 | 2026-08-12 |
+| C050 | Write the single user guide | technical-writer | in_progress | P1 | C040–C044 | 2026-08-28 |
 | C051 | Delete the five superseded guides | technical-writer | pending | P1 | C050 | 2026-08-12 |
-| C052 | Receive emage.code deployment docs (T403) | technical-writer | pending | P1 | C050, T403 | 2026-08-12 |
+| C052 | Receive emage.code deployment docs (T403) **[T403 confirmed done — see note ²]** | technical-writer | pending | P1 | C050, T403 (done) | 2026-08-28 |
 | C053 | Contributor vs user doc separation | technical-writer | pending | P1 | C050 | 2026-08-12 |
 | C054 | Verify guide commands on clean machine | qa-engineer | pending | P1 | C050, C051, C052, C053 | 2026-08-12 |
 | C060 | Debt register: zero unclassified rows | technical-writer | pending | P0 | C050–C054 (CG4) | 2026-08-12 |
@@ -91,5 +91,16 @@
 > `docs/tasks/task-C016.md` § "Release-gating condition" and `docs/tasks/completed-tasks.md`
 > for the complete history; `docs/tasks/task-C062.md` ("Release v1.0.0") can rely on
 > this being satisfied without re-deriving it.
+
+> ² **T403 (emage.code repo) confirmed `done` 2026-08-28** — verified directly against
+> `emage.code`'s own `docs/tasks/completed-tasks.md` and the staged handoff directory
+> (`docs/archiv/cwso-deployment-guides-pending-t473-handoff/` in that repo). The 6
+> deployment guides were relocated out of `docs/deployment/` there and staged verbatim,
+> ready for C052 to receive. Note: `emage.code`'s own `plan-035` internally calls the
+> CWSO-side receiving task **"T473"** (a placeholder id guessed before this roadmap
+> assigned it), which is this repo's **C052** — same task, cross-repo naming mismatch
+> only, no duplicate work exists under either name in either repo (confirmed via grep in
+> both repos' active/completed task ledgers). C052 is unblocked on the T403 side; only
+> C050 (this repo) remains as its blocker.
 
 Per-task briefs live alongside this file as `task-T001.md`, `task-T002.md`, …, `task-C001.md`, …
