@@ -45,10 +45,9 @@
 | T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
 | C025 | CONDITIONAL: document IPC-only limitation | technical-writer | pending | P0 | C020 (NO-GO) | 2026-08-12 |
 | T199 | Wire `ErrorObj.conflict_matrix` into `mergeengine.Client` and surface it to MCP callers | backend-developer | pending | P2 | — | 2026-08-28 |
-| C050 | Write the single user guide | technical-writer | in_progress | P1 | C040–C044 | 2026-08-28 |
-| C051 | Delete the five superseded guides | technical-writer | pending | P1 | C050 | 2026-08-12 |
-| C052 | Receive emage.code deployment docs (T403) **[T403 confirmed done — see note ²]** | technical-writer | pending | P1 | C050, T403 (done) | 2026-08-28 |
-| C053 | Contributor vs user doc separation | technical-writer | pending | P1 | C050 | 2026-08-12 |
+| C051 | Delete the five superseded guides | technical-writer | in_progress | P1 | C050 (merged) | 2026-08-28 |
+| C052 | Receive emage.code deployment docs (T403) **[T403 confirmed done — see note ²]** | technical-writer | in_progress | P1 | C050 (merged), T403 (done) | 2026-08-28 |
+| C053 | Contributor vs user doc separation | technical-writer | in_progress | P1 | C050 (merged) | 2026-08-28 |
 | C054 | Verify guide commands on clean machine | qa-engineer | pending | P1 | C050, C051, C052, C053 | 2026-08-12 |
 | C060 | Debt register: zero unclassified rows | technical-writer | pending | P0 | C050–C054 (CG4) | 2026-08-12 |
 | C061 | Security pass closing T010 | security-engineer | pending | P0 | C050–C054 (CG4) | 2026-08-12 |
