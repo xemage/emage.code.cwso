@@ -47,10 +47,7 @@
 | T199 | Wire `ErrorObj.conflict_matrix` into `mergeengine.Client` and surface it to MCP callers | backend-developer | pending | P2 | — | 2026-08-28 |
 | T200 | Reconcile `local-docker-desktop-guide.md` with the current `make up` flow | technical-writer | pending | P2 | C052 (merged) | 2026-08-28 |
 | T201 | Reconcile root README.md with the new CONTRIBUTING.md; fix broken TECHNICAL-DEBT.md link | technical-writer | pending | P2 | C053 (merged) | 2026-08-28 |
-| C051 | Delete the five superseded guides | technical-writer | in_progress | P1 | C050 (merged) | 2026-08-28 |
-| C052 | Receive emage.code deployment docs (T403) **[T403 confirmed done — see note ²]** | technical-writer | in_progress | P1 | C050 (merged), T403 (done) | 2026-08-28 |
-| C053 | Contributor vs user doc separation | technical-writer | in_progress | P1 | C050 (merged) | 2026-08-28 |
-| C054 | Verify guide commands on clean machine | qa-engineer | pending | P1 | C050, C051, C052, C053 | 2026-08-12 |
+| C054 | Verify guide commands on clean machine | qa-engineer | in_progress | P1 | C050, C051, C052, C053 (all merged) | 2026-08-28 |
 | C060 | Debt register: zero unclassified rows | technical-writer | pending | P0 | C050–C054 (CG4) | 2026-08-12 |
 | C061 | Security pass closing T010 | security-engineer | pending | P0 | C050–C054 (CG4) | 2026-08-12 |
 | C062 | Release v1.0.0 | devops-engineer | pending | P0 | C060, C061, C063 | 2026-08-12 |
