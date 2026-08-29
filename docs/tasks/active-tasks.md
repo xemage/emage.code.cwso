@@ -48,8 +48,7 @@
 | T201 | Reconcile root README.md with the new CONTRIBUTING.md; fix broken TECHNICAL-DEBT.md link | technical-writer | pending | P2 | C053 (merged) | 2026-08-28 |
 | T202 | Fix dashboard rate-limit/logging gap (F-C061-01) | backend-developer | pending | P1 | — | 2026-08-29 |
 | T203 | Wire missing baseline-required CI security tools (F-C061-02) | devops-engineer | pending | P1 | — | 2026-08-29 |
-| C062 | Release v1.0.0 | devops-engineer | pending | P0 | C060 (merged), C061 (merged), C063 | 2026-08-12 |
-| C063 | Publish docs/LIMITATIONS.md | technical-writer | in_progress | P0 | C060 (merged) | 2026-08-29 |
+| C062 | Release v1.0.0 | devops-engineer | pending | P0 | C060 (merged), C061 (merged), C063 (merged) | 2026-08-29 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -68,6 +67,20 @@
 > `docs/tasks/completed-tasks.md` for full review history. Unblocks C060–C063 (the
 > release-gate chain: debt-register closure, security pass closing T010, publish
 > `docs/LIMITATIONS.md`, release v1.0.0).
+>
+> **C060–C063 all merged as of 2026-08-29** — C060 (debt-register reclassified, 28/28
+> rows, zero unclassified), C061 (fresh full-surface security audit, PASS, zero
+> CRITICAL/HIGH, closed T010), C063 (`docs/LIMITATIONS.md` published, closing C060's
+> three `documented-limitation` cross-check rows). **C062 (release v1.0.0) is now
+> dispatchable** — all three of its dependencies are merged. Per the coordinator's
+> explicit instruction, C062 requires a deliberate readiness assessment before dispatch
+> (not a routine pipeline step), covering: the two P1 fast-follow tasks from C061
+> (T202, T203 — still `pending`, not release-blocking per their own MEDIUM severity but
+> worth a decision on whether they gate C062 or ship after), and the substantial body of
+> stale, pre-v1.0-roadmap `T`-series rows still sitting `in_review`/`pending` in this
+> ledger (T082–T155, T165–T189) that predate the C-series and were never reconciled —
+> see `docs/tasks/completed-tasks.md` for what's confirmed actually shipped versus what
+> may be orphaned ledger cruft.
 
 > ¹ **RESOLVED 2026-08-20.** Tracked condition (originated CONDITIONAL_PASS, Tech Lead
 > review of C010/MR !113, 2026-08-16; refined CONDITIONAL_PASS, Tech Lead review of
