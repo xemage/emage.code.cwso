@@ -2,7 +2,6 @@
 
 | ID | Title | Owner | Status | Priority | Depends on | Last update |
 |----|-------|-------|--------|----------|-----------|-------------|
-| T010 | SE: Security audit (auth, secret leakage) | security-engineer | in_review | P1 | T008 | 2026-08-06 |
 | T082 | Rust `cwso-hal` crate + CPU-baseline adapter | backend-developer | in_review | P0 | T081 | 2026-08-13 |
 | T083 | GPU adapter (vLLM/TensorRT-LLM, OpenAI-compatible) | backend-developer | in_review | P0 | T082 | 2026-08-13 |
 | T084 | LPU adapter (Groq-style deterministic low-latency) | backend-developer | in_review | P1 | T082 | 2026-08-13 |
@@ -47,10 +46,10 @@
 | T199 | Wire `ErrorObj.conflict_matrix` into `mergeengine.Client` and surface it to MCP callers | backend-developer | pending | P2 | — | 2026-08-28 |
 | T200 | Reconcile `local-docker-desktop-guide.md` with the current `make up` flow | technical-writer | pending | P2 | C052 (merged) | 2026-08-28 |
 | T201 | Reconcile root README.md with the new CONTRIBUTING.md; fix broken TECHNICAL-DEBT.md link | technical-writer | pending | P2 | C053 (merged) | 2026-08-28 |
-| C060 | Debt register: zero unclassified rows | technical-writer | in_progress | P0 | C050–C054 (CG4, closed) | 2026-08-28 |
-| C061 | Security pass closing T010 **[fresh full-surface audit — see note ³]** | security-engineer | in_progress | P0 | C050–C054 (CG4) | 2026-08-28 |
-| C062 | Release v1.0.0 | devops-engineer | pending | P0 | C060, C061, C063 | 2026-08-12 |
-| C063 | Publish docs/LIMITATIONS.md | technical-writer | pending | P0 | C060 | 2026-08-12 |
+| T202 | Fix dashboard rate-limit/logging gap (F-C061-01) | backend-developer | pending | P1 | — | 2026-08-29 |
+| T203 | Wire missing baseline-required CI security tools (F-C061-02) | devops-engineer | pending | P1 | — | 2026-08-29 |
+| C062 | Release v1.0.0 | devops-engineer | pending | P0 | C060 (merged), C061 (merged), C063 | 2026-08-12 |
+| C063 | Publish docs/LIMITATIONS.md | technical-writer | pending | P0 | C060 (merged) | 2026-08-12 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
