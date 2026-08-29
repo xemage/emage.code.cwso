@@ -2,46 +2,6 @@
 
 | ID | Title | Owner | Status | Priority | Depends on | Last update |
 |----|-------|-------|--------|----------|-----------|-------------|
-| T082 | Rust `cwso-hal` crate + CPU-baseline adapter | backend-developer | in_review | P0 | T081 | 2026-08-13 |
-| T083 | GPU adapter (vLLM/TensorRT-LLM, OpenAI-compatible) | backend-developer | in_review | P0 | T082 | 2026-08-13 |
-| T084 | LPU adapter (Groq-style deterministic low-latency) | backend-developer | in_review | P1 | T082 | 2026-08-13 |
-| T085 | Profiling Layer: tensor_tag derivation + workload mapping | backend-developer | in_review | P0 | T082 (soft) | 2026-08-13 |
-| T086 | `dispatch_hardware_aware_job` MCP tool + schema | backend-developer | in_review | P0 | T083, T085 | 2026-08-13 |
-| T087 | Wire policy_engine_v2 to live adapters (remove spike stubs) | backend-developer | in_review | P0 | T086, T082/T083/T084 | 2026-08-13 |
-| T088 | Phase 6 integration + reliability QA | qa-engineer | in_review | P0 | T087 | 2026-08-13 |
-| T090 | Thread job context into `hal.Client.Infer` | backend-developer | in_review | P1 | T089 | 2026-08-13 |
-| T091 | Active HAL health probing → live `health_state`/`queue_depth` | backend-developer | in_review | P1 | T089 | 2026-08-13 |
-| T092 | Hardware-aware job result retrieval | backend-developer | in_review | P2 | T089 | 2026-08-13 |
-| T093 | Enforce/document TLS for non-loopback HAL accelerator endpoints | devops-engineer | in_review | P1 | T089 | 2026-08-13 |
-| T094 | CI dependency audit (`govulncheck` + `cargo audit`) | devops-engineer | in_review | P2 | T089 | 2026-08-13 |
-| T114 | Bump Go toolchain to 1.25 (clear `go:audit` stdlib advisories) | devops-engineer | in_review | P2 | T094 | 2026-08-13 |
-| T115 | AST write-spike monitor (generalize `anomaly_monitor`) + userspace fallback | backend-developer | in_review | P0 | T089 | 2026-08-13 |
-| T116 | Spike filter (semantic classifier) + semantic-conflict pre-warning | backend-developer | in_review | P1 | T115 | 2026-08-13 |
-| T117 | `subscribe_ast_spikes` MCP Resources layer (SSE, threshold-gated) | backend-developer | in_review | P1 | T116 | 2026-08-13 |
-| T118 | AST write-event feeder (`write_shadow_file` → monitor/filter) | backend-developer | in_review | P1 | T117 | 2026-08-13 |
-| T119 | Sparse Wasm micro-agent sandbox tier design + security envelope review | solution-architect | in_review | P0 | T089 | 2026-08-13 |
-| T120 | `cwso-sparse` sidecar: deterministic ternary GEMM kernel + UDS protocol | backend-developer | in_review | P0 | T119 | 2026-08-13 |
-| T121 | `.cwsl` pruned-slice container + COW mmap loader + SHA-256 pinning | backend-developer | in_review | P1 | T120 | 2026-08-13 |
-| T122 | `create_ephemeral_sparse_agent` + wasmtime lifecycle + agent telemetry | backend-developer | in_review | P0 | T120, T121 | 2026-08-13 |
-| T145 | Rollout `num_samples` session fan-out | backend-developer | in_review | P1 | T137 | 2026-08-13 |
-| T146 | Gateway async staging + partial trace recovery | backend-developer | in_review | P1 | T132, T144 | 2026-08-13 |
-| T148 | Evaluator registry + SWE-bench hook | backend-developer / qa-engineer | in_review | P2 | T146, T144 | 2026-08-13 |
-| T154 | IDE integration guide (VS Code / Cursor) | technical-writer | in_review | P0 | T142 | 2026-08-13 |
-| T155 | Enable-all-features script | devops-engineer | in_review | P1 | T142 | 2026-08-13 |
-| T165 | Author v0.5.0 changelog and release artifact | technical-writer | pending | P0 | T164 | 2026-08-13 |
-| T166 | Cut release/v0.5.0 and merge to main | release-manager | pending | P0 | T165 | 2026-08-13 |
-| T167 | Tag v0.5.0 and publish GitLab release | release-manager | pending | P0 | T166 | 2026-08-13 |
-| T168 | Back-merge main into develop and clean up | release-manager | pending | P0 | T167 | 2026-08-13 |
-| T180 | Close Resolved Debt Rows In Register | backend-developer | pending | P2 | — | 2026-08-13 |
-| T181 | TD-07 Replace Broker Close Guard With sync.Once | backend-developer | pending | P1 | — | 2026-08-13 |
-| T182 | TD-02 Introduce HTTPHandlerConfig For RunHTTP/newHTTPHandler | backend-developer | pending | P2 | — | 2026-08-13 |
-| T183 | TD-03 Reduce Internal Helper Parameter Counts | backend-developer | pending | P2 | T182 | 2026-08-13 |
-| T184 | TD-01 Extract SSE Helpers And Reduce Function Length | backend-developer | pending | P2 | T183 | 2026-08-13 |
-| T185 | TD-09 Evict Zero-Count SSE Connection Entries | backend-developer | pending | P2 | T184 | 2026-08-13 |
-| T186 | TD-04 Add Dedicated Unit Test For Broker SSE Deferred Telemetry | qa-engineer | pending | P2 | T184 | 2026-08-13 |
-| T187 | TD-03 Residual: Reduce handleBrokerSSE to ≤4 Parameters | backend-developer | pending | P2 | — | 2026-08-13 |
-| T188 | TD-10 Fix SSE Telemetry Test Stderr-Capture Race | qa-engineer | pending | P2 | — | 2026-08-13 |
-| T189 | TD-11 Investigate and Fix TestRetentionEvictionOldestFirst Flakiness | qa-engineer | pending | P2 | — | 2026-08-13 |
 | C025 | CONDITIONAL: document IPC-only limitation | technical-writer | pending | P0 | C020 (NO-GO) | 2026-08-12 |
 | T199 | Wire `ErrorObj.conflict_matrix` into `mergeengine.Client` and surface it to MCP callers | backend-developer | pending | P2 | — | 2026-08-28 |
 | T200 | Reconcile `local-docker-desktop-guide.md` with the current `make up` flow | technical-writer | pending | P2 | C052 (merged) | 2026-08-28 |
@@ -71,16 +31,14 @@
 > **C060–C063 all merged as of 2026-08-29** — C060 (debt-register reclassified, 28/28
 > rows, zero unclassified), C061 (fresh full-surface security audit, PASS, zero
 > CRITICAL/HIGH, closed T010), C063 (`docs/LIMITATIONS.md` published, closing C060's
-> three `documented-limitation` cross-check rows). **C062 (release v1.0.0) is now
-> dispatchable** — all three of its dependencies are merged. Per the coordinator's
-> explicit instruction, C062 requires a deliberate readiness assessment before dispatch
-> (not a routine pipeline step), covering: the two P1 fast-follow tasks from C061
-> (T202, T203 — still `pending`, not release-blocking per their own MEDIUM severity but
-> worth a decision on whether they gate C062 or ship after), and the substantial body of
-> stale, pre-v1.0-roadmap `T`-series rows still sitting `in_review`/`pending` in this
-> ledger (T082–T155, T165–T189) that predate the C-series and were never reconciled —
-> see `docs/tasks/completed-tasks.md` for what's confirmed actually shipped versus what
-> may be orphaned ledger cruft.
+> three `documented-limitation` cross-check rows). Per the coordinator's explicit
+> decision: **T202** (dashboard rate-limit/logging gap, F-C061-01) ships *before*
+> v1.0.0 (a live, exploitable-today gap on a component in this release, despite MEDIUM
+> severity not strictly requiring it) — see its own row above; **T203** (missing CI
+> security tools, F-C061-02) ships *after*, as originally planned — pure detection-gap,
+> no active exploit path. The stale, pre-v1.0-roadmap `T082–T189` rows previously
+> listed here were investigated and removed — see note ⁴ below. **C062 (release
+> v1.0.0) is dispatchable once T202 lands**, reviewed clean.
 
 > ¹ **RESOLVED 2026-08-20.** Tracked condition (originated CONDITIONAL_PASS, Tech Lead
 > review of C010/MR !113, 2026-08-16; refined CONDITIONAL_PASS, Tech Lead review of
@@ -146,5 +104,31 @@
 > current form on 2026-08-06), not a resumption of T010's narrow original scope.
 > `docs/tasks/task-C061.md`'s stale reference to a nonexistent `task-T010.md` brief was
 > corrected in the same edit that dispatched C061.
+
+> ⁴ **T082–T189 ledger-hygiene investigation, 2026-08-29 (orchestrator, at the
+> coordinator's request, before dispatching C062).** 40 rows (T082–T094, T114,
+> T115–T122, T145–T148, T154, T155, T165–T168, T180–T189) sat `in_review`/`pending` in
+> this ledger despite predating the C-series roadmap by weeks. Investigation confirmed
+> **all 40 represent zero open work** — every one already has a real, evidenced `done`
+> entry in `docs/tasks/completed-tasks.md` (dates, commits, artifacts independently
+> spot-checked, not placeholder text). This was not a hidden regression: task **C004**
+> (this same roadmap's own Phase 0, 2026-08-13) already found and fully documented this
+> exact discrepancy in `docs/artifacts/task-ledger-reconciliation-v1.md` — C004's own
+> scope was narrow (copy each `task-T*.md` brief's own `**Status:**` header verbatim
+> into this ledger, forbidden from cross-referencing `completed-tasks.md` or judging
+> anything), and it found that these 40 briefs' own header files were never flipped back
+> to `done` after later, separate retroactive-archival passes recorded the real
+> completions directly into `completed-tasks.md` (the "Migrated from active-tasks.md
+> board cleanup" entries for T082–T155, "Ledger-hygiene retroactive archival" for
+> T165–T168, and directly-evidenced entries for T180–T189). C004's artifact explicitly
+> stated this discrepancy was "a disposition decision for the orchestrator and human" —
+> that decision was simply never made in the ~2 weeks since, while attention was on
+> executing the C-series roadmap itself. **Disposition (human-approved 2026-08-29):
+> archive-with-explanation** — all 40 rows removed from this ledger (this edit); the
+> individual `task-T*.md` brief files' own stale headers are deliberately left
+> unchanged (cosmetic only, nothing else in this repo re-derives ledger state from
+> them — only C004's one-time reconciliation method did, and that pass is complete).
+> See `docs/artifacts/task-ledger-reconciliation-v1.md` for the original discrepancy
+> record and `docs/tasks/completed-tasks.md` for each task's real completion evidence.
 
 Per-task briefs live alongside this file as `task-T001.md`, `task-T002.md`, …, `task-C001.md`, …
