@@ -282,8 +282,9 @@ its own one-line fix. A few things it won't catch, plus common `/mcp` errors:
   sidecar are real, working code shipped in this build, but are explicitly
   out of v1.0's supported default path (deferred to v1.1) — the rollout
   opt-in profile above is the one exception exposed here.
-- A dedicated, standalone limitations reference is planned but not published
-  yet; this section is the current source of truth for known gaps.
+- For the full v1.0 limitations reference — protocol-surface gaps, dev-secret
+  handling, and other disclosed release-gate constraints, plus what's deferred
+  to v1.1 — see [`docs/LIMITATIONS.md`](../LIMITATIONS.md).
 
 For CWSO's internals and architecture, start at the project
 [`README.md`](../../README.md). Looking to work on CWSO itself rather than

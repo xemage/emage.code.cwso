@@ -211,6 +211,7 @@ For Wasm-specific operations guidance, see
 
 ## Documentation
 - **[User guide](docs/user/README.md)** — prerequisites, install, MCP client configuration, verification, daily use, and troubleshooting
+- **[Limitations (v1.0)](docs/LIMITATIONS.md)** — what CWSO v1.0 does not do, and why
 - [Requirements (v2, current)](docs/artifacts/requirements-v2.md) · [Requirements v1 (archived)](docs/archive/artifacts/requirements-v1.md)
 - [Next-Gen blueprint](docs/artifacts/cwso-nextgen-blueprint-v1.md)
 - [Rollout / Polar architecture](docs/artifacts/rollout-architecture-v1.md)
