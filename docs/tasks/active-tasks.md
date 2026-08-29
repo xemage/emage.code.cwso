@@ -49,7 +49,7 @@
 | T202 | Fix dashboard rate-limit/logging gap (F-C061-01) | backend-developer | pending | P1 | — | 2026-08-29 |
 | T203 | Wire missing baseline-required CI security tools (F-C061-02) | devops-engineer | pending | P1 | — | 2026-08-29 |
 | C062 | Release v1.0.0 | devops-engineer | pending | P0 | C060 (merged), C061 (merged), C063 | 2026-08-12 |
-| C063 | Publish docs/LIMITATIONS.md | technical-writer | pending | P0 | C060 (merged) | 2026-08-12 |
+| C063 | Publish docs/LIMITATIONS.md | technical-writer | in_progress | P0 | C060 (merged) | 2026-08-29 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
