@@ -13,6 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/emage/cwso/orchestrator/internal/logging"
 )
 
 // ClientMetrics tracks per-request counters incremented by HTTP middleware.
@@ -188,7 +190,8 @@ type Handler struct {
 	tokenHash   []byte // SHA-256 of CWSO_DASHBOARD_TOKEN; nil ⇒ 501
 	sidecar     *SidecarChecker
 	metrics     *ClientMetrics
-	clientMet   RequestMetrics // for recording dashboard-route auth failures
+	clientMet   RequestMetrics  // for recording dashboard-route auth failures
+	log         *logging.Logger // structured log signal for auth failures (F-C061-01); nil ⇒ no logging
 	configSnap  ConfigSnapshot
 	jobStats    func() JobsSnapshotRaw
 	rollout     func() RolloutSnapshot
@@ -206,7 +209,8 @@ type Config struct {
 	Token      string // raw token from env; empty ⇒ dashboard disabled
 	Sidecars   map[string]string
 	Metrics    *ClientMetrics
-	ClientMet  RequestMetrics // optional; records dashboard-route 401s
+	ClientMet  RequestMetrics  // optional; records dashboard-route 401s
+	Log        *logging.Logger // optional; logs dashboard-route auth failures (F-C061-01)
 	ConfigSnap ConfigSnapshot
 	JobStats   func() JobsSnapshotRaw
 	Rollout    func() RolloutSnapshot
@@ -223,6 +227,7 @@ func New(cfg Config) *Handler {
 		sidecar:     NewSidecarChecker(cfg.Sidecars),
 		metrics:     cfg.Metrics,
 		clientMet:   cfg.ClientMet,
+		log:         cfg.Log,
 		configSnap:  cfg.ConfigSnap,
 		jobStats:    cfg.JobStats,
 		rollout:     cfg.Rollout,
@@ -260,19 +265,37 @@ func (h *Handler) auth(r *http.Request) bool {
 	hdr := r.Header.Get("Authorization")
 	token, ok := strings.CutPrefix(hdr, "Bearer ")
 	if !ok || token == "" {
-		if h.clientMet != nil {
-			h.clientMet.RecordAuthFailure()
-		}
+		h.recordAuthFailure(r)
 		return false
 	}
 	sum := sha256.Sum256([]byte(token))
 	if subtle.ConstantTimeCompare(sum[:], h.tokenHash) != 1 {
-		if h.clientMet != nil {
-			h.clientMet.RecordAuthFailure()
-		}
+		h.recordAuthFailure(r)
 		return false
 	}
 	return true
+}
+
+// recordAuthFailure increments the atomic auth-failure counter (existing
+// behaviour) and, if a logger is wired, emits a structured warning carrying
+// only the failing client's IP -- matching /mcp's authMiddleware pattern
+// (transport.authMiddleware logs "jwt rejected"). The attempted bearer
+// token value is NEVER logged here, deliberately: only the request's own
+// remote-address string is read, and the Authorization header contents
+// never enter the log call (F-C061-01; see security-guidelines.md's
+// Logging section -- "DO NOT log: passwords, tokens, session IDs").
+func (h *Handler) recordAuthFailure(r *http.Request) {
+	if h.clientMet != nil {
+		h.clientMet.RecordAuthFailure()
+	}
+	if h.log == nil {
+		return
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		ip = r.RemoteAddr // fallback if SplitHostPort fails
+	}
+	h.log.Warn().Str("ip", ip).Str("path", r.URL.Path).Msg("dashboard auth failed")
 }
 
 func (h *Handler) serveStatus(w http.ResponseWriter, _ *http.Request) {

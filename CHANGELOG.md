@@ -19,6 +19,35 @@ All notable changes to this project are documented in this file.
   HIGH-severity, sandbox-trust-boundary finding by category, but a dormant one for what
   v1.0 users can actually reach. See `docs/tasks/task-T204.md` for full execution notes.
 
+### Security (T202)
+- **`fix(security)`**: Fixed F-C061-01 (SECURITY:MEDIUM, from `security-v1.0-audit-v1.md`'s
+  v1.0.0 audit, independently reproduced by Tech Lead review in MR !199): the operator
+  dashboard's `GET /dashboard` and `GET /dashboard/status` routes silently inherited
+  `rateLimitMiddleware`'s SSE-only exemption (originally scoped, per debt item D6, to keep
+  `GET /mcp`'s long-lived SSE stream from being throttled — `if r.Method != http.MethodPost`),
+  leaving unauthenticated dashboard auth attempts completely unthrottled and unlogged. Live
+  audit verification: 150 wrong-token `GET /dashboard/status` requests → all `401`, zero `429`.
+  `orchestrator/internal/transport/http.go`'s `rateLimitMiddleware` now uses a narrow,
+  path-specific exemption (`mcpPath = "/mcp"` — only `GET /mcp` bypasses the limiter) instead of
+  the blanket method-based one; dashboard `GET` traffic now shares the same per-IP token bucket
+  as `POST /mcp` (`burst=10`, then `429` with `Retry-After: 60`). `orchestrator/internal/
+  dashboard/dashboard.go`'s `Handler.auth` now also logs auth failures via a new
+  `recordAuthFailure` method — a structured `log.Warn()` carrying only the failing client's IP
+  and path, matching `/mcp`'s `authMiddleware` pattern, never the attempted bearer token value —
+  giving operators a log-based signal of an in-progress brute-force attempt, not just an atomic
+  counter. `Handler.log`/`Config.Log` is optional (nil-safe) and is wired from
+  `orchestrator/internal/server/server.go`'s `buildDashboardHandler`. New regression tests:
+  `TestRateLimitMiddleware_DashboardGETIsThrottled` (proves the fix — 10 dashboard `GET`s
+  succeed, the 11th gets `429`), `TestRateLimitMiddleware_MCPSSEExemptionNotRegressed` (150
+  `GET /mcp` requests all succeed — proves the original SSE exemption is not regressed),
+  `TestHandler_AuthFailureLogsIPNotToken`, `TestHandler_AuthFailureLogsOnMissingToken`,
+  `TestHandler_ValidAuthDoesNotLog`, `TestHandler_NilLoggerDoesNotPanic`. Also corrected
+  `docs/decisions/ADR-011-operator-dashboard.md`'s "Security trade-offs" section, whose
+  "Dashboard routes inherit `rateLimitMiddleware`" claim was aspirational (not literally true)
+  until this fix, and added a recommendation there that operators set a high-entropy
+  `CWSO_DASHBOARD_TOKEN` (e.g. `openssl rand -hex 32`) now that rate limiting is the operative
+  brute-force defense. See `docs/tasks/task-T202.md` for full execution notes.
+
 ### Documentation (C051)
 - **`docs(user)`**: Deleted the five superseded user guides
   (`docs/user/installation-v1.md`, `installation-v2.md`, `installation-v3.md`,

@@ -756,6 +756,11 @@ func (s *Server) buildDashboardHandler() *dashboard.Handler {
 		Sidecars:  sidecars,
 		Metrics:   s.clientMetrics,
 		ClientMet: s.clientMetrics,
+		// Log wires structured auth-failure logging for dashboard routes
+		// (F-C061-01); without it, dashboard auth failures are only
+		// counted, never logged, and an operator has no log-based signal
+		// of a brute-force attempt in progress.
+		Log: s.log,
 		ConfigSnap: dashboard.ConfigSnapshot{
 			Transport:     s.cfg.Transport,
 			SandboxRunner: s.cfg.SandboxRunner,
