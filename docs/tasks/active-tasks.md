@@ -8,6 +8,7 @@
 | T201 | Reconcile root README.md with the new CONTRIBUTING.md; fix broken TECHNICAL-DEBT.md link | technical-writer | pending | P2 | C053 (merged) | 2026-08-28 |
 | T202 | Fix dashboard rate-limit/logging gap (F-C061-01) **[ships before v1.0.0 — coordinator decision]** | backend-developer | in_progress | P1 | — | 2026-08-29 |
 | T203 | Wire missing baseline-required CI security tools (F-C061-02) | devops-engineer | pending | P1 | — | 2026-08-29 |
+| T204 | Bump `wasmtime` in `cwso-sparse` to patch RUSTSEC-2026-0269 (sandbox escape, HIGH) **[blocks T202's pipeline]** | backend-developer | in_review | P1 | — | 2026-09-03 |
 | C062 | Release v1.0.0 | devops-engineer | pending | P0 | C060 (merged), C061 (merged), C063 (merged) | 2026-08-29 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
@@ -39,6 +40,25 @@
 > no active exploit path. The stale, pre-v1.0-roadmap `T082–T189` rows previously
 > listed here were investigated and removed — see note ⁴ below. **C062 (release
 > v1.0.0) is dispatchable once T202 lands**, reviewed clean.
+>
+> **T204 added 2026-09-02**, discovered as a side effect of T202's MR !206 pipeline run:
+> `cargo audit`'s `rust:audit` CI job (not `allow_failure`) failed on a HIGH (CVSS 8.8)
+> RustSec advisory, `RUSTSEC-2026-0269` ("filesystem sandbox escape when paths or symlinks
+> contain trailing slashes"), against `wasmtime 36.0.13`, pulled in by `services/cwso-sparse`.
+> Confirmed **not caused by T202** (zero Rust/dependency files in its diff; `develop`'s own
+> last pipeline, commit `2769e91`, ran clean 2026-08-29 — the advisory-db is fetched fresh
+> each run, so this is upstream advisory-db drift, not a regression). Confirmed **not live
+> attack surface for v1.0**: `deploy/docker-compose.yml` has no `cwso-sparse` service block
+> at all (not even an opt-in profile — see its own inline comment, "CWSO_SPARSE_SOCKET has
+> no listening cwso-sparse service in this compose file"), matching the roadmap's own §2.4
+> deferral of sparse micro-agents to v1.1+. Still a real, HIGH-severity finding in a
+> sandbox-trust-boundary crate by category, and a hard `ci_must_pass` GitLab branch-protection
+> blocker for **any** MR into `develop` right now, including T202's — so it ships first,
+> lower urgency than T202 but still P1 given it blocks T202/C062 sequencing. Minimal-diff fix
+> confirmed: `cwso-sparse/Cargo.toml` pins `wasmtime = "36"` (caret range), so a
+> `Cargo.lock`-only bump to `36.0.14+` (no `Cargo.toml` edit) satisfies the advisory's fixed
+> range. Same review discipline as T202 (Tech Lead + Security Engineer), Security Engineer
+> pass scoped lighter given confirmed non-reachability.
 
 > ¹ **RESOLVED 2026-08-20.** Tracked condition (originated CONDITIONAL_PASS, Tech Lead
 > review of C010/MR !113, 2026-08-16; refined CONDITIONAL_PASS, Tech Lead review of

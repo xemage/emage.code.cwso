@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Security (T204)
+- **`fix(security)`**: Bumped `wasmtime` from `36.0.13` to `36.0.14` in `services/Cargo.lock`
+  (`services/cwso-sparse/Cargo.toml`'s `wasmtime = "36"` caret requirement was already
+  satisfied by the fix — no manifest edit needed) to patch RUSTSEC-2026-0269 (CVSS 8.8,
+  HIGH): a filesystem sandbox escape when paths or symlinks contain trailing slashes,
+  fixed upstream in `>=36.0.14, <37.0.0`. Discovered as a side effect of T202/MR !206's
+  `rust:audit` CI job — advisory-db drift unrelated to any commit in this repo, and a hard
+  `ci_must_pass` blocker for any MR into `develop`. `cargo audit` confirmed clean of the
+  `wasmtime` finding post-bump; `cargo build --workspace` and `cwso-sparse`'s full test
+  suite (27 tests) pass unchanged. Not live v1.0 attack surface: `deploy/docker-compose.yml`
+  has no `cwso-sparse` service block (confirmed via its own inline comment and
+  `docs/LIMITATIONS.md`'s "Deferred to v1.1+" classification) — this is a real,
+  HIGH-severity, sandbox-trust-boundary finding by category, but a dormant one for what
+  v1.0 users can actually reach. See `docs/tasks/task-T204.md` for full execution notes.
+
 ### Documentation (C051)
 - **`docs(user)`**: Deleted the five superseded user guides
   (`docs/user/installation-v1.md`, `installation-v2.md`, `installation-v3.md`,
