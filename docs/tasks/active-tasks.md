@@ -7,7 +7,6 @@
 | T200 | Reconcile `local-docker-desktop-guide.md` with the current `make up` flow | technical-writer | pending | P2 | C052 (merged) | 2026-08-28 |
 | T201 | Reconcile root README.md with the new CONTRIBUTING.md; fix broken TECHNICAL-DEBT.md link | technical-writer | pending | P2 | C053 (merged) | 2026-08-28 |
 | T203 | Wire missing baseline-required CI security tools (F-C061-02) | devops-engineer | pending | P1 | — | 2026-08-29 |
-| C062 | Release v1.0.0 | devops-engineer | pending | P0 | C060 (merged), C061 (merged), C063 (merged), T202 (merged) | 2026-08-29 |
 | T205 | Fix stale row-count and C063-status claims in DEBT-REGISTER.md footer | technical-writer | pending | P2 | — | 2026-09-03 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
@@ -71,6 +70,38 @@
 > C062 (release v1.0.0) is now dispatchable — all four of its dependencies (C060, C061,
 > C063, T202) are merged — pending the coordinator's own deliberate go/no-go review, per
 > standing instruction, not a routine dispatch.
+>
+> **C062 archived 2026-09-03, DONE — v1.0.0 is released.** Coordinator gave an explicit
+> GO after deliberate review. Release MR !212 (`agent/devops-engineer/C062`) merged to
+> `develop` (merge commit `5eb107d`): CHANGELOG finalized to `## v1.0.0 - 2026-09-03`,
+> `docs/artifacts/release-v1.0.0.md` published, Tech Lead PASS. Merge-to-main MR !213
+> merged (non-squash, per the v0.6.1 precedent): `main` HEAD `7b75123`, a genuine
+> two-parent history-preserving merge (parents `1608dcb` + `85ad01d`), tree confirmed
+> byte-identical to `develop` (`219 files changed, 35504 insertions(+), 1318
+> deletions(-)` vs `main`'s prior tip — exact match, no unexpected inclusions/exclusions,
+> no secrets). Annotated tag `v1.0.0` pushed at `7b75123`, tagger message covering all
+> six roadmap phases + the release-gate phase + the T202/T204 fast-follow chain (full
+> text in the tag object itself). **All four service images confirmed published with the
+> `v1.0.0` tag directly against the container registry API** (not just trusting the CI
+> job's green status) — `orchestrator`, `git-shadow`, `merge-engine`, `rollout`, each
+> with a real digest and non-trivial size, all created within the same minute the
+> tag-triggered pipeline ran (2026-09-03T12:05-12:06Z). `scripts/check-version-drift.sh`
+> independently re-run against the real tagged commit tree (not just the CI job label):
+> `OK: README 'Current state' and newest CHANGELOG entry both at v1.0.0`, exit 0.
+> Three CI pipelines (MR !213's own gate, the `main` branch pipeline, and MR !214's
+> pipeline) each hit the by-now-familiar shared-runner e2e container-name/ID collision
+> race during this window (four pipelines running concurrently) — `e2e:smoke` (MR !213),
+> `e2e:phase2` (`main`), and `e2e:projection`+`e2e:phase2` (MR !214) — each retried
+> individually and came back clean; `rust:lint`'s pre-existing `allow_failure: true` fmt
+> nit in `services/cwso-git-shadow/src/writeback.rs` (from T204's sibling commit
+> `0f11f19`, unrelated to this release) confirmed non-blocking and present on `develop`'s
+> own tip too, not a regression introduced by this merge. **This closes the entire CWSO
+> v1.0 roadmap** (`docs/plans/plan-cwso-v1.0-roadmap.md`, human-approved 2026-08-13) —
+> Phases 0–6 plus the T202/T204 security fast-follow chain, first tagged GA release since
+> v0.6.1 (2026-08-08). One small, non-blocking cosmetic follow-up logged separately as
+> **T205** (`docs/DEBT-REGISTER.md`'s footer paragraph has two stale claims — a 26/26 row
+> count that C061 later made 28/28, and a "C063 had not yet run" note that's since gone
+> stale) — does not gate this archival.
 
 > ¹ **RESOLVED 2026-08-20.** Tracked condition (originated CONDITIONAL_PASS, Tech Lead
 > review of C010/MR !113, 2026-08-16; refined CONDITIONAL_PASS, Tech Lead review of
