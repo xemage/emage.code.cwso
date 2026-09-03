@@ -52,18 +52,19 @@ this classification pass):**
 
 | Row | Needs a LIMITATIONS.md entry for | Status |
 |---|---|---|
-| B1 | MCP hand-rolled kernel: 6/16 methods + 8/9 notifications genuinely unimplemented in v1.0 (kept by ADR-013, full inventory in `docs/artifacts/mcp-gap-analysis-v1.md`) | **Not yet written** — `docs/LIMITATIONS.md` does not exist in this worktree; C063 owns creating it |
-| R-1 | Dev/compose JWT secret is file-based (`.env.jwt.dev` staged into the `cwso-jwt-secret` volume), acceptable for v1.0's local-only deployment model, not for production | **Not yet written** — same |
-| R-6 | `git-shadow`'s tmpfs projection mount is `noexec` with no compiler toolchain in the runtime image (deliberate hardening, C019); CI works around it (C024), production code is unaffected | **Not yet written** — same |
+| B1 | MCP hand-rolled kernel: 6/16 methods + 8/9 notifications genuinely unimplemented in v1.0 (kept by ADR-013, full inventory in `docs/artifacts/mcp-gap-analysis-v1.md`) | **Written** — `docs/LIMITATIONS.md` §1.1 |
+| R-1 | Dev/compose JWT secret is file-based (`.env.jwt.dev` staged into the `cwso-jwt-secret` volume), acceptable for v1.0's local-only deployment model, not for production | **Written** — `docs/LIMITATIONS.md` §1.2 |
+| R-6 | `git-shadow`'s tmpfs projection mount is `noexec` with no compiler toolchain in the runtime image (deliberate hardening, C019); CI works around it (C024), production code is unaffected | **Written** — `docs/LIMITATIONS.md` §1.3 |
 
 `docs/LIMITATIONS.md` was confirmed absent from this worktree at the time of this
-classification pass (2026-08-29) — C063 has not yet run. All three
+classification pass (2026-08-29) — C063 had not yet run. All three
 `documented-limitation` rows above are honest, real, already-evidenced findings (each
 has a `POC-DEBT`/design-doc paper trail predating this task) — `documented-limitation`
-is not being used here to avoid work, per this task's own rail. They cannot be marked
-fully closed end-to-end until C063 publishes `docs/LIMITATIONS.md` with a matching
-entry for each. This is a **coordination dependency on C063**, not a gap in this
-classification pass, and is flagged explicitly rather than silently left open.
+is not being used here to avoid work, per this task's own rail. **Update (2026-09-03):**
+C063 published `docs/LIMITATIONS.md` the same day as this classification pass, with a
+matching §1 entry for each of the three rows above (confirmed directly against the
+current file) — the coordination dependency on C063 noted here is resolved, and all
+three rows are now fully closed end-to-end.
 
 ### Notes on C060 reclassifications (2026-08-29)
 
