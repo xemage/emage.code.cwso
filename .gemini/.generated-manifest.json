@@ -54,6 +54,7 @@
     "instructions/poc-guidelines.md",
     "instructions/security-guidelines.md",
     "settings.json",
+    "settings.json.provenance.json",
     "skills/api-design/SKILL.md",
     "skills/blocker-escalation/SKILL.md",
     "skills/checkpoint-protocol/SKILL.md",

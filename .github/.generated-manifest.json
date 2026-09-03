@@ -4,6 +4,7 @@
   "generatedAt": "<deterministic>",
   "files": [
     "../.vscode/mcp.json",
+    "../.vscode/mcp.json.provenance.json",
     "agents/backend-developer.agent.md",
     "agents/data-mockup-agent.agent.md",
     "agents/database-engineer.agent.md",

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# DEPRECATED since v0.8.0 — defaults folded into deploy/docker-compose.yml (C014);
+# kept for reference, will be deleted in a later release
 # Enable all CWSO orchestrator feature flags for local PoC demos (T155).
 # Usage: source scripts/cwso-enable-all-features.sh
 set -euo pipefail
@@ -28,4 +30,4 @@ echo "  docker compose -f deploy/docker-compose.yml --profile phase2 --profile p
 echo "    up -d --force-recreate orchestrator"
 echo ""
 echo "Note: HAL, sparse, and rollout sidecars need separate containers/sockets."
-echo "See docs/user/installation-v1.md and ide-integration-v1.md."
+echo "See docs/user/README.md."

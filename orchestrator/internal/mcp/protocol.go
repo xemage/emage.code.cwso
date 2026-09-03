@@ -1,15 +1,20 @@
-// Package mcp implements the subset of the Model Context Protocol (spec 2025-03-26)
-// required for Phase 1: JSON-RPC 2.0 envelopes, initialize handshake, tools/list,
-// tools/call. Streaming notifications (SSE) are added in Phase 3.
+// Package mcp implements the CWSO JSON-RPC 2.0 / MCP protocol kernel: envelope
+// types, MCP payload structs, and error-code constants for the spec version
+// pinned in ADR-002 (2025-03-26).
 //
-// This is a hand-rolled minimal implementation rather than the official
-// go-sdk to avoid network-dependent module fetches during the initial PoC
-// build and to keep the dependency surface auditable. The official SDK
-// will be adopted at T029 (PoC-debt remediation pass).
-//
-// POC-DEBT: Hand-rolled MCP subset; production must adopt
-// github.com/modelcontextprotocol/go-sdk for full spec compliance and
-// upstream maintenance. Tracked in POC-DEBT-SCORECARD-phase1.md.
+// This is a hand-rolled implementation rather than the official go-sdk. That
+// choice was revisited for v1.0 and reaffirmed in
+// docs/decisions/ADR-013-mcp-protocol-path.md: the kernel's synchronous,
+// single-path dispatch (Server.Handle in
+// orchestrator/internal/server/server.go) is a deliberate determinism
+// property the SDK's async-per-session model could not be verified to
+// preserve. Rather than adopting the SDK, CWSO backs the hand-rolled kernel
+// with a conformance suite (this package's tests plus
+// orchestrator/internal/server/mcp_conformance_test.go) asserting spec-shaped
+// request/response/error behavior for every method the server implements,
+// and a correct, spec-shaped "not supported" error for every method it does
+// not. The full method/notification/error-code inventory the suite covers is
+// docs/artifacts/mcp-gap-analysis-v1.md.
 package mcp
 
 import (
@@ -21,15 +26,24 @@ import (
 const (
 	JSONRPCVersion = "2.0"
 
-	// Standard JSON-RPC error codes.
+	// Standard JSON-RPC error codes (JSON-RPC 2.0 base spec, adopted by MCP).
 	ErrParse          = -32700
 	ErrInvalidRequest = -32600
 	ErrMethodNotFound = -32601
 	ErrInvalidParams  = -32602
 	ErrInternal       = -32603
 
-	// MCP-specific error codes.
-	ErrUnauthorized     = -32001
+	// CWSO-specific error codes, in the JSON-RPC 2.0 reserved
+	// implementation-defined server-error range (-32000..-32099).
+	//
+	// -32001 (ErrUnauthorized) was removed here (C032, per ADR-013's
+	// required decision on this dead constant): authentication failures are
+	// handled entirely at the HTTP transport layer (401/403 — see
+	// transport/http.go) before a JSON-RPC envelope is ever parsed, so a
+	// JSON-RPC-level auth error code had no reachable call site. Removing
+	// the dead constant (rather than inventing a new JSON-RPC-level
+	// auth-failure path solely to give it one) leaves wire behavior
+	// unchanged and avoids implying a code path that does not exist.
 	ErrPermissionDenied = -32002
 	ErrToolNotFound     = -32010
 	ErrToolExecution    = -32011
@@ -75,17 +89,36 @@ func OK(id json.RawMessage, result any) *Response {
 	return &Response{JSONRPC: JSONRPCVersion, ID: id, Result: result}
 }
 
+// RequestError wraps a JSON-RPC error code together with the underlying
+// cause, letting callers (Server.Handle) select the spec-correct JSON-RPC
+// error code for a ParseRequest failure instead of collapsing every failure
+// mode to Parse error (-32700).
+//
+// Per JSON-RPC 2.0, -32700 (Parse error) is reserved for JSON that cannot be
+// parsed at all; a syntactically valid envelope with the wrong protocol
+// version or a missing method is Invalid Request (-32600). This distinction
+// was previously not made (all three ParseRequest failure branches mapped to
+// -32700) — a spec-correctness bug identified in the C030 gap analysis and
+// fixed here in C032 per ADR-013.
+type RequestError struct {
+	Code int
+	Err  error
+}
+
+func (e *RequestError) Error() string { return e.Err.Error() }
+func (e *RequestError) Unwrap() error { return e.Err }
+
 // ParseRequest unmarshals and validates a JSON-RPC request envelope.
 func ParseRequest(raw []byte) (*Request, error) {
 	var req Request
 	if err := json.Unmarshal(raw, &req); err != nil {
-		return nil, err
+		return nil, &RequestError{Code: ErrParse, Err: err}
 	}
 	if req.JSONRPC != JSONRPCVersion {
-		return nil, errors.New("invalid jsonrpc version")
+		return nil, &RequestError{Code: ErrInvalidRequest, Err: errors.New("invalid jsonrpc version")}
 	}
 	if req.Method == "" {
-		return nil, errors.New("missing method")
+		return nil, &RequestError{Code: ErrInvalidRequest, Err: errors.New("missing method")}
 	}
 	return &req, nil
 }

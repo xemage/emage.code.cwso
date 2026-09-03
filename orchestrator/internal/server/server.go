@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -755,6 +756,11 @@ func (s *Server) buildDashboardHandler() *dashboard.Handler {
 		Sidecars:  sidecars,
 		Metrics:   s.clientMetrics,
 		ClientMet: s.clientMetrics,
+		// Log wires structured auth-failure logging for dashboard routes
+		// (F-C061-01); without it, dashboard auth failures are only
+		// counted, never logged, and an operator has no log-based signal
+		// of a brute-force attempt in progress.
+		Log: s.log,
 		ConfigSnap: dashboard.ConfigSnapshot{
 			Transport:     s.cfg.Transport,
 			SandboxRunner: s.cfg.SandboxRunner,
@@ -789,8 +795,16 @@ func (s *Server) configWarnings() []string {
 func (s *Server) Handle(ctx context.Context, sess *transport.Session, raw []byte) ([]byte, error) {
 	req, err := mcp.ParseRequest(raw)
 	if err != nil {
-		s.log.Warn().Err(err).Msg("parse error")
-		return marshal(mcp.ErrorResponse(nil, mcp.NewError(mcp.ErrParse, "parse error: "+err.Error())))
+		// Select the spec-correct JSON-RPC error code for the failure branch
+		// (RequestError.Code) instead of collapsing every ParseRequest
+		// failure to Parse error. See mcp.RequestError / mcp.ParseRequest.
+		code := mcp.ErrParse
+		var reqErr *mcp.RequestError
+		if errors.As(err, &reqErr) {
+			code = reqErr.Code
+		}
+		s.log.Warn().Err(err).Int("code", code).Msg("parse error")
+		return marshal(mcp.ErrorResponse(nil, mcp.NewError(code, "parse error: "+err.Error())))
 	}
 
 	s.log.Debug().Str("method", req.Method).Msg("handling")
@@ -844,7 +858,19 @@ func (s *Server) handleInitialize(req *mcp.Request) *mcp.Response {
 		"tools": map[string]any{"listChanged": false},
 	}
 	if s.spikeSubs != nil || s.sparseAgents != nil {
-		caps["resources"] = map[string]any{"subscribe": true, "listChanged": true}
+		// listChanged is false, not true: notifications/resources/list_changed
+		// is never published anywhere in this codebase (confirmed by the C030
+		// gap analysis and the conformance suite). Advertising listChanged:true
+		// while never publishing it was a genuine spec-conformance defect
+		// (capability/behavior mismatch) flagged by ADR-013 as a required fix
+		// for C032 — resolved here by truthfully advertising the capability
+		// this server can actually deliver, rather than by implementing the
+		// publish path (out of scope for this task; see ADR-013 alternatives).
+		// subscribe:true remains accurate: resources/subscribe is implemented
+		// and accepted (its own, separate, documented gap — the subscription
+		// push itself uses a non-spec SSE mechanism, not
+		// notifications/resources/updated — is unaffected by this fix).
+		caps["resources"] = map[string]any{"subscribe": true, "listChanged": false}
 	}
 	result := mcp.InitializeResult{
 		ProtocolVersion: mcp.SupportedProtocolVersion,
@@ -906,7 +932,13 @@ func (s *Server) handleResourcesList(req *mcp.Request) *mcp.Response {
 	if errResp, ok := s.resourcesEnabled(req); !ok {
 		return errResp
 	}
-	var resources []mcp.Resource
+	// Non-nil, explicitly-empty slice — mirrors handleResourceTemplatesList's
+	// make([]mcp.ResourceTemplate, 0, 2) pattern below. A nil slice marshals
+	// to JSON `null`; this marshals to `[]`, which is what the MCP spec
+	// (and schema-strict clients such as wong2/mcp-cli's Zod-validated SDK)
+	// require for an empty resources/list result. See
+	// docs/artifacts/mcp-client-compatibility-v1.md Cross-cutting Finding A.
+	resources := make([]mcp.Resource, 0, 2)
 	if s.spikeSubs != nil {
 		for _, sub := range s.spikeSubs.List() {
 			resources = append(resources, mcp.Resource{

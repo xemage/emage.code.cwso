@@ -8,9 +8,48 @@
 //! Wire protocol: framed JSON over a Unix domain socket.
 //! Frame = 4-byte big-endian length + JSON body.
 //!
-//! POC-DEBT (P2-1): OverlayFS bind-mount layer is deferred to Phase 4 with
-//! sandbox runners. Today, sub-agents access the virtual FS via orchestrator
-//! → sidecar IPC instead of an OS mount.
+//! Filesystem projection (C021, `docs/decisions/ADR-012-shadow-workspace-
+//! filesystem-projection.md`): each shadow workspace is also eagerly
+//! materialized onto a real, tmpfs-backed directory under
+//! `CWSO_GIT_SHADOW_STORAGE` (`<storage_root>/<workspace-uuid>/`) at
+//! creation time, and kept in sync on every `write_file`, so ordinary tools
+//! (`ls`, `cat`, `pytest`, ...) can reach a shadow workspace at a real path
+//! without going through orchestrator → sidecar IPC at all — see
+//! `repo::ShadowStore::create`/`write_file`/`drop_workspace` and
+//! `repo::materialize_write` for the mechanism and its path-safety
+//! reasoning. This closes the debt-register gap tracked as `B2` ("sub-agents
+//! access the virtual FS via orchestrator → sidecar IPC instead of an
+//! OS-reachable path"), via ADR-012's chosen mechanism (materialise-to-tmpfs)
+//! rather than the OverlayFS bind-mount the original marker named.
+//!
+//! Write-back (C022, same ADR): raw filesystem mutations made directly at a
+//! workspace's projected path -- by tooling other than this service's own
+//! `write_file` IPC call -- are captured into the same in-memory blob store
+//! via an `inotify`-driven watcher plus a periodic hash-based reconciliation
+//! backstop; see `writeback::WriteBackEngine` for the mechanism and its
+//! durability/path-safety reasoning. `commit_shadow` reads from that same
+//! in-memory state regardless of whether an edit arrived via `write_file` or
+//! via a raw filesystem mutation this engine observed.
+//!
+//! Lifecycle / crash-safety (C023, same ADR): a workspace's real, projected
+//! directory is created with the workspace (`repo::ShadowStore::create`) and
+//! torn down with it (`repo::ShadowStore::drop_workspace`, which also calls
+//! `WriteBackEngine::unregister_workspace` -- both already existed before
+//! C023 and are unchanged by it). What C023 adds: (1) a startup
+//! reconciliation sweep (`repo::sweep_stale_workspace_dirs`, invoked from
+//! `ShadowStore::new`) that removes every stale per-workspace directory a
+//! previous instance -- crashed or gracefully but incompletely shut down --
+//! left behind under `storage_root`, since this process's in-memory
+//! `workspaces` map always starts empty (see that field's doc comment in
+//! `repo.rs`) and therefore never has anything legitimate to reconcile
+//! against; and (2) confirmation that this binary installs **no** custom
+//! `SIGTERM`/`SIGINT` handler, deliberately: both signals' default
+//! disposition terminates every thread in the process immediately, without
+//! running any of `WriteBackEngine`'s two background threads' code at all,
+//! which is sufficient because neither thread buffers anything that would
+//! need an orderly flush first (see `writeback.rs`'s "Durability" section)
+//! -- see `tests/signal_shutdown.rs` for the live-process test backing this
+//! conclusion, and for the fuller reasoning.
 
 use std::collections::HashSet;
 use std::io::{Read, Write};
@@ -25,9 +64,11 @@ use anyhow::{Context, Result};
 mod ast;
 mod proto;
 mod repo;
+mod writeback;
 
 use proto::{Envelope, Request, Response};
 use repo::ShadowStore;
+use writeback::WriteBackEngine;
 
 const SOCKET_PATH_DEFAULT: &str = "/run/cwso/git-shadow.sock";
 const FRAME_HEADER: usize = 4;
@@ -67,6 +108,14 @@ fn main() -> Result<()> {
     tracing::info!(?socket_path, ?storage_root, "cwso-git-shadow ready");
 
     let store = Arc::new(ShadowStore::new(storage_root)?);
+    // C022: start the write-back engine and wire it back into the store
+    // before accepting any IPC connections, so no `create_workspace` call
+    // can ever observe a store with write-back not yet attached (see
+    // `ShadowStore::attach_writeback`'s doc comment for why this is a
+    // two-step, not constructor-time, wiring).
+    let writeback_engine =
+        WriteBackEngine::spawn(Arc::clone(&store)).context("start filesystem write-back engine")?;
+    store.attach_writeback(writeback_engine);
 
     for stream in listener.incoming() {
         match stream {
