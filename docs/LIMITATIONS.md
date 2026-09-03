@@ -208,6 +208,20 @@ should mean"). This section states what is deferred, not when or how it will lan
 | Merkle incremental AST indexer (`DEBT-REGISTER.md` row P2-2) | not started — every AST query re-parses the file; fine at v1.0 scale (<1k LOC), will not scale |
 | Vault/SOPS secret management (`DEBT-REGISTER.md` row R-2) | not started (see §1.2 above) |
 
+**Sparse micro-agents reachability note (T204):** `deploy/docker-compose.yml` has zero
+`cwso-sparse` service block — not even behind an opt-in profile (contrast `cwso-rollout`,
+which has one) — confirmed by the compose file's own inline comment
+(`# CWSO_SPARSE_SOCKET has no listening cwso-sparse service in this compose file`). This
+means `cwso-sparse` and its dependency tree (including `wasmtime`) are not live attack
+surface in the shipped v1.0 deployment: nothing in `docker-compose.yml` starts the process,
+exposes its socket, or routes traffic to it. This context matters for future
+`cargo audit`/RustSec alerts against `cwso-sparse`'s dependencies (e.g. RUSTSEC-2026-0269,
+patched in T204): a HIGH-severity finding against a `cwso-sparse` dependency is real by
+category (it must still be patched to keep CI's `rust:audit` gate green) but is dormant,
+not exploitable, against what v1.0 users can actually reach. This reachability status will
+change if/when Sparse micro-agents graduate out of "Deferred to v1.1+" and gain a
+`docker-compose.yml` service block — re-evaluate this note at that time.
+
 ---
 
 ## See also
