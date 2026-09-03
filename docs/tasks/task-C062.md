@@ -2,11 +2,11 @@
 
 **ID:** C062
 **Owner:** devops-engineer
-**Status:** pending
+**Status:** done
 **Priority:** P0
 **Depends on:** C060, C061, C063
 **Created:** 2026-08-12
-**Completed:** —
+**Completed:** 2026-09-03
 **Based on:** docs/plans/plan-cwso-v1.0-roadmap.md (C062 row); docs/plans/plan-cwso-v1.0-phase6-release-v1.md
 
 ## Objective
@@ -101,4 +101,13 @@ Do not tag around a missing criterion.
 
 ## Execution notes
 
-<filled during execution>
+Coordinator gave an explicit GO after a deliberate go/no-go review (per this task's own
+standing instruction not to auto-dispatch). Release MR !212 merged to `develop` (merge
+commit `5eb107d`) with CHANGELOG finalized, `docs/artifacts/release-v1.0.0.md`
+published, Tech Lead PASS. Merge-to-main MR !213 merged non-squash (`main` HEAD
+`7b75123`, genuine two-parent merge, tree byte-identical to `develop`). Tag `v1.0.0`
+pushed at `7b75123`. All four service images independently confirmed published with
+the `:v1.0.0` tag against the live registry API (digests + timestamps checked, not
+just CI job status). `scripts/check-version-drift.sh` independently re-run against the
+real tagged commit tree, exit 0. Full outcome record with all verification detail: see
+`docs/tasks/completed-tasks.md`'s C062 row. Closes the entire CWSO v1.0 roadmap.
