@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## v1.0.0 - 2026-09-03
 
 ### Security (T204)
 - **`fix(security)`**: Bumped `wasmtime` from `36.0.13` to `36.0.14` in `services/Cargo.lock`

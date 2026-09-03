@@ -20,7 +20,7 @@ with semantic AST-based merging.
 |-------|-------|-----------|-------|
 | Initial plan | MCP core → sandbox + merge | M0–M5 | Closed |
 | Updated plan | Next-Gen HAL, sparse, rollout/Polar | M6 | RC [v0.3.0-rc1](https://gitlab.com/em-age/emage.code.cwso/-/releases/v0.3.0-rc1) |
-| Current state | v0.6.1 GA plus follow-on planning | v0.6.1 | Released; Phase 6+ remains planned |
+| Current state | v1.0.0 GA — one-command Docker stack, MCP over HTTP+SSE, real filesystem, protocol conformance, correctness hardening | v1.0.0 | Released |
 
 Current release artifacts and planning docs live in [docs/plans/plan-cwso-nextgen-phase6plus.md](docs/plans/plan-cwso-nextgen-phase6plus.md)
 and [docs/tasks/active-tasks.md](docs/tasks/active-tasks.md).
