@@ -8,7 +8,6 @@
 | T201 | Reconcile root README.md with the new CONTRIBUTING.md; fix broken TECHNICAL-DEBT.md link | technical-writer | pending | P2 | C053 (merged) | 2026-08-28 |
 | T202 | Fix dashboard rate-limit/logging gap (F-C061-01) **[ships before v1.0.0 — coordinator decision]** | backend-developer | in_progress | P1 | — | 2026-08-29 |
 | T203 | Wire missing baseline-required CI security tools (F-C061-02) | devops-engineer | pending | P1 | — | 2026-08-29 |
-| T204 | Bump `wasmtime` in `cwso-sparse` to patch RUSTSEC-2026-0269 (sandbox escape, HIGH) **[blocks T202's pipeline]** | backend-developer | in_review | P1 | — | 2026-09-03 |
 | C062 | Release v1.0.0 | devops-engineer | pending | P0 | C060 (merged), C061 (merged), C063 (merged) | 2026-08-29 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
@@ -59,6 +58,10 @@
 > `Cargo.lock`-only bump to `36.0.14+` (no `Cargo.toml` edit) satisfies the advisory's fixed
 > range. Same review discipline as T202 (Tech Lead + Security Engineer), Security Engineer
 > pass scoped lighter given confirmed non-reachability.
+>
+> **T204 archived 2026-09-03, DONE.** See `docs/tasks/completed-tasks.md` for the full
+> outcome record. `rust:audit` confirmed clean in CI post-merge — T202's own pipeline can
+> now go green once its branch picks up this fix from `develop`.
 
 > ¹ **RESOLVED 2026-08-20.** Tracked condition (originated CONDITIONAL_PASS, Tech Lead
 > review of C010/MR !113, 2026-08-16; refined CONDITIONAL_PASS, Tech Lead review of
