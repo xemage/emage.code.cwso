@@ -25,6 +25,50 @@ hotfix/v1.2.1
 ```
 Format: `type/[issue-number]-short-description`
 
+## Protected Branches — No Direct Commits, Ever
+
+`main` and `develop` are protected on the remote. GitLab rejects **any** direct push to
+either branch, with no exceptions for size, urgency, or content:
+
+1. **There is no "it's just a doc update" exception.** A single-file, docs-only, or
+   ledger-only change (a task status transition, a checkpoint, a header edit) requires
+   exactly the same branch + MR flow as an application-code change. GitLab's branch
+   protection does not distinguish by diff size or file type, and neither does this rule.
+2. **This applies equally to orchestrator edits.** Task ledger transitions
+   (`active-tasks.md` / `completed-tasks.md`), checkpoint files, and task-brief
+   status-header updates performed by the orchestrator directly (not delegated to an
+   agent worktree) go through a branch and MR exactly like agent implementation work.
+   The orchestrator's own primary checkout is not a carve-out.
+3. **Concrete precedent:** in one session, the orchestrator committed `docs/tasks/*.md`
+   ledger transitions directly onto the locally-checked-out `develop` twice (once closing
+   out task T340, once closing out T341) and `git push origin develop` was rejected both
+   times with `GitLab: You are not allowed to push code to protected branches on this
+   project`. Both were recoverable, but neither should have been attempted — see the
+   recovery procedure below for what to do if it happens again, and follow the branch/MR
+   flow in the first place to avoid needing it.
+
+### Recovery procedure (if you already committed directly to a protected local branch)
+
+If you discover you've committed directly to a local `develop` or `main` that is
+protected on `origin` — whether caught before attempting to push, or after `git push`
+was rejected — do **not** force-push and do **not** discard the commit:
+
+```bash
+# 1. Create a new branch pointing at the commit(s) you made locally.
+git branch <descriptive-branch-name> <sha-of-your-commit>
+
+# 2. Confirm nothing unique would be lost before resetting.
+git diff origin/<branch> <descriptive-branch-name>
+
+# 3. Reset the local protected branch back to match origin.
+git reset --hard origin/<branch>
+
+# 4. Push the new branch and open a normal MR.
+git push -u origin <descriptive-branch-name>
+```
+
+Then open an MR from `<descriptive-branch-name>` to the target branch as usual.
+
 ## Agent Worktree Branch Naming
 
 Agents operate in isolated worktrees. Agent branches follow a dedicated naming convention:

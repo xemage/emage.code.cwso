@@ -64,10 +64,10 @@
       }
     },
     "context7": {
-      "url": "https://mcp.context7.com/mcp"
+      "httpUrl": "https://mcp.context7.com/mcp"
     },
     "hf-mcp-server": {
-      "url": "https://huggingface.co/mcp?login"
+      "httpUrl": "https://huggingface.co/mcp?login"
     },
     "filesystem": {
       "command": "npx",

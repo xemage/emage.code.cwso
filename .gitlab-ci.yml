@@ -41,9 +41,24 @@ default:
 # Lint
 # -----------------------------------------------------------------------------
 
+# Version drift guard (C001): README "Current state" must match the newest
+# CHANGELOG entry. Fully offline; runs the extraction rules documented in
+# scripts/check-version-drift.sh.
+check:version-drift:
+  stage: lint
+  image: alpine:3.20
+  before_script:
+    - apk add --no-cache bash grep sed >/dev/null
+  script:
+    - bash scripts/check-version-drift.sh
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+
 go:lint:
   stage: lint
-  image: golang:1.25.12
+  image: golang:1.25.13
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
@@ -76,7 +91,7 @@ rust:lint:
 
 go:test:
   stage: test
-  image: golang:1.25.12
+  image: golang:1.25.13
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
@@ -91,6 +106,29 @@ go:test:
     when: always
     paths: [orchestrator/coverage.out]
     expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# C034: MCP protocol contract snapshot. Dedicated job (separate from go:test,
+# which also runs this test as part of `./...`) so protocol-surface drift
+# gets its own clearly-labeled, fast-feedback pipeline signal rather than
+# being buried in the full suite. Compares the live method/notification/
+# error-code/tool-schema surface against the committed golden fixture
+# (internal/server/testdata/mcp_contract_snapshot_v1.json) and fails if they
+# differ. Never passes -update-snapshot — drift must fail the pipeline, not
+# self-heal; the fixture can only be regenerated deliberately via
+# `make mcp-contract-snapshot-update`, run locally and committed as a
+# reviewable diff.
+go:mcp-contract-snapshot:
+  stage: test
+  image: golang:1.25.13
+  cache:
+    key: go-mod-$CI_COMMIT_REF_SLUG
+    paths: [.gopath/pkg/mod]
+  script:
+    - cd orchestrator
+    - go test ./internal/server/... -run TestMCPContractSnapshot -v
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH
@@ -123,7 +161,7 @@ rust:test:
 
 go:audit:
   stage: audit
-  image: golang:1.25.12
+  image: golang:1.25.13
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
@@ -146,6 +184,31 @@ rust:audit:
     - cargo install cargo-audit --locked --version 0.22.1
     - cd services
     - cargo audit
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# SEC-C044-002 (follow-up security review of C044): scripts/check-ipc-gid-drift.sh
+# (see SECURITY.md, "Sidecar IPC authorization" point 4, and docs/DEBT-REGISTER.md
+# row R-7) existed and worked but was never wired into CI, so a future orchestrator
+# image rebuild that shifts the `cwso` uid/gid again (the exact class of drift T197
+# fixed once already) could silently reintroduce the same problem with no automated
+# signal. Unlike go:audit/rust:audit above, this script needs a live Docker daemon —
+# it runs `docker build`/`docker run --rm --entrypoint id cwso/orchestrator:dev cwso`
+# internally (builds the orchestrator image itself if not already present locally) —
+# so it needs the `.docker-socket` (`dind`-tagged) runner and a docker-cli image, the
+# same infrastructure build:orchestrator/.docker-base use below, not the plain
+# `docker`-tagged golang/rust images the other two audit jobs use.
+security:ipc-gid-drift:
+  extends: .docker-socket
+  stage: audit
+  image: docker:27
+  before_script:
+    - apk add --no-cache bash
+    - docker info >/dev/null
+  script:
+    - bash scripts/check-ipc-gid-drift.sh
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "develop"
@@ -236,6 +299,93 @@ e2e:phase4-swarm:
     CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"
     CWSO_COMPOSE_PROFILES: "phase2,phase4"
     CWSO_PHASE4_MATRIX: "1"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# C018: v1.0 definition-of-done executable. Drives the full real flow over
+# the MCP HTTP transport with a minted token: health -> create_shadow_workspace
+# -> write_shadow_file -> query_ast -> commit_shadow -> merge_concurrent_results
+# -> teardown. See scripts/cwso-smoke-test.sh for the stage-by-stage
+# assertions and its own EXIT-trap teardown (containers + volumes), which
+# runs regardless of this job's outcome.
+e2e:smoke:
+  extends: .docker-socket
+  stage: e2e
+  image: docker:27
+  needs: ["build:orchestrator", "build:git-shadow", "build:merge-engine"]
+  variables:
+    CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"
+  before_script:
+    - apk add --no-cache bash curl python3 docker-cli-compose iproute2
+    - docker info >/dev/null
+    # Compose publishes 8080 on the host; reach it via the container default
+    # gateway (same resolution .e2e-base uses for the phase2/phase4 suites).
+    - export CWSO_BASE_URL="http://$(ip route | awk '/default/ {print $3}'):8080"
+    # scripts/cwso-token.sh runs directly on this job container (not inside a
+    # docker container) and signs with the trimmed content of .env.jwt.dev.
+    # Under CI's docker-socket-binding runner (Option A), the orchestrator
+    # container itself gets its JWT secret from the CWSO_JWT_SECRET env var,
+    # not from this file -- deploy/docker-compose.ci.yml already routes
+    # around the file-based secret for exactly that reason (see its header
+    # comment: bind-mount sources aren't visible to the remote dind daemon).
+    # Writing a *local* .env.jwt.dev with the identical raw value here only
+    # feeds cwso-token.sh so the tokens it mints verify against that same
+    # env-var secret; it does not change how the orchestrator container
+    # itself resolves its secret.
+    - printf '%s' "$CWSO_JWT_SECRET" > .env.jwt.dev
+    - docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml build
+    - docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml up -d
+  script:
+    - bash scripts/cwso-smoke-test.sh
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# C024: CG2 close-out. Unlike e2e:smoke above (which drives every stage over
+# the MCP HTTP transport and never touches the real filesystem path),
+# e2e:projection proves the real, projected shadow-workspace path
+# (<storage_root>/<workspace-uuid>/, ADR-012/C021) is reachable and usable
+# by ordinary shell tooling: docker exec into the running cwso-git-shadow
+# container, `ls`/`cat` the real path, run a real (precompiled) `go test`
+# binary against it, `sed` a file in place (bypassing every CWSO tool), then
+# assert commit_shadow (over MCP) captures the edit. See
+# scripts/cwso-projection-e2e.sh's own header for the full stage-by-stage
+# breakdown and for why the "real test command" stage stages its binary
+# under /run/cwso rather than executing in place (the shadow-storage tmpfs
+# mount is `noexec` by Docker's own default -- confirmed live, independent
+# of the runtime image's own missing language toolchains).
+#
+# This job does not reuse .e2e-base/e2e:smoke's own EXIT-trap-based compose
+# teardown pattern: cwso-projection-e2e.sh's own verification recipe
+# (docs/tasks/task-C024.md) is `make up; script; make down` -- the script
+# itself only cleans up the one shadow workspace + staged test binary it
+# creates, so this job's after_script owns tearing down the compose stack,
+# matching that recipe exactly (and running regardless of script exit code,
+# same guarantee e2e:smoke's own trap gives it).
+e2e:projection:
+  extends: .docker-socket
+  stage: e2e
+  image: docker:27
+  needs: ["build:orchestrator", "build:git-shadow", "build:merge-engine"]
+  variables:
+    CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"
+  before_script:
+    - apk add --no-cache bash curl python3 docker-cli-compose iproute2
+    - docker info >/dev/null
+    - export CWSO_BASE_URL="http://$(ip route | awk '/default/ {print $3}'):8080"
+    # Same rationale as e2e:smoke above: local .env.jwt.dev only feeds
+    # scripts/cwso-token.sh; the orchestrator container itself resolves its
+    # JWT secret from CWSO_JWT_SECRET via deploy/docker-compose.ci.yml.
+    - printf '%s' "$CWSO_JWT_SECRET" > .env.jwt.dev
+    - docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml build
+    - docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml up -d
+  script:
+    - bash scripts/cwso-projection-e2e.sh
+  after_script:
+    - docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml down -v --remove-orphans
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "develop"

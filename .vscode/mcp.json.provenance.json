@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "generatorOwnedKeys": [
+    "brave",
+    "context7",
+    "fetch",
+    "gitlab",
+    "memory",
+    "playwright",
+    "sequential-thinking"
+  ]
+}

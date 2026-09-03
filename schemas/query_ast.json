@@ -4,14 +4,13 @@
   "title": "query_ast",
   "type": "object",
   "properties": {
+    "workspace_uuid": { "type": "string" },
+    "path": { "type": "string" },
     "query_type": {
       "type": "string",
       "enum": ["find_definition", "find_references", "extract_signature", "list_exports", "detect_entrypoints"]
     },
-    "target_symbol": { "type": "string" },
-    "language_context": { "type": "string" },
-    "path_filter": { "type": "string" }
+    "target_symbol": { "type": "string" }
   },
-  "required": ["query_type", "target_symbol"],
-  "additionalProperties": false
+  "required": ["workspace_uuid", "path", "query_type"]
 }

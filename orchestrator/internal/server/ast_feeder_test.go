@@ -34,32 +34,38 @@ func startFakeShadow(t *testing.T) string {
 			}
 			go func(c net.Conn) {
 				defer c.Close()
-				hdr := make([]byte, 4)
-				if _, err := c.Read(hdr); err != nil {
-					return
-				}
-				n := binary.BigEndian.Uint32(hdr)
-				body := make([]byte, n)
-				read := 0
-				for read < int(n) {
-					nr, err := c.Read(body[read:])
-					if err != nil {
+				for {
+					hdr := make([]byte, 4)
+					if _, err := c.Read(hdr); err != nil {
 						return
 					}
-					read += nr
+					n := binary.BigEndian.Uint32(hdr)
+					body := make([]byte, n)
+					read := 0
+					for read < int(n) {
+						nr, err := c.Read(body[read:])
+						if err != nil {
+							return
+						}
+						read += nr
+					}
+					var req struct {
+						ID string `json:"id"`
+					}
+					_ = json.Unmarshal(body, &req)
+					resp, _ := json.Marshal(map[string]any{
+						"id": req.ID, "ok": true,
+						"result": map[string]any{"blob_oid": "b10b", "size": 4},
+					})
+					out := make([]byte, 4)
+					binary.BigEndian.PutUint32(out, uint32(len(resp)))
+					if _, err := c.Write(out); err != nil {
+						return
+					}
+					if _, err := c.Write(resp); err != nil {
+						return
+					}
 				}
-				var req struct {
-					ID string `json:"id"`
-				}
-				_ = json.Unmarshal(body, &req)
-				resp, _ := json.Marshal(map[string]any{
-					"id": req.ID, "ok": true,
-					"result": map[string]any{"blob_oid": "b10b", "size": 4},
-				})
-				out := make([]byte, 4)
-				binary.BigEndian.PutUint32(out, uint32(len(resp)))
-				_, _ = c.Write(out)
-				_, _ = c.Write(resp)
 			}(conn)
 		}
 	}()

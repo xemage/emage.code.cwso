@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tree_sitter::Node;
 
@@ -12,6 +13,47 @@ use crate::sparse_tensor::encode_sparse_side;
 pub enum MergeError {
     #[error("AST semantic conflict")]
     SemanticConflict,
+}
+
+/// Per-unit state used in [`ConflictMatrixEntry`]. Mirrors the internal
+/// [`NodeState`] but is a stable, serializable, external-facing vocabulary
+/// (C042 / Blueprint §5.4 "conflict matrix" contract).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictState {
+    Unchanged,
+    Deleted,
+    Modified,
+    /// Both sides introduced a *new* top-level unit under the same
+    /// canonical key (e.g. two agents both add a same-named function)
+    /// with diverging content -- there is no base-side state for this
+    /// case, so both `ours_state`/`theirs_state` report `Inserted`.
+    Inserted,
+}
+
+/// One row of the Blueprint §5.4 "Conflict Escalation Matrix": a single
+/// AST top-level unit (function, struct, class, etc.) on which `ours` and
+/// `theirs` collide in a way the algorithmic merge cannot auto-resolve.
+///
+/// This is *data*, not a formatted message -- see Blueprint §3.3 step 4
+/// ("a highly structured JSON conflict report detailing the exact AST
+/// node collisions") and §5.4's `merge_concurrent_results` description
+/// ("returns a formatted JSON conflict matrix instead of corrupting the
+/// file"). Presentation to a human/LLM reviewer is out of scope here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConflictMatrixEntry {
+    /// Canonical AST unit key (see `canonical_raw_key`), e.g. `"function_item:left#1"`.
+    pub unit_key: String,
+    /// The tree-sitter node kind for this unit, e.g. `"function_item"`.
+    pub node_kind: String,
+    /// The unit's extracted name, if the grammar exposes one (`None` for
+    /// anonymous/unnamed top-level nodes).
+    pub node_name: Option<String>,
+    pub ours_state: ConflictState,
+    pub theirs_state: ConflictState,
+    /// Deterministic, stable reason code for *why* this row is a
+    /// collision rather than an auto-resolvable edit.
+    pub reason_code: String,
 }
 
 #[derive(Clone)]
@@ -68,6 +110,134 @@ pub fn merge_three_way(
     let theirs_units = extract_top_level_units(language, theirs)?;
 
     merge_units(language, &base_units, &ours_units, &theirs_units, true)
+}
+
+/// Builds the Blueprint §5.4 conflict matrix for a three-way merge that
+/// [`merge_three_way`] has already determined (or would determine) to be
+/// unresolvable.
+///
+/// This performs its own independent parse + diff pass (always the dense,
+/// no-sparse-prefilter path -- correctness over throughput on the rare
+/// conflict path) rather than threading state out of `merge_three_way`, so
+/// it can be called standalone by an IPC layer purely from `(language,
+/// base, ours, theirs)` after `merge_three_way` has already returned
+/// `Err(MergeError::SemanticConflict)`.
+///
+/// Returns every top-level unit where `ours` and `theirs` genuinely
+/// collide -- i.e. every unit that would make [`resolve_base_decisions`]
+/// or [`merge_insertions`] return `Err` -- not just the first one, so a
+/// caller sees the *entire* set of AST node collisions in one report, per
+/// Blueprint §3.3 step 4 ("a highly structured JSON conflict report
+/// detailing the exact AST node collisions").
+///
+/// `Ok(vec)` is returned even when `vec` is empty: that happens only when
+/// the underlying conflict was not a per-unit collision (e.g. the
+/// reassembled merge failed tree-sitter's `has_error()` validation despite
+/// no individual unit colliding) and the caller must fall back to a
+/// non-matrix conflict report rather than fabricate rows. `Err` propagates
+/// only genuine parse failures on one of the three inputs, in which case
+/// no matrix can be computed at all.
+pub fn conflict_matrix(
+    language: MergeLanguage,
+    base: &[u8],
+    ours: &[u8],
+    theirs: &[u8],
+) -> std::result::Result<Vec<ConflictMatrixEntry>, MergeError> {
+    let base_units = extract_top_level_units(language, base)?;
+    let ours_units = extract_top_level_units(language, ours)?;
+    let theirs_units = extract_top_level_units(language, theirs)?;
+
+    let ours_diff = build_side_diff(&base_units, &ours_units, None, MergeSide::Ours);
+    let theirs_diff = build_side_diff(&base_units, &theirs_units, None, MergeSide::Theirs);
+
+    let mut matrix: BTreeMap<String, ConflictMatrixEntry> = BTreeMap::new();
+
+    for base_unit in &base_units {
+        let ours_state = ours_diff
+            .states
+            .get(&base_unit.key)
+            .ok_or(MergeError::SemanticConflict)?;
+        let theirs_state = theirs_diff
+            .states
+            .get(&base_unit.key)
+            .ok_or(MergeError::SemanticConflict)?;
+
+        let reason_code = match (ours_state, theirs_state) {
+            (NodeState::Modified(o), NodeState::Modified(t)) if o != t => {
+                Some("both_modified_diverged")
+            }
+            (NodeState::Deleted, NodeState::Modified(_))
+            | (NodeState::Modified(_), NodeState::Deleted) => Some("delete_modify_conflict"),
+            _ => None,
+        };
+
+        if let Some(reason_code) = reason_code {
+            let (node_kind, node_name) = describe_unit_key(&base_unit.key);
+            matrix.insert(
+                base_unit.key.clone(),
+                ConflictMatrixEntry {
+                    unit_key: base_unit.key.clone(),
+                    node_kind,
+                    node_name,
+                    ours_state: conflict_state_tag(ours_state),
+                    theirs_state: conflict_state_tag(theirs_state),
+                    reason_code: reason_code.to_string(),
+                },
+            );
+        }
+    }
+
+    // Insertion collisions: both sides introduce a *new* node under the
+    // same canonical key (not present in `base_units`) but with different
+    // text or anchor -- e.g. two agents both add a same-named function
+    // with different bodies. Not covered by the base-unit loop above
+    // since these keys have no base-side state at all.
+    for (key, ours_insert) in &ours_diff.insertions {
+        if let Some(theirs_insert) = theirs_diff.insertions.get(key) {
+            let diverges = theirs_insert.text != ours_insert.text
+                || theirs_insert.anchor != ours_insert.anchor;
+            if diverges {
+                let (node_kind, node_name) = describe_unit_key(key);
+                matrix.insert(
+                    key.clone(),
+                    ConflictMatrixEntry {
+                        unit_key: key.clone(),
+                        node_kind,
+                        node_name,
+                        ours_state: ConflictState::Inserted,
+                        theirs_state: ConflictState::Inserted,
+                        reason_code: "insertion_diverged".to_string(),
+                    },
+                );
+            }
+        }
+    }
+
+    Ok(matrix.into_values().collect())
+}
+
+fn conflict_state_tag(state: &NodeState) -> ConflictState {
+    match state {
+        NodeState::Unchanged => ConflictState::Unchanged,
+        NodeState::Deleted => ConflictState::Deleted,
+        NodeState::Modified(_) => ConflictState::Modified,
+    }
+}
+
+/// Recovers `(node_kind, node_name)` from a canonical unit key produced by
+/// `canonical_raw_key` + `extract_top_level_units`'s `"{raw_key}#{ordinal}"`
+/// suffixing. Keys look like `"function_item:left#1"` (named) or
+/// `"comment:@3#1"` (anonymous, `@{ordinal}` placeholder name).
+fn describe_unit_key(key: &str) -> (String, Option<String>) {
+    let without_ordinal = match key.rfind('#') {
+        Some(idx) => &key[..idx],
+        None => key,
+    };
+    match without_ordinal.split_once(':') {
+        Some((kind, name)) if !name.starts_with('@') => (kind.to_string(), Some(name.to_string())),
+        Some((kind, _)) => (kind.to_string(), None),
+        None => (without_ordinal.to_string(), None),
+    }
 }
 
 /// ADR-006 dense path (no sparse pre-filter). Used by the T129 conformance suite.
@@ -1025,5 +1195,212 @@ mod tests {
                 ),
             }
         }
+    }
+
+    // -- C042: ancestor-based three-way merge + conflict matrix ---------
+
+    /// Acceptance criterion 1: a genuine three-way merge (disjoint edits on
+    /// two different top-level functions, resolved against their real
+    /// common ancestor `base`) succeeds and produces the exact expected
+    /// merged output.
+    #[test]
+    fn c042_genuine_three_way_merge_succeeds_with_real_output() {
+        let base = "package main\n\nfunc left() int {\n\treturn 1\n}\n\nfunc right() int {\n\treturn 2\n}\n";
+        let ours = "package main\n\nfunc left() int {\n\treturn 10\n}\n\nfunc right() int {\n\treturn 2\n}\n";
+        let theirs = "package main\n\nfunc left() int {\n\treturn 1\n}\n\nfunc right() int {\n\treturn 20\n}\n";
+        let expected =
+            "package main\nfunc left() int {\n\treturn 10\n}\nfunc right() int {\n\treturn 20\n}\n";
+
+        let merged = merge_three_way(
+            MergeLanguage::Go,
+            base.as_bytes(),
+            ours.as_bytes(),
+            theirs.as_bytes(),
+        )
+        .expect("disjoint three-way merge against real common ancestor must succeed");
+
+        assert_eq!(
+            merged,
+            expected.as_bytes(),
+            "merged output must reflect both sides' disjoint edits"
+        );
+        parse::validate_parse(MergeLanguage::Go, &merged).expect("merged output must parse");
+    }
+
+    /// Acceptance criterion 2 (matrix side): an unresolvable merge with
+    /// *multiple* independently colliding units returns a conflict matrix
+    /// that reports every collision, not just the first (unlike the
+    /// short-circuiting `Err` from `merge_three_way` itself).
+    #[test]
+    fn c042_conflict_matrix_reports_every_colliding_unit() {
+        let base = "package main\n\nfunc alpha() int {\n\treturn 1\n}\n\nfunc beta() int {\n\treturn 2\n}\n\nfunc gamma() int {\n\treturn 3\n}\n";
+        let ours = "package main\n\nfunc alpha() int {\n\treturn 100\n}\n\nfunc beta() int {\n\treturn 200\n}\n\nfunc gamma() int {\n\treturn 30\n}\n";
+        let theirs = "package main\n\nfunc alpha() int {\n\treturn 101\n}\n\nfunc beta() int {\n\treturn 201\n}\n\nfunc gamma() int {\n\treturn 3\n}\n";
+
+        // Sanity: this must actually be a merge failure (alpha and beta
+        // diverge; gamma is a disjoint ours-only edit, auto-resolvable).
+        let merge_result = merge_three_way(
+            MergeLanguage::Go,
+            base.as_bytes(),
+            ours.as_bytes(),
+            theirs.as_bytes(),
+        );
+        assert_eq!(merge_result, Err(MergeError::SemanticConflict));
+
+        let matrix = conflict_matrix(
+            MergeLanguage::Go,
+            base.as_bytes(),
+            ours.as_bytes(),
+            theirs.as_bytes(),
+        )
+        .expect("matrix computation must succeed on well-formed input");
+
+        let keys: Vec<&str> = matrix.iter().map(|e| e.unit_key.as_str()).collect();
+        assert_eq!(
+            keys,
+            vec![
+                "function_declaration:alpha#1",
+                "function_declaration:beta#1"
+            ],
+            "matrix must report both colliding units (alpha, beta) and exclude the \
+             disjointly-edited, auto-resolvable gamma"
+        );
+
+        for entry in &matrix {
+            assert_eq!(entry.reason_code, "both_modified_diverged");
+            assert_eq!(entry.ours_state, ConflictState::Modified);
+            assert_eq!(entry.theirs_state, ConflictState::Modified);
+        }
+        assert_eq!(matrix[0].node_kind, "function_declaration");
+        assert_eq!(matrix[0].node_name.as_deref(), Some("alpha"));
+        assert_eq!(matrix[1].node_name.as_deref(), Some("beta"));
+    }
+
+    /// A delete/modify collision (one side removes a unit the other side
+    /// edits) is reported with its own distinct reason code.
+    #[test]
+    fn c042_conflict_matrix_reports_delete_modify_conflict() {
+        let base = "fn value() -> i32 {\n    1\n}\n";
+        let ours = ""; // ours deletes the only top-level unit
+        let theirs = "fn value() -> i32 {\n    2\n}\n"; // theirs modifies it
+
+        let matrix = conflict_matrix(
+            MergeLanguage::Rust,
+            base.as_bytes(),
+            ours.as_bytes(),
+            theirs.as_bytes(),
+        )
+        .expect("matrix computation must succeed");
+
+        assert_eq!(matrix.len(), 1);
+        assert_eq!(matrix[0].reason_code, "delete_modify_conflict");
+        assert_eq!(matrix[0].ours_state, ConflictState::Deleted);
+        assert_eq!(matrix[0].theirs_state, ConflictState::Modified);
+        assert_eq!(matrix[0].node_name.as_deref(), Some("value"));
+    }
+
+    /// Both sides independently insert a *new*, same-named unit with
+    /// diverging bodies -- a collision with no base-side state at all.
+    #[test]
+    fn c042_conflict_matrix_reports_insertion_diverged() {
+        let base = "def keep():\n    return 1\n";
+        let ours = "def keep():\n    return 1\n\ndef newFn():\n    return 2\n";
+        let theirs = "def keep():\n    return 1\n\ndef newFn():\n    return 3\n";
+
+        let merge_result = merge_three_way(
+            MergeLanguage::Python,
+            base.as_bytes(),
+            ours.as_bytes(),
+            theirs.as_bytes(),
+        );
+        assert_eq!(merge_result, Err(MergeError::SemanticConflict));
+
+        let matrix = conflict_matrix(
+            MergeLanguage::Python,
+            base.as_bytes(),
+            ours.as_bytes(),
+            theirs.as_bytes(),
+        )
+        .expect("matrix computation must succeed");
+
+        assert_eq!(matrix.len(), 1);
+        assert_eq!(matrix[0].reason_code, "insertion_diverged");
+        assert_eq!(matrix[0].ours_state, ConflictState::Inserted);
+        assert_eq!(matrix[0].theirs_state, ConflictState::Inserted);
+        assert_eq!(matrix[0].node_name.as_deref(), Some("newFn"));
+    }
+
+    /// Acceptance criterion 3: the conflict matrix itself is deterministic
+    /// -- repeated runs on identical input produce byte-identical
+    /// serialized output, not just an equal-by-construction Rust value.
+    #[test]
+    fn c042_conflict_matrix_is_deterministic_across_repeated_runs() {
+        let base = "package main\n\nfunc alpha() int {\n\treturn 1\n}\n\nfunc beta() int {\n\treturn 2\n}\n";
+        let ours = "package main\n\nfunc alpha() int {\n\treturn 10\n}\n\nfunc beta() int {\n\treturn 20\n}\n";
+        let theirs = "package main\n\nfunc alpha() int {\n\treturn 11\n}\n\nfunc beta() int {\n\treturn 21\n}\n";
+
+        let first = conflict_matrix(
+            MergeLanguage::Go,
+            base.as_bytes(),
+            ours.as_bytes(),
+            theirs.as_bytes(),
+        )
+        .expect("matrix computation must succeed");
+        let first_json = serde_json::to_vec(&first).expect("serialize matrix");
+        assert!(!first.is_empty(), "fixture must produce a non-empty matrix");
+
+        for _ in 0..100 {
+            let repeat = conflict_matrix(
+                MergeLanguage::Go,
+                base.as_bytes(),
+                ours.as_bytes(),
+                theirs.as_bytes(),
+            )
+            .expect("matrix computation must succeed");
+            let repeat_json = serde_json::to_vec(&repeat).expect("serialize matrix");
+            assert_eq!(
+                repeat_json, first_json,
+                "conflict matrix must be byte-identical across repeated runs"
+            );
+        }
+    }
+
+    /// Acceptance criterion 2 (no-corruption side): calling both
+    /// `merge_three_way` and `conflict_matrix` on an unresolvable case
+    /// never mutates the caller's `base`/`ours`/`theirs` buffers -- the
+    /// pre-merge state is provably intact by direct byte comparison
+    /// before and after both calls (not merely assumed from Rust's
+    /// `&[u8]` immutability).
+    #[test]
+    fn c042_pre_merge_state_provably_unchanged_after_conflict() {
+        let base = b"package main\n\nfunc value() int {\n\treturn 1\n}\n".to_vec();
+        let ours = b"package main\n\nfunc value() int {\n\treturn 2\n}\n".to_vec();
+        let theirs = b"package main\n\nfunc value() int {\n\treturn 3\n}\n".to_vec();
+
+        let base_before = base.clone();
+        let ours_before = ours.clone();
+        let theirs_before = theirs.clone();
+
+        let merge_err = merge_three_way(MergeLanguage::Go, &base, &ours, &theirs)
+            .expect_err("this fixture must be an unresolvable collision");
+        assert_eq!(merge_err, MergeError::SemanticConflict);
+
+        let matrix = conflict_matrix(MergeLanguage::Go, &base, &ours, &theirs)
+            .expect("matrix computation must succeed");
+        assert_eq!(matrix.len(), 1);
+        assert_eq!(matrix[0].reason_code, "both_modified_diverged");
+
+        assert_eq!(
+            base, base_before,
+            "base buffer must be byte-identical post-conflict"
+        );
+        assert_eq!(
+            ours, ours_before,
+            "ours buffer must be byte-identical post-conflict"
+        );
+        assert_eq!(
+            theirs, theirs_before,
+            "theirs buffer must be byte-identical post-conflict"
+        );
     }
 }

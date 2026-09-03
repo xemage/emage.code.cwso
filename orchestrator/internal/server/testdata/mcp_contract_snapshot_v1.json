@@ -1,0 +1,464 @@
+{
+  "tools": [
+    {
+      "name": "commit_shadow",
+      "description": "Commit the shadow workspace's staged files into the bare repo. Returns commit and tree OIDs.",
+      "inputSchema": {
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "workspace_uuid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_uuid",
+          "message"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "create_shadow_workspace",
+      "description": "Allocate an isolated in-memory shadow workspace backed by libgit2.",
+      "inputSchema": {
+        "properties": {
+          "base_commit_sha": {
+            "description": "Optional base commit OID to seed the workspace from.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "dispatch_concurrent_jobs",
+      "description": "Dispatch planning-tier concurrent jobs asynchronously and return accepted/rejected results immediately.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "execution_timeout_seconds": {
+            "default": 300,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "jobs": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "agent_role": {
+                  "type": "string"
+                },
+                "objective_prompt": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "sandbox_profile": {
+                  "description": "Requested sandbox isolation tier. Server policy enforces routing; callers cannot escalate to docker-trusted.",
+                  "enum": [
+                    "docker-trusted",
+                    "gvisor-fast-ephemeral",
+                    "firecracker-secure-isolation"
+                  ],
+                  "type": "string"
+                },
+                "target_workspace_uuid": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "agent_role",
+                "objective_prompt",
+                "target_workspace_uuid"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "drop_shadow_workspace",
+      "description": "Release a shadow workspace and free its in-memory state.",
+      "inputSchema": {
+        "properties": {
+          "workspace_uuid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_uuid"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_dir",
+      "description": "List entries of a directory inside the configured workspace root.",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "description": "Workspace-relative directory (defaults to root).",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "merge_concurrent_results",
+      "description": "Merge concurrent shadow results via semantic AST-aware merge engine.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_resolve_heuristic": {
+            "default": "ast_semantic_only",
+            "enum": [
+              "ast_semantic_only",
+              "prefer_theirs",
+              "prefer_ours",
+              "fail_rapidly_on_conflict"
+            ],
+            "type": "string"
+          },
+          "merge_inputs": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "base_content": {
+                  "type": "string"
+                },
+                "language": {
+                  "enum": [
+                    "go",
+                    "rust",
+                    "python",
+                    "typescript"
+                  ],
+                  "type": "string"
+                },
+                "ours_content": {
+                  "type": "string"
+                },
+                "path": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "theirs_content": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "language",
+                "base_content",
+                "ours_content",
+                "theirs_content"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "rollout_session_id": {
+            "description": "Optional rollout session id for programmatic reward attachment (T136)",
+            "type": "string"
+          },
+          "source_workspace_uuids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "minItems": 2,
+            "type": "array"
+          },
+          "target_branch_ref": {
+            "default": "main",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_workspace_uuids",
+          "merge_inputs"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "query_ast",
+      "description": "Run a tree-sitter AST query against a file in a shadow workspace. Supports Go, Python, Rust, and TypeScript.",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "query_type": {
+            "enum": [
+              "find_definition",
+              "find_references",
+              "extract_signature",
+              "list_exports",
+              "detect_entrypoints"
+            ],
+            "type": "string"
+          },
+          "target_symbol": {
+            "type": "string"
+          },
+          "workspace_uuid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_uuid",
+          "path",
+          "query_type"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "read_file_sync",
+      "description": "Synchronously read a UTF-8 file from inside the configured workspace root.",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "description": "Workspace-relative or absolute path inside workspace.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "read_shadow_file",
+      "description": "Read a file from a shadow workspace (in-memory libgit2 ODB). UTF-8 expected.",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "workspace_uuid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_uuid",
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "write_file_sync",
+      "description": "Synchronously write a UTF-8 file inside the configured workspace root. Worker-tier only.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "write_shadow_file",
+      "description": "Write a file into a shadow workspace's in-memory ODB. Worker-tier only.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "UTF-8 content.",
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "workspace_uuid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_uuid",
+          "path",
+          "content"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "methods": {
+    "completion/complete": {
+      "category": "error",
+      "errorCode": -32601
+    },
+    "initialize": {
+      "category": "success",
+      "resultShape": {
+        "capabilities": {
+          "tools": {
+            "listChanged": "boolean"
+          }
+        },
+        "protocolVersion": "string",
+        "serverInfo": {
+          "name": "string",
+          "version": "string"
+        }
+      }
+    },
+    "logging/setLevel": {
+      "category": "error",
+      "errorCode": -32601
+    },
+    "ping": {
+      "category": "success",
+      "resultShape": {
+        "pong": "boolean"
+      }
+    },
+    "prompts/get": {
+      "category": "error",
+      "errorCode": -32601
+    },
+    "prompts/list": {
+      "category": "error",
+      "errorCode": -32601
+    },
+    "resources/list": {
+      "category": "error",
+      "errorCode": -32601
+    },
+    "resources/read": {
+      "category": "error",
+      "errorCode": -32601
+    },
+    "resources/subscribe": {
+      "category": "error",
+      "errorCode": -32601
+    },
+    "resources/templates/list": {
+      "category": "error",
+      "errorCode": -32601
+    },
+    "resources/unsubscribe": {
+      "category": "error",
+      "errorCode": -32601
+    },
+    "roots/list": {
+      "category": "error",
+      "errorCode": -32601
+    },
+    "sampling/createMessage": {
+      "category": "error",
+      "errorCode": -32601
+    },
+    "tools/call": {
+      "category": "success",
+      "resultShape": {
+        "content": [
+          {
+            "text": "string",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    "tools/call#tool-level-error": {
+      "category": "success",
+      "resultShape": {
+        "content": [
+          {
+            "text": "string",
+            "type": "string"
+          }
+        ],
+        "isError": "boolean"
+      }
+    },
+    "x-snapshot-canary/unknown": {
+      "category": "error",
+      "errorCode": -32601
+    }
+  },
+  "notifications": {
+    "recognized": [
+      "notifications/initialized"
+    ],
+    "neverEmitted": [
+      "notifications/cancelled",
+      "notifications/message",
+      "notifications/progress",
+      "notifications/prompts/list_changed",
+      "notifications/resources/list_changed",
+      "notifications/resources/updated",
+      "notifications/roots/list_changed",
+      "notifications/tools/list_changed"
+    ]
+  },
+  "errorCodes": [
+    {
+      "name": "ErrInternal",
+      "code": -32603
+    },
+    {
+      "name": "ErrInvalidParams",
+      "code": -32602
+    },
+    {
+      "name": "ErrInvalidRequest",
+      "code": -32600
+    },
+    {
+      "name": "ErrMethodNotFound",
+      "code": -32601
+    },
+    {
+      "name": "ErrParse",
+      "code": -32700
+    },
+    {
+      "name": "ErrPermissionDenied",
+      "code": -32002
+    },
+    {
+      "name": "ErrResourceNotFound",
+      "code": -32020
+    },
+    {
+      "name": "ErrToolExecution",
+      "code": -32011
+    },
+    {
+      "name": "ErrToolNotFound",
+      "code": -32010
+    }
+  ],
+  "toolCallErrors": {
+    "missing_name": -32602,
+    "role_forbidden": -32002,
+    "unknown_tool": -32010
+  },
+  "parseErrors": {
+    "malformed_json": -32700,
+    "missing_method": -32600,
+    "wrong_jsonrpc_version": -32600
+  }
+}

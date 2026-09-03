@@ -16,7 +16,7 @@
           "sandbox_profile": {
             "type": "string",
             "enum": ["docker-trusted", "gvisor-fast-ephemeral", "firecracker-secure-isolation"],
-            "description": "Requested sandbox isolation tier. Server policy is enforced server-side; callers cannot escalate to docker-trusted."
+            "description": "Requested sandbox isolation tier. Server policy enforces routing; callers cannot escalate to docker-trusted."
           }
         },
         "required": ["agent_role", "objective_prompt", "target_workspace_uuid"],

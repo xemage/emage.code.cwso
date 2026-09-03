@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/emage/cwso/orchestrator/internal/logging"
 )
 
 // requiredTopLevelKeys mirrors schemas/dashboard_status.json "required" list.
@@ -243,6 +246,133 @@ func TestHandler_HTMLEndpoint(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "CWSO") {
 		t.Fatal("HTML page should contain CWSO branding")
+	}
+}
+
+// newLoggingTestHandler builds a Handler wired with a Logger writing to buf,
+// so tests can assert on the exact structured log line emitted for
+// dashboard auth failures (F-C061-01).
+func newLoggingTestHandler(token string, buf *bytes.Buffer) *Handler {
+	var m ClientMetrics
+	return New(Config{
+		Token:    token,
+		Sidecars: map[string]string{},
+		Metrics:  &m,
+		Log:      logging.NewWithWriter("debug", buf),
+		ConfigSnap: ConfigSnapshot{
+			Transport:     "http",
+			SandboxRunner: "none",
+			FeatureFlags:  map[string]bool{},
+			Warnings:      nil,
+		},
+		JobStats: func() JobsSnapshotRaw { return JobsSnapshotRaw{Workers: 4, QueueCapacity: 64} },
+		Rollout:  func() RolloutSnapshot { return RolloutSnapshot{Enabled: false} },
+	})
+}
+
+// TestHandler_AuthFailureLogsIPNotToken proves F-C061-01's logging
+// requirement: a wrong-token dashboard request produces exactly one
+// structured log line carrying the failing client's IP and a generic
+// message, and that the attempted (wrong) bearer token value never appears
+// anywhere in the log output.
+func TestHandler_AuthFailureLogsIPNotToken(t *testing.T) {
+	var buf bytes.Buffer
+	const wrongToken = "wrong-super-secret-guess-abc123"
+	h := newLoggingTestHandler("secret123", &buf)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/status", nil)
+	req.RemoteAddr = "203.0.113.7:54321" // TEST-NET-3 (RFC 5737)
+	req.Header.Set("Authorization", "Bearer "+wrongToken)
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", rec.Code)
+	}
+
+	logOutput := buf.String()
+	if logOutput == "" {
+		t.Fatal("expected a log line for dashboard auth failure, got none")
+	}
+	if strings.Contains(logOutput, wrongToken) {
+		t.Fatalf("log output must never contain the attempted token value, got: %s", logOutput)
+	}
+	if strings.Contains(logOutput, "secret123") {
+		t.Fatalf("log output must never contain the real dashboard token, got: %s", logOutput)
+	}
+	if !strings.Contains(logOutput, "203.0.113.7") {
+		t.Fatalf("expected log line to carry the failing client IP, got: %s", logOutput)
+	}
+	if !strings.Contains(logOutput, "dashboard auth failed") {
+		t.Fatalf("expected generic auth-failure message, got: %s", logOutput)
+	}
+
+	var entry map[string]any
+	// The log line may be followed by a trailing newline; NewDecoder handles
+	// exactly one JSON value regardless.
+	if err := json.NewDecoder(strings.NewReader(logOutput)).Decode(&entry); err != nil {
+		t.Fatalf("expected structured JSON log line, got decode error: %v (output: %s)", err, logOutput)
+	}
+	if entry["ip"] != "203.0.113.7" {
+		t.Fatalf("expected structured ip field, got: %v", entry["ip"])
+	}
+	if entry["level"] != "warn" {
+		t.Fatalf("expected warn level, got: %v", entry["level"])
+	}
+}
+
+// TestHandler_AuthFailureLogsOnMissingToken proves the missing-Authorization
+// path (not just the wrong-token path) also produces the log signal.
+func TestHandler_AuthFailureLogsOnMissingToken(t *testing.T) {
+	var buf bytes.Buffer
+	h := newLoggingTestHandler("secret123", &buf)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/status", nil)
+	req.RemoteAddr = "203.0.113.8:1111"
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", rec.Code)
+	}
+	if !strings.Contains(buf.String(), "203.0.113.8") {
+		t.Fatalf("expected log line for missing-token request, got: %s", buf.String())
+	}
+}
+
+// TestHandler_ValidAuthDoesNotLog proves the logging path is failure-only:
+// a successful, correctly-authenticated request must not emit an auth
+// warning line (avoids log noise / false-positive brute-force signal).
+func TestHandler_ValidAuthDoesNotLog(t *testing.T) {
+	var buf bytes.Buffer
+	h := newLoggingTestHandler("secret123", &buf)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/status", nil)
+	req.RemoteAddr = "203.0.113.9:2222"
+	req.Header.Set("Authorization", "Bearer secret123")
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	if buf.String() != "" {
+		t.Fatalf("expected no log output for a successful auth, got: %s", buf.String())
+	}
+}
+
+// TestHandler_NilLoggerDoesNotPanic proves the Log field is optional: a
+// Handler constructed without one (as production code did before this fix,
+// and as most of this file's other tests still do) must not panic when an
+// auth failure occurs.
+func TestHandler_NilLoggerDoesNotPanic(t *testing.T) {
+	h := newTestHandler("secret123")
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/status", nil)
+	req.Header.Set("Authorization", "Bearer wrongtoken")
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", rec.Code)
 	}
 }
 
