@@ -248,9 +248,26 @@ The following are **explicitly out of scope** and deferred to a later phase:
   malicious webpage to read the status JSON via a browser with a saved `Authorization` header or
   cookie. The dashboard does **not** set a session cookie; it requires the `Authorization` header
   on every request, which browsers do not send automatically — this further limits CSRF exposure.
-- **Rate limiting.** Dashboard routes inherit `rateLimitMiddleware`, bounding the request rate from
-  any single IP. This prevents the dashboard endpoint from being used as a low-cost reconnaissance
-  or CPU-exhaustion vector against the sidecar health checks.
+- **Rate limiting.** Dashboard routes inherit `rateLimitMiddleware`, and — as of T202
+  (F-C061-01) — are genuinely subject to its per-IP token bucket (`burst=10`, then `429`),
+  the same limiter that governs `POST /mcp`. This was not always true: prior to T202, the
+  limiter's exemption was scoped to "skip every non-`POST` request", a blanket rule intended
+  only to keep `GET /mcp`'s long-lived SSE stream from being throttled (see D6). Because both
+  dashboard routes are `GET`-only, they silently inherited that exemption too, leaving
+  unauthenticated `GET /dashboard/status` brute-force attempts completely unthrottled — the
+  audit (`security-v1.0-audit-v1.md`, finding F-C061-01, SECURITY:MEDIUM) live-verified 150
+  wrong-token requests with zero `429`s. T202 replaced the blanket method-based exemption with
+  a narrow, path-specific one (only `GET /mcp` bypasses the limiter); dashboard `GET` traffic
+  now shares the same throttling behavior as any other route, closing the reconnaissance/
+  brute-force vector this bullet originally (and, until T202, inaccurately) claimed to be
+  mitigated. T202 also added structured logging of dashboard auth failures (failing IP + a
+  generic message, never the attempted token), giving operators a log-based signal of an
+  in-progress brute-force attempt rather than only an atomic counter.
+- **Token entropy.** Because `CWSO_DASHBOARD_TOKEN` is a long-lived static secret (see the
+  pre-shared-secret trade-off above) that is now the sole remaining barrier once rate limiting
+  is in place, operators should generate it with a cryptographically random, high-entropy value
+  — e.g. `openssl rand -hex 32` — rather than a short or predictable literal. Low-entropy tokens
+  remain guessable well within the rate limiter's throttled request budget even after T202.
 
 ### Risks
 

@@ -23,6 +23,14 @@ import (
 
 var heartbeatInterval = 15 * time.Second
 
+// mcpPath is the JSON-RPC/SSE endpoint. Its GET method opens a long-lived
+// Server-Sent Events stream that must never be subject to the per-IP token
+// bucket (throttling it would kill legitimate SSE connections after the
+// burst is exhausted). This is the ONLY method+path combination exempt from
+// rateLimitMiddleware -- every other route, including the dashboard's
+// GET-only routes, is throttled like any other traffic (F-C061-01).
+const mcpPath = "/mcp"
+
 type eventPublisher interface {
 	Publish(topic string, payload any) error
 }
@@ -196,7 +204,7 @@ func newHTTPHandler(ctx context.Context, cfg *config.Config, hcfg HTTPHandlerCon
 		_, _ = io.WriteString(w, "ok")
 	})
 
-	mux.Handle("/mcp", mw(authMiddleware(cfg, hcfg.Log, o.metrics)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle(mcpPath, mw(authMiddleware(cfg, hcfg.Log, o.metrics)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
 			handlePOST(w, r, postHandlerDeps{
@@ -757,8 +765,13 @@ func (rls *rateLimiterStore) getLimiter(ip string) *rate.Limiter {
 func rateLimitMiddleware(store *rateLimiterStore, log *logging.Logger, m RequestMetrics) middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Only rate-limit /mcp POST (not GET SSE)
-			if r.Method != http.MethodPost {
+			// Route-aware SSE exemption (F-C061-01): only GET /mcp -- the
+			// long-lived JSON-RPC notification stream -- bypasses the token
+			// bucket. This replaces the prior blanket "skip every non-POST
+			// request" exemption, which the dashboard's GET-only routes
+			// silently inherited even though they were never meant to be
+			// exempt (the exemption was scoped to /mcp SSE only; see D6).
+			if r.Method == http.MethodGet && r.URL.Path == mcpPath {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -776,7 +789,7 @@ func rateLimitMiddleware(store *rateLimiterStore, log *logging.Logger, m Request
 
 			lim := store.getLimiter(ip)
 			if !lim.Allow() {
-				log.Warn().Str("ip", ip).Msg("rate limit exceeded")
+				log.Warn().Str("ip", ip).Str("path", r.URL.Path).Msg("rate limit exceeded")
 				if m != nil {
 					m.RecordRateLimitHit()
 				}

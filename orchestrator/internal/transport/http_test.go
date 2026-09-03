@@ -355,13 +355,86 @@ func TestRateLimitMiddleware_SkipsGET(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// GET requests should not be rate limited
+	// GET /mcp requests should not be rate limited
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
 	req.RemoteAddr = "127.0.0.1:8000"
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected GET to skip rate limiting, got %d", w.Code)
+	}
+}
+
+// TestRateLimitMiddleware_MCPSSEExemptionNotRegressed is the regression test
+// required by T202 (F-C061-01): repeats GET /mcp far past the burst=10
+// token-bucket capacity from a single non-localhost IP and asserts every
+// single request still succeeds with zero 429s. This proves the route-aware
+// rewrite of rateLimitMiddleware preserves the original SSE-exemption intent
+// (D6: "Only rate-limit /mcp POST, not GET SSE") even though the blanket
+// "skip every non-POST method" condition it used to rely on is gone.
+func TestRateLimitMiddleware_MCPSSEExemptionNotRegressed(t *testing.T) {
+	store := newRateLimiterStore(context.Background())
+	log := logging.New("debug")
+	limiter := rateLimitMiddleware(store, log, nil)
+
+	handler := limiter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	const remoteIP = "203.0.113.2:9000" // TEST-NET-3 (RFC 5737), never routable
+
+	// 150 requests mirrors the audit's own live-verification methodology
+	// (150 unauthenticated GET requests against the dashboard, pre-fix).
+	// Here the assertion is the inverse: GET /mcp must remain fully exempt.
+	for i := 0; i < 150; i++ {
+		req := httptest.NewRequest(http.MethodGet, mcpPath, nil)
+		req.RemoteAddr = remoteIP
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("request %d: GET /mcp must remain unthrottled, got %d", i+1, w.Code)
+		}
+	}
+}
+
+// TestRateLimitMiddleware_DashboardGETIsThrottled is the core fix-proof test
+// required by T202 (F-C061-01), at the rateLimitMiddleware unit level: GET
+// requests to a non-/mcp path (the dashboard's own routes) now share the
+// same per-IP token bucket as POST /mcp -- burst capacity of 10, then 429 --
+// instead of silently bypassing the limiter the way they did before this fix.
+func TestRateLimitMiddleware_DashboardGETIsThrottled(t *testing.T) {
+	store := newRateLimiterStore(context.Background())
+	log := logging.New("debug")
+	limiter := rateLimitMiddleware(store, log, nil)
+
+	handler := limiter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	const remoteIP = "203.0.113.3:9001" // TEST-NET-3 (RFC 5737), never routable
+
+	// Exhaust the burst capacity (10 tokens) -- all should succeed.
+	for i := 0; i < 10; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/dashboard/status", nil)
+		req.RemoteAddr = remoteIP
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("request %d: expected 200, got %d", i+1, w.Code)
+		}
+	}
+
+	// 11th request exceeds burst -- must be rate limited, matching the
+	// documented POST /mcp pattern (401x10 then 429x5 starting at #11).
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/status", nil)
+	req.RemoteAddr = remoteIP
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 11th dashboard GET to be rate limited with 429, got %d", w.Code)
+	}
+	if w.Header().Get("Retry-After") != "60" {
+		t.Fatalf("expected Retry-After header, got: %s", w.Header().Get("Retry-After"))
 	}
 }
 

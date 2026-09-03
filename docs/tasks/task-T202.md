@@ -142,4 +142,76 @@ best-judgment design rather than guessing silently.
 
 ## Execution notes
 
-<filled during execution>
+### Implementation approach
+
+Chose the route-aware rewrite of `rateLimitMiddleware`'s exemption (option 1 in the "You
+MUST" rails) over adding a second, dashboard-specific limiter: introduced a `mcpPath = "/mcp"`
+constant in `orchestrator/internal/transport/http.go` and changed the exemption condition from
+`r.Method != http.MethodPost` (blanket: skip every non-POST request) to
+`r.Method == http.MethodGet && r.URL.Path == mcpPath` (narrow: skip only GET /mcp). This keeps
+a single rate-limiter code path for all routes — including the dashboard's, which now fall
+through to the same per-IP token bucket as `POST /mcp` — rather than duplicating limiter logic.
+The rate-limit-exceeded log line also gained a `.Str("path", r.URL.Path)` field so an operator
+can distinguish which route is being hammered.
+
+For auth-failure logging, added a `log *logging.Logger` field to `dashboard.Handler` (and
+`Log *logging.Logger` to `dashboard.Config`, wired from `server.buildDashboardHandler` as
+`Log: s.log`), and a new `Handler.recordAuthFailure(r *http.Request)` method that both
+increments the existing `clientMet.RecordAuthFailure()` counter (unchanged behavior) and, if a
+logger is wired, emits `log.Warn().Str("ip", ip).Str("path", r.URL.Path).Msg("dashboard auth
+failed")` — IP extracted via `net.SplitHostPort(r.RemoteAddr)` with a fallback to the raw
+`RemoteAddr` string if that parse fails. The Authorization header / bearer token value is never
+read into the log call. Both call sites in `Handler.auth` (missing-token and wrong-token
+branches) were refactored to call `recordAuthFailure` instead of inlining the counter increment,
+per the rail against touching `auth`'s actual authorization logic — the constant-time comparison
+and 401/501 status logic are unchanged.
+
+### Test results
+
+Ran the brief's exact verification commands from
+`/home/emage/Code/emage/worktrees/agent-backend-developer-T202/orchestrator`:
+
+```
+export PATH=$PATH:/usr/local/go/bin
+go vet ./...
+```
+→ clean, no output, exit 0.
+
+```
+go test ./internal/transport/... ./internal/dashboard/... -count=1 -race -v
+```
+→ both packages `ok`, 58 `--- PASS` lines, 0 `--- FAIL` lines:
+```
+ok  	github.com/emage/cwso/orchestrator/internal/transport	2.673s
+ok  	github.com/emage/cwso/orchestrator/internal/dashboard	1.027s
+```
+Notably passing, among others:
+- `TestRateLimitMiddleware_DashboardGETIsThrottled` — 10 GET /dashboard/status succeed, the
+  11th returns 429 with `Retry-After: 60` (acceptance criterion 1)
+- `TestRateLimitMiddleware_MCPSSEExemptionNotRegressed` — 150 GET /mcp requests from one IP all
+  return 200 (acceptance criterion 2)
+- `TestHandler_AuthFailureLogsIPNotToken` — wrong-token dashboard request produces exactly one
+  structured JSON log line (`level":"warn"`, `msg":"dashboard auth failed"`) carrying the
+  failing IP; asserts neither the attempted wrong token nor the real token string appears
+  anywhere in log output (acceptance criterion 3)
+- `TestHandler_AuthFailureLogsOnMissingToken`, `TestHandler_ValidAuthDoesNotLog` (no log noise
+  on successful auth), `TestHandler_NilLoggerDoesNotPanic` (Log field optional/production-safe)
+- Full pre-existing suites in both packages (JWT verification, SSE broadcast/telemetry
+  throttling, sidecar checker, dashboard schema conformance, etc.) — all still pass, confirming
+  no regression outside the touched code paths
+
+```
+grep -n "token" internal/dashboard/dashboard.go | grep -i "log\."
+```
+→ no output (exit 1 / no match) — confirms no line in `dashboard.go` both mentions "token" and
+calls a `.log.`-style method, i.e. no token-value logging (acceptance criterion 3, negative
+check).
+
+All four acceptance criteria satisfied. `go build ./...` also verified clean (pre-existing
+confirmation, re-checked here).
+
+### Blocker status
+
+None. No genuine ambiguity encountered between the SSE exemption and the route-aware limiter —
+the path-specific `mcpPath` constant cleanly isolates the one method+path combination (`GET
+/mcp`) that must stay exempt without reintroducing a blanket method-based rule.
