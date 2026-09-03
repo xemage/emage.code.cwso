@@ -6,9 +6,8 @@
 | T199 | Wire `ErrorObj.conflict_matrix` into `mergeengine.Client` and surface it to MCP callers | backend-developer | pending | P2 | — | 2026-08-28 |
 | T200 | Reconcile `local-docker-desktop-guide.md` with the current `make up` flow | technical-writer | pending | P2 | C052 (merged) | 2026-08-28 |
 | T201 | Reconcile root README.md with the new CONTRIBUTING.md; fix broken TECHNICAL-DEBT.md link | technical-writer | pending | P2 | C053 (merged) | 2026-08-28 |
-| T202 | Fix dashboard rate-limit/logging gap (F-C061-01) **[ships before v1.0.0 — coordinator decision]** | backend-developer | in_progress | P1 | — | 2026-08-29 |
 | T203 | Wire missing baseline-required CI security tools (F-C061-02) | devops-engineer | pending | P1 | — | 2026-08-29 |
-| C062 | Release v1.0.0 | devops-engineer | pending | P0 | C060 (merged), C061 (merged), C063 (merged) | 2026-08-29 |
+| C062 | Release v1.0.0 | devops-engineer | pending | P0 | C060 (merged), C061 (merged), C063 (merged), T202 (merged) | 2026-08-29 |
 
 > Status values: `pending` · `in_progress` · `blocked` · `in_review` · `done` · `cancelled`
 > Priority values: `P0` (critical path) · `P1` (important) · `P2` (nice-to-have)
@@ -38,7 +37,7 @@
 > security tools, F-C061-02) ships *after*, as originally planned — pure detection-gap,
 > no active exploit path. The stale, pre-v1.0-roadmap `T082–T189` rows previously
 > listed here were investigated and removed — see note ⁴ below. **C062 (release
-> v1.0.0) is dispatchable once T202 lands**, reviewed clean.
+> v1.0.0) was gated on T202 landing — T202 merged 2026-09-03, see the note below.**
 >
 > **T204 added 2026-09-02**, discovered as a side effect of T202's MR !206 pipeline run:
 > `cargo audit`'s `rust:audit` CI job (not `allow_failure`) failed on a HIGH (CVSS 8.8)
@@ -62,6 +61,15 @@
 > **T204 archived 2026-09-03, DONE.** See `docs/tasks/completed-tasks.md` for the full
 > outcome record. `rust:audit` confirmed clean in CI post-merge — T202's own pipeline can
 > now go green once its branch picks up this fix from `develop`.
+>
+> **T202 archived 2026-09-03, DONE.** Merged to `develop` after picking up T204's
+> `wasmtime` fix (merge commit `dd01180`) — pipeline confirmed fully green, including
+> `rust:audit`, before merge. See `docs/tasks/completed-tasks.md` for the full outcome
+> record (Tech Lead PASS + Security Engineer PASS, both independently re-verified).
+> **This closes the entire T202/T204 fast-follow chain from C061's security audit.**
+> C062 (release v1.0.0) is now dispatchable — all four of its dependencies (C060, C061,
+> C063, T202) are merged — pending the coordinator's own deliberate go/no-go review, per
+> standing instruction, not a routine dispatch.
 
 > ¹ **RESOLVED 2026-08-20.** Tracked condition (originated CONDITIONAL_PASS, Tech Lead
 > review of C010/MR !113, 2026-08-16; refined CONDITIONAL_PASS, Tech Lead review of
