@@ -25,15 +25,15 @@ build-merge-engine: ## Build Rust merge-engine sidecar image
 test: test-go test-rust ## Run all tests
 
 test-go: ## Run Go test suite in container
-	docker run --rm -v $$PWD/orchestrator:/src -w /src golang:1.23-alpine \
+	docker run --rm -v $$PWD/orchestrator:/src -w /src golang:1.26.10-alpine \
 	  sh -c "apk add --no-cache git build-base && go test ./... -race -count=1"
 
 mcp-contract-snapshot: ## C034: verify the live MCP surface matches the committed contract snapshot (same check CI runs)
-	docker run --rm -v $$PWD/orchestrator:/src -w /src golang:1.25.13 \
+	docker run --rm -v $$PWD/orchestrator:/src -w /src golang:1.26.10 \
 	  sh -c "go test ./internal/server/... -run TestMCPContractSnapshot -v"
 
 mcp-contract-snapshot-update: ## C034: DELIBERATELY regenerate testdata/mcp_contract_snapshot_v1.json from the live surface. Never run this to silence a failing check without reviewing the diff first -- a passing regen after an unreviewed surface change hides real protocol drift, it doesn't fix it.
-	docker run --rm -v $$PWD/orchestrator:/src -w /src golang:1.25.13 \
+	docker run --rm -v $$PWD/orchestrator:/src -w /src golang:1.26.10 \
 	  sh -c "go test ./internal/server/... -run TestMCPContractSnapshot -update-snapshot -v"
 	@echo "Regenerated orchestrator/internal/server/testdata/mcp_contract_snapshot_v1.json -- review the diff (git diff) before committing."
 
@@ -135,7 +135,7 @@ lint: ## Run linters
 	  golangci-lint run --timeout=5m ./...
 
 fmt: ## Format code
-	docker run --rm -v $$PWD/orchestrator:/src -w /src golang:1.23-alpine \
+	docker run --rm -v $$PWD/orchestrator:/src -w /src golang:1.26.10-alpine \
 	  sh -c "go fmt ./..."
 
 clean: ## Remove build artifacts

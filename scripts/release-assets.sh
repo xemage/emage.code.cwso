@@ -27,7 +27,7 @@ echo "==> Building Linux binaries for $TAG"
 docker run --rm \
   -v "$ROOT_DIR":/workspace \
   -w /workspace/orchestrator \
-  golang:1.23-bookworm \
+  golang:1.26.10-bookworm \
   sh -lc 'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 /usr/local/go/bin/go build -buildvcs=false -o /workspace/dist/'"$TAG"'/cwso-orchestrator-linux-amd64 ./cmd/cwso-orchestrator'
 
 docker run --rm \

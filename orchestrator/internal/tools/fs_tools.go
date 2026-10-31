@@ -28,7 +28,7 @@
 // exposes for GOOS=linux (verified: Go's darwin syscall package does not
 // wrap openat(2)/mkdirat(2) under these names, and Windows has no
 // equivalent at all). That matches CWSO's actual and only deployment
-// target: deploy/Dockerfile.orchestrator builds on golang:1.25-alpine and
+// target: deploy/Dockerfile.orchestrator builds on golang:1.26.10-alpine and
 // ships on alpine:3.20 (Linux-only), and .gitlab-ci.yml / Makefile run
 // `go build`/`go test` exclusively inside Linux Docker containers — no CI
 // job, Makefile target, or release tooling in this repo builds for a
