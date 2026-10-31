@@ -34,7 +34,7 @@ docker run --rm \
   -v "$ROOT_DIR":/workspace \
   -w /workspace/services \
   rust:1.86-bookworm \
-  sh -lc 'apt-get update -qq && apt-get install -y -qq build-essential pkg-config cmake ca-certificates >/dev/null && /usr/local/cargo/bin/cargo build --release -p cwso-git-shadow -p cwso-merge-engine && cp target/release/cwso-git-shadow /workspace/dist/'"$TAG"'/cwso-git-shadow-linux-amd64 && cp target/release/cwso-merge-engine /workspace/dist/'"$TAG"'/cwso-merge-engine-linux-amd64'
+  sh -lc 'apt-get update -qq && apt-get install -y -qq build-essential pkg-config cmake ca-certificates >/dev/null && /usr/local/cargo/bin/cargo build --release --locked -p cwso-git-shadow -p cwso-merge-engine && cp target/release/cwso-git-shadow /workspace/dist/'"$TAG"'/cwso-git-shadow-linux-amd64 && cp target/release/cwso-merge-engine /workspace/dist/'"$TAG"'/cwso-merge-engine-linux-amd64'
 
 echo "==> Building container image archives for $TAG"
 docker build -t "cwso/orchestrator:$TAG" -f "$ROOT_DIR/deploy/Dockerfile.orchestrator" "$ROOT_DIR"

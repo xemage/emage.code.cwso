@@ -51,8 +51,8 @@ If deterministic assertions cannot be achieved due to unstable environment behav
 
 Validation evidence:
 - `cd /home/emage/Code/emage/CWSO && python3 -m py_compile scripts/phase2-integration.py`: PASS
-- `cd /home/emage/Code/emage/CWSO && echo 'ci-ephemeral-secret-not-used-in-prod-ci-only' > .env.jwt.dev && CWSO_JWT_SECRET='ci-ephemeral-secret-not-used-in-prod-ci-only' python3 scripts/phase2-integration.py`: PASS (baseline phase2 flow)
-- `cd /home/emage/Code/emage/CWSO && echo 'ci-ephemeral-secret-not-used-in-prod-ci-only' > .env.jwt.dev && CWSO_JWT_SECRET='ci-ephemeral-secret-not-used-in-prod-ci-only' CWSO_COMPOSE_PROFILES='phase2,phase4' CWSO_PHASE4_MATRIX='1' python3 scripts/phase2-integration.py`: PASS (phase2 + phase4 matrix flow)
+- `cd /home/emage/Code/emage/CWSO && echo '<redacted 2026-10-31, rotated>' > .env.jwt.dev && CWSO_JWT_SECRET='<redacted 2026-10-31, rotated>' python3 scripts/phase2-integration.py`: PASS (baseline phase2 flow)
+- `cd /home/emage/Code/emage/CWSO && echo '<redacted 2026-10-31, rotated>' > .env.jwt.dev && CWSO_JWT_SECRET='<redacted 2026-10-31, rotated>' CWSO_COMPOSE_PROFILES='phase2,phase4' CWSO_PHASE4_MATRIX='1' python3 scripts/phase2-integration.py`: PASS (phase2 + phase4 matrix flow)
 - `cd /home/emage/Code/emage/CWSO/orchestrator && go test ./internal/integration ./internal/server`: PASS
 
 Unblock status:
