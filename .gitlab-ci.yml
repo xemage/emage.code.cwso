@@ -58,7 +58,7 @@ check:version-drift:
 
 go:lint:
   stage: lint
-  image: golang:1.25.13
+  image: golang:1.26.10
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
@@ -91,7 +91,7 @@ rust:lint:
 
 go:test:
   stage: test
-  image: golang:1.25.13
+  image: golang:1.26.10
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
@@ -122,7 +122,7 @@ go:test:
 # reviewable diff.
 go:mcp-contract-snapshot:
   stage: test
-  image: golang:1.25.13
+  image: golang:1.26.10
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
@@ -161,12 +161,12 @@ rust:test:
 
 go:audit:
   stage: audit
-  image: golang:1.25.13
+  image: golang:1.26.10
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
   script:
-    - go install golang.org/x/vuln/cmd/govulncheck@latest
+    - go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
     - cd orchestrator
     - $GOPATH/bin/govulncheck ./...
   rules:

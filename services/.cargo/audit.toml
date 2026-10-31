@@ -1,0 +1,18 @@
+# cargo-audit configuration for the CWSO Rust workspace (T696).
+#
+# Read by `cargo audit` when it runs from `services/` (CI job `rust:audit`).
+# Every entry below records an advisory that is accepted for now, with the
+# reason and the date by which it must be reviewed again. Do not add an entry
+# without both.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2024-0436 -- paste 1.0.15 is unmaintained (informational, no
+    # vulnerability). Pulled in only as a compile-time proc-macro by
+    # parquet 53.4.1 (cwso-rollout); no paste code runs in the shipped
+    # binaries. parquet 54 to 57 still depend on paste ^1.0, so a parquet
+    # major update would not remove it. Accepted by T696 on 2026-10-31.
+    # Review by: 2027-01-31 (replace if parquet drops paste or a
+    # vulnerability is filed against it).
+    "RUSTSEC-2024-0436",
+]

@@ -24,4 +24,33 @@ sha2 = "0.10"
 thiserror = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-wasmtime = "36"
+# T696: wasmtime's default features minus `cache` and `profiling`.
+# - `cache` pulls wasmtime-internal-cache -> zstd 0.13 / zstd-safe 7 / zstd-sys 2.0
+#   (RUSTSEC-2026-0391, -0398, -0403, -0410 and the zstd-safe unsound
+#   warnings); wasmtime-internal-cache 36.0.x requires zstd ^0.13, so the fix
+#   release zstd >= 0.14.3 is unreachable on the wasmtime 36 line.
+# - `profiling` pulls fxprof-processed-profile -> fxhash (RUSTSEC-2025-0057,
+#   unmaintained).
+# cwso-sparse uses Engine::default() and never calls Config::cache() or
+# Config::profiler(), so neither feature was in use. The rest of the default
+# set is kept so module validation and execution behave as before.
+# >= 36.0.20 fixes RUSTSEC-2026-0316, -0363, -0379, -0380, -0424.
+wasmtime = { version = "36.0.20", default-features = false, features = [
+    "addr2line",
+    "async",
+    "component-model",
+    "coredump",
+    "cranelift",
+    "debug-builtins",
+    "demangle",
+    "gc",
+    "gc-drc",
+    "gc-null",
+    "parallel-compilation",
+    "pooling-allocator",
+    "runtime",
+    "stack-switching",
+    "std",
+    "threads",
+    "wat",
+] }
