@@ -1,14 +1,33 @@
 # CI-only compose override for GitLab runners using Docker socket binding.
 #
-# The default stack mounts ../.env.jwt.dev as a bind-mounted secret file. With socket
-# binding the host daemon cannot see paths created inside the job container, so CI passes
-# CWSO_JWT_SECRET via environment instead (orchestrator reads env when no secret file).
+# JWT secret in CI (T695). The default stack stages ../.env.jwt.dev into the
+# `cwso-jwt-secret` named volume (jwt-secret-fix), and config.go prefers that
+# file (/run/secrets/jwt_secret) over the CWSO_JWT_SECRET env var. With socket
+# binding the host daemon cannot see paths created inside the job container,
+# and a named volume on that shared daemon could still hold a secret staged by
+# an earlier or unrelated stack. So in CI the orchestrator does not mount that
+# volume at all: the per-job CWSO_JWT_SECRET, generated at run time by the
+# `.ci-jwt-secret` template in .gitlab-ci.yml, is its only source. The volume
+# list below replaces the default one (`!override`) and keeps every other mount.
+#
+# Restart policy in CI (T695): the default stack uses `restart: unless-stopped`
+# for orchestrator, git-shadow and merge-engine. A CI stack must fail and stay
+# down, not restart in a loop on a shared daemon, so CI sets `restart: "no"`.
 
 services:
   orchestrator:
+    restart: "no"
     environment:
       CWSO_JWT_SECRET: ${CWSO_JWT_SECRET}
-    secrets: !reset null
+    volumes: !override
+      - ${CWSO_WORKSPACE_HOST:-../sample-workspace}:/workspace:rw
+      - cwso-runtime:/run/cwso
+
+  git-shadow:
+    restart: "no"
+
+  merge-engine:
+    restart: "no"
 
   # C015 CI-fix (e2e:phase2 was red): same root cause as the JWT workaround above --
   # this runner setup binds the job container's Docker socket to a daemon that runs

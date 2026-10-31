@@ -254,6 +254,12 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.orchestrator
     container_name: cwso-orchestrator
+    # T695: long-running services come back after a crash or a host/daemon
+    # restart, unless an operator stopped them on purpose. Set on
+    # orchestrator, git-shadow and merge-engine only: workspace-check and
+    # jwt-secret-fix are one-shot gates (a restart policy would re-run them
+    # forever), and the opt-in `rollout` profile is left as it is.
+    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
@@ -263,7 +269,22 @@ services:
       CWSO_JWT_ALG: "HS256"  # RS256 is not supported in this build
       CWSO_JWT_ISSUER: "cwso"
       CWSO_JWT_AUDIENCE: "cwso-mcp"
-      CWSO_ALLOWED_ORIGINS: "http://localhost,http://127.0.0.1,http://localhost:8080,http://docker:8080"
+      # T695: Origin allow-list (exact match on scheme://host[:port]; a
+      # request without Origin is matched on its Host name only). It protects
+      # browsers (cross-site requests, DNS rebinding); it is NOT network
+      # access control -- a non-browser client sets any Origin it likes. The
+      # JWT is the access control, and port 8080 below is published on all
+      # interfaces. Never reach this plain-HTTP port from another host: the
+      # bearer token would cross the network in cleartext. Use an SSH tunnel
+      # (`ssh -N -L 8080:127.0.0.1:8080 <user>@<cwso-host>`, client uses
+      # http://127.0.0.1:8080/mcp, no change here) or a TLS-terminating
+      # reverse proxy; for the proxy, set CWSO_ALLOWED_ORIGINS in the
+      # environment of `docker compose`/`make up` to the FULL list (the value
+      # replaces the default), e.g.
+      #   CWSO_ALLOWED_ORIGINS=http://localhost,http://127.0.0.1,http://localhost:8080,http://docker:8080,https://cwso.example.com
+      # An empty value falls back to the default (`:-`). See docs/user/README.md,
+      # "Reach CWSO from another host" (also: binding the port to 127.0.0.1).
+      CWSO_ALLOWED_ORIGINS: "${CWSO_ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1,http://localhost:8080,http://docker:8080}"
       CWSO_WORKSPACE: "/workspace"
       CWSO_GIT_SHADOW_SOCKET: "/run/cwso/git-shadow.sock"
       CWSO_MERGE_ENGINE_SOCKET: "/run/cwso/merge-engine.sock"
@@ -354,6 +375,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.git-shadow
     container_name: cwso-git-shadow
+    restart: unless-stopped  # T695: see the orchestrator service
     environment:
       CWSO_IPC_ALLOWED_UIDS: "0,100"
       # T197: corrected from the stale "0,100" -- live-reverified (`docker run
@@ -395,6 +417,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.merge-engine
     container_name: cwso-merge-engine
+    restart: unless-stopped  # T695: see the orchestrator service
     environment:
       CWSO_MERGE_ENGINE_SOCKET: "/run/cwso/merge-engine.sock"
       CWSO_GIT_SHADOW_SOCKET: "/run/cwso/git-shadow.sock"

@@ -221,6 +221,69 @@ Use `worker`-role tokens for the shadow-workspace tools (`create_shadow_workspac
 Use `orchestrator`-role tokens for `dispatch_concurrent_jobs` and
 `merge_concurrent_results`. See `scripts/cwso-token.sh --help` for full usage.
 
+### Reach CWSO from another host
+
+The orchestrator speaks plain HTTP on port 8080. **Do not point a client on
+another machine at `http://<cwso-host>:8080`:** every request carries the
+bearer token (the JWT) in its `Authorization` header, and plain HTTP sends
+that token **in cleartext**: anyone on the network path can read it and
+reuse it until it expires. Use one of these two ways instead.
+
+**SSH tunnel (preferred).** On the client machine:
+
+```bash
+ssh -N -L 8080:127.0.0.1:8080 <user>@<cwso-host>
+```
+
+The client then uses `http://127.0.0.1:8080/mcp`, exactly as on the CWSO
+host itself. The traffic crosses the network inside SSH, and no Origin
+setting needs to change: `http://127.0.0.1` is in the default list.
+
+**TLS-terminating reverse proxy.** Put a proxy with a valid certificate (for
+example nginx or Caddy) in front of port 8080 and let clients use
+`https://<name>/mcp`. Clients then send `Origin: https://<name>`, so add that
+origin to `CWSO_ALLOWED_ORIGINS` in the environment of `docker compose` or
+`make up`. The value **replaces** the default list, so repeat the entries you
+still need:
+
+```bash
+CWSO_ALLOWED_ORIGINS=http://localhost,http://127.0.0.1,http://localhost:8080,http://docker:8080,https://cwso.example.com make up
+```
+
+An empty value falls back to the default list,
+`http://localhost,http://127.0.0.1,http://localhost:8080,http://docker:8080`.
+Entries are matched exactly on `scheme://host[:port]`; a request without an
+`Origin` header is matched on its host name only.
+
+**What the Origin list does and does not do.** `CWSO_ALLOWED_ORIGINS`
+protects browsers: it stops a web page from another site, or a DNS-rebinding
+attack, from driving CWSO through a user's browser. It is **not** network
+access control. A non-browser client chooses its own `Origin` header (or
+sends none), so the list does not decide who can connect. The JWT is the
+real access control: keep tokens short-lived and treat them as secrets.
+
+**Who can connect at the network level.** `deploy/docker-compose.yml`
+publishes the port as `"8080:8080"`, which listens on **all** interfaces of
+the CWSO host. To accept connections from the host itself only (the SSH
+tunnel and a proxy on the same host still work), bind it to loopback, either
+in that `ports:` entry or in an override file of your own:
+
+```yaml
+# deploy/docker-compose.override.yml
+services:
+  orchestrator:
+    ports: !override
+      - "127.0.0.1:8080:8080"
+```
+
+Compose does not load that file by itself when a compose file is named with
+`-f`, as `make up` does, so pass it as a second `-f`:
+`docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.override.yml up -d`.
+
+`orchestrator`, `git-shadow` and `merge-engine` have
+`restart: unless-stopped`, so they come back after a crash or a Docker/host
+restart; `docker compose stop` or `make down` keeps them stopped.
+
 ### Rollout/Polar capture (opt-in)
 
 The rollout/Polar trajectory-capture sidecar is real, working code, but

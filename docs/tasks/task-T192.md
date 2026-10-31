@@ -140,14 +140,14 @@ lines above the cited range): it checked `os.environ.get("CWSO_JWT_SECRET")`
 `.env.jwt.dev` via `load_local_jwt_secret()`. This is correct for CI (where
 `deploy/docker-compose.ci.yml` threads that exact env var straight into the
 orchestrator container's environment, per its own header comment and
-`.gitlab-ci.yml`'s `CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"`
+`.gitlab-ci.yml`'s `CWSO_JWT_SECRET: "<redacted 2026-10-31, rotated>"`
 job variable) — but wrong for local/non-CI runs, where the orchestrator
 (`deploy/docker-compose.yml`, no CI overlay) *never* reads a host
 `CWSO_JWT_SECRET` env var at all; it only reads `/run/secrets/jwt_secret`,
 staged verbatim from `.env.jwt.dev` by the `jwt-secret-fix` service (T191).
 
 This repo's own dev environment happens to export
-`CWSO_JWT_SECRET=ci-ephemeral-secret-not-used-in-prod-ci-only` in
+`CWSO_JWT_SECRET=<redacted 2026-10-31, rotated>` in
 `~/.bashrc` (mirroring the CI variable for local parity), which is present
 in every shell session here — so the bug reproduced 100% deterministically,
 exactly matching the brief's evidence log, independent of any C019 diff.
@@ -155,7 +155,7 @@ exactly matching the brief's evidence log, independent of any C019 diff.
 Confirmed by live A/B test, no code changes yet:
 ```
 $ echo $CWSO_JWT_SECRET
-ci-ephemeral-secret-not-used-in-prod-ci-only
+<redacted 2026-10-31, rotated>
 $ make smoke-local
 ...
 --- 1. tools/list shows shadow tools ---

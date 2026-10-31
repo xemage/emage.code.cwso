@@ -502,7 +502,7 @@ e2e:phase2:
 
   variables:
 
-    CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"
+    CWSO_JWT_SECRET: "<redacted 2026-10-31, rotated>"
 
     CWSO_BASE_URL: "http://docker:8080"
 
@@ -540,7 +540,7 @@ e2e:phase4-swarm:
 
   variables:
 
-    CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"
+    CWSO_JWT_SECRET: "<redacted 2026-10-31, rotated>"
 
     CWSO_BASE_URL: "http://docker:8080"
 
@@ -1227,7 +1227,7 @@ build:merge-engine:
   stage: e2e
   image: docker:27
   variables:
-    CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"
+    CWSO_JWT_SECRET: "<redacted 2026-10-31, rotated>"
   before_script:
     - apk add --no-cache python3 docker-cli-compose iproute2
     - echo "$CWSO_JWT_SECRET" > .env.jwt.dev
@@ -1249,7 +1249,7 @@ e2e:phase4-swarm:
   extends: .e2e-base
   needs: ["build:orchestrator", "build:git-shadow", "build:merge-engine"]
   variables:
-    CWSO_JWT_SECRET: "ci-ephemeral-secret-not-used-in-prod-ci-only"
+    CWSO_JWT_SECRET: "<redacted 2026-10-31, rotated>"
     CWSO_COMPOSE_PROFILES: "phase2,phase4"
     CWSO_PHASE4_MATRIX: "1"
   rules:
