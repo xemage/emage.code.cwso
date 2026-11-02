@@ -159,7 +159,7 @@ func RunHTTP(ctx context.Context, cfg *config.Config, hcfg HTTPHandlerConfig, op
 
 	errCh := make(chan error, 1)
 	go func() {
-		hcfg.Log.Info().Str("addr", cfg.HTTPAddr).Msg("http transport listening")
+		logListener(hcfg.Log, cfg)
 		err := srv.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
@@ -174,6 +174,32 @@ func RunHTTP(ctx context.Context, cfg *config.Config, hcfg HTTPHandlerConfig, op
 	case err := <-errCh:
 		return err
 	}
+}
+
+// logListener records the listen address and the effective (normalized)
+// Origin allow-list at startup (SEC-T695-03), and whether the listener is
+// loopback-only (SEC-T695-10). Inside a container a non-loopback listener is
+// expected: the host-side port publish then decides who can connect.
+func logListener(log *logging.Logger, cfg *config.Config) {
+	log.Info().
+		Str("addr", cfg.HTTPAddr).
+		Any("loopback_only", isLoopbackAddr(cfg.HTTPAddr)).
+		Any("allowed_origins", cfg.AllowedOrigins).
+		Msg("http transport listening")
+}
+
+// isLoopbackAddr reports whether a host:port listen address accepts
+// connections from the local host only. An empty host means all interfaces.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil || host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func newHTTPHandler(ctx context.Context, cfg *config.Config, hcfg HTTPHandlerConfig, opts ...HTTPOption) http.Handler {

@@ -428,7 +428,10 @@ impl WriteBackEngine {
             return;
         }
 
-        if event.mask.intersects(EventMask::DELETE_SELF | EventMask::MOVE_SELF) {
+        if event
+            .mask
+            .intersects(EventMask::DELETE_SELF | EventMask::MOVE_SELF)
+        {
             // The watched directory itself vanished or moved away from
             // under us. Prune anything still recorded under it. The
             // parent directory's own DELETE/MOVED_FROM event (if the
@@ -470,7 +473,10 @@ impl WriteBackEngine {
         };
         let is_dir = event.mask.contains(EventMask::ISDIR);
 
-        if event.mask.intersects(EventMask::CREATE | EventMask::MOVED_TO) {
+        if event
+            .mask
+            .intersects(EventMask::CREATE | EventMask::MOVED_TO)
+        {
             if is_dir {
                 self.sync_new_subtree(entry.workspace_id, &rel_path);
             } else {
@@ -479,9 +485,13 @@ impl WriteBackEngine {
         } else if event.mask.contains(EventMask::CLOSE_WRITE) {
             // CLOSE_WRITE is only ever delivered for non-directory objects.
             self.sync_file(entry.workspace_id, &rel_path);
-        } else if event.mask.intersects(EventMask::DELETE | EventMask::MOVED_FROM) {
+        } else if event
+            .mask
+            .intersects(EventMask::DELETE | EventMask::MOVED_FROM)
+        {
             if is_dir {
-                self.store.wb_apply_delete_prefix(entry.workspace_id, &rel_path);
+                self.store
+                    .wb_apply_delete_prefix(entry.workspace_id, &rel_path);
                 self.remove_watches_under(entry.workspace_id, &rel_path);
             } else {
                 self.store.wb_apply_delete(entry.workspace_id, &rel_path);
@@ -526,7 +536,9 @@ impl WriteBackEngine {
                     "write-back: skipping non-regular filesystem entry (device/FIFO/socket) at projected path"
                 );
             }
-            Err(e) => tracing::warn!(workspace = %id, path = %rel_path, error = %e, "write-back: failed to read edited file"),
+            Err(e) => {
+                tracing::warn!(workspace = %id, path = %rel_path, error = %e, "write-back: failed to read edited file")
+            }
         }
     }
 
@@ -549,7 +561,9 @@ impl WriteBackEngine {
                     }
                 }
             }
-            Err(e) => tracing::warn!(workspace = %id, dir = %rel_dir, error = %e, "write-back: failed to scan new subtree"),
+            Err(e) => {
+                tracing::warn!(workspace = %id, dir = %rel_dir, error = %e, "write-back: failed to scan new subtree")
+            }
         }
     }
 
@@ -614,7 +628,11 @@ impl WriteBackEngine {
                     continue;
                 }
             };
-            let changed = known.get(path).copied().map(|o| o != candidate).unwrap_or(true);
+            let changed = known
+                .get(path)
+                .copied()
+                .map(|o| o != candidate)
+                .unwrap_or(true);
             if changed {
                 if let Err(e) = self.store.wb_apply_write(id, path, content) {
                     tracing::warn!(workspace = %id, path = %path, error = %e, "write-back: reconciliation failed to record change");

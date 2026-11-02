@@ -55,7 +55,7 @@ services:
   # Compose auto-create behavior above, and does not require mounting anything
   # beyond the workspace path itself (no broader host filesystem access).
   workspace-check:
-    image: alpine:3.20
+    image: alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
     container_name: cwso-workspace-check
     volumes:
       - ${CWSO_WORKSPACE_HOST:-../sample-workspace}:/workspace-check:ro
@@ -260,10 +260,23 @@ services:
     # jwt-secret-fix are one-shot gates (a restart policy would re-run them
     # forever), and the opt-in `rollout` profile is left as it is.
     restart: unless-stopped
+    # T727 (SEC-T695-10): the host side of the port is published on loopback
+    # (127.0.0.1) by default, so only the CWSO host itself (and an SSH tunnel
+    # or a reverse proxy on it) can connect. To listen on other interfaces,
+    # opt in explicitly with CWSO_HTTP_PUBLISH_ADDR in the environment of
+    # `docker compose`/`make up` or in deploy/.env (the project directory's
+    # .env): a host IPv4 address (only that interface) or 0.0.0.0 (all IPv4
+    # interfaces). The listener is plain HTTP; read docs/user/README.md,
+    # "Reach CWSO from another host", before opting in.
     ports:
-      - "8080:8080"
+      - "${CWSO_HTTP_PUBLISH_ADDR:-127.0.0.1}:8080:8080"
     environment:
       CWSO_TRANSPORT: "http"
+      # In-container listen address. All interfaces of the container are
+      # required for the port publish above to reach it; the publish address,
+      # not this value, decides who can connect from outside the host. The
+      # binary's own default is 127.0.0.1:8080, and the image's CMD also
+      # passes `-addr :8080`.
       CWSO_HTTP_ADDR: ":8080"
       CWSO_LOG_LEVEL: "info"
       CWSO_JWT_ALG: "HS256"  # RS256 is not supported in this build
@@ -273,8 +286,9 @@ services:
       # request without Origin is matched on its Host name only). It protects
       # browsers (cross-site requests, DNS rebinding); it is NOT network
       # access control -- a non-browser client sets any Origin it likes. The
-      # JWT is the access control, and port 8080 below is published on all
-      # interfaces. Never reach this plain-HTTP port from another host: the
+      # JWT is the access control, and port 8080 above is published on
+      # loopback unless CWSO_HTTP_PUBLISH_ADDR opts in to other interfaces.
+      # Never reach this plain-HTTP port from another host: the
       # bearer token would cross the network in cleartext. Use an SSH tunnel
       # (`ssh -N -L 8080:127.0.0.1:8080 <user>@<cwso-host>`, client uses
       # http://127.0.0.1:8080/mcp, no change here) or a TLS-terminating
@@ -282,8 +296,10 @@ services:
       # environment of `docker compose`/`make up` to the FULL list (the value
       # replaces the default), e.g.
       #   CWSO_ALLOWED_ORIGINS=http://localhost,http://127.0.0.1,http://localhost:8080,http://docker:8080,https://cwso.example.com
-      # An empty value falls back to the default (`:-`). See docs/user/README.md,
-      # "Reach CWSO from another host" (also: binding the port to 127.0.0.1).
+      # An empty value falls back to the default (`:-`). Each entry must be
+      # scheme://host[:port] (http or https, no path, not `*` or `null`);
+      # startup fails on an invalid entry (T727, SEC-T695-03). See
+      # docs/user/README.md, "Reach CWSO from another host".
       CWSO_ALLOWED_ORIGINS: "${CWSO_ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1,http://localhost:8080,http://docker:8080}"
       CWSO_WORKSPACE: "/workspace"
       CWSO_GIT_SHADOW_SOCKET: "/run/cwso/git-shadow.sock"

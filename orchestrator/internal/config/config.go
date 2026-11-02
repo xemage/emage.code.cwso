@@ -12,7 +12,7 @@ import (
 // mounted files; never from source-controlled defaults.
 type Config struct {
 	Transport                            string   // "stdio" | "http"
-	HTTPAddr                             string   // ":8080"
+	HTTPAddr                             string   // DefaultHTTPAddr ("127.0.0.1:8080") unless CWSO_HTTP_ADDR or -addr is set
 	LogLevel                             string   // "debug" | "info" | "warn" | "error"
 	JWTSecret                            string   // HS256 signing key
 	JWTAlg                               string   // "HS256" (only supported algorithm in current build)
@@ -133,7 +133,7 @@ func Load(_ string) (*Config, error) {
 
 	c := &Config{
 		Transport:                            envOr("CWSO_TRANSPORT", "stdio"),
-		HTTPAddr:                             envOr("CWSO_HTTP_ADDR", ":8080"),
+		HTTPAddr:                             envOr("CWSO_HTTP_ADDR", DefaultHTTPAddr),
 		LogLevel:                             envOr("CWSO_LOG_LEVEL", "info"),
 		JWTSecret:                            jwtSecret,
 		JWTAlg:                               envOr("CWSO_JWT_ALG", "HS256"),
@@ -239,9 +239,9 @@ func Load(_ string) (*Config, error) {
 		DashboardToken:                       strings.TrimSpace(os.Getenv("CWSO_DASHBOARD_TOKEN")),
 	}
 
-	if c.Transport == "http" && c.JWTSecret == "" {
-		// Immutable constraint: no bypass of JWT auth, even in dev.
-		return nil, fmt.Errorf("JWT secret must be set via /run/secrets/jwt_secret or CWSO_JWT_SECRET when transport=http")
+	// JWT secret presence and length, Origin allow-list (SEC-T695-03, -07).
+	if err := c.ValidateHTTPSecurity(); err != nil {
+		return nil, err
 	}
 	if c.Transport != "stdio" && c.Transport != "http" {
 		return nil, fmt.Errorf("invalid transport %q", c.Transport)

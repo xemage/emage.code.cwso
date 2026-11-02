@@ -1,19 +1,21 @@
-# syntax=docker/dockerfile:1.6
+# syntax=docker/dockerfile:1.6@sha256:ac85f380a63b13dfcefa89046420e1781752bab202122f8f50032edf31be0021
 # CWSO Orchestrator (Go) — multi-stage build
 
-FROM golang:1.26.10-alpine AS builder
+FROM golang:1.26.10-alpine3.24@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308 AS builder
 LABEL cwso=dev
 WORKDIR /src
 RUN apk add --no-cache git build-base
-COPY orchestrator/go.mod orchestrator/go.sum* ./
-RUN go mod download || true
+# T728 (SEC-T696-05): go.sum is required (no glob, so a missing file fails the
+# COPY), and a failed or unverifiable download fails the build.
+COPY orchestrator/go.mod orchestrator/go.sum ./
+RUN go mod download && go mod verify
 COPY orchestrator/ ./
 ENV CGO_ENABLED=0
 RUN go build -trimpath -ldflags="-s -w" -o /out/cwso-orchestrator ./cmd/cwso-orchestrator
 # demo binary (Phase 1) is optional; placeholder echo for now
 RUN printf '#!/bin/sh\nexec /usr/local/bin/cwso-orchestrator -version\n' > /out/cwso-demo && chmod +x /out/cwso-demo
 
-FROM alpine:3.20
+FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 RUN apk add --no-cache ca-certificates tini && \
     addgroup -S cwso && adduser -S -G cwso cwso
 COPY --from=builder /out/cwso-orchestrator /usr/local/bin/

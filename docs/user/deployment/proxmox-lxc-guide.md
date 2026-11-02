@@ -55,6 +55,14 @@ curl http://localhost:8080/health
 - Plan port accessibility (internal or external)
 - Firewall rules for ports 8080, 8787, 8788, 8789
 
+> **Network exposure (T727, SEC-T695-10).** The current `deploy/docker-compose.yml`
+> publishes the orchestrator port 8080 on `127.0.0.1` only. Access from another host
+> needs an explicit opt-in, `CWSO_HTTP_PUBLISH_ADDR=0.0.0.0` (or one host IPv4
+> address), plus the client's host in `CWSO_ALLOWED_ORIGINS`. The listener is plain
+> HTTP, so the bearer token crosses the network in cleartext; prefer an SSH tunnel or a
+> TLS proxy. Details, the full opt-in and the upgrade impact:
+> [`docs/user/README.md`, "Reach CWSO from another host"](../README.md#reach-cwso-from-another-host).
+
 ---
 
 ## Architecture
