@@ -1,6 +1,6 @@
-# syntax=docker/dockerfile:1.6
+# syntax=docker/dockerfile:1.6@sha256:ac85f380a63b13dfcefa89046420e1781752bab202122f8f50032edf31be0021
 # cwso-merge-engine — Phase 4 sidecar (baseline semantic three-way merge)
-FROM rust:1.87-slim AS builder
+FROM rust:1.99.1-slim-trixie@sha256:b8e062b1c3a80183df83d9ba187cadd2b5ab84bc78d453dbfeb2fccd5f982247 AS builder
 LABEL cwso=dev
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential pkg-config cmake ca-certificates && \
@@ -14,8 +14,10 @@ COPY services/cwso-sparse ./cwso-sparse
 COPY services/cwso-rollout ./cwso-rollout
 RUN cargo build --locked --release -p cwso-merge-engine
 
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tini && \
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
+# trixie-slim no longer ships adduser; install it so addgroup/adduser give
+# the same system ids as on bookworm (cwso uid=100 gid=101, checked T728).
+RUN apt-get update && apt-get install -y --no-install-recommends adduser ca-certificates tini && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /run/cwso && \
     addgroup --system cwso && adduser --system --ingroup cwso cwso && \

@@ -35,6 +35,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # Config::profiler(), so neither feature was in use. The rest of the default
 # set is kept so module validation and execution behave as before.
 # >= 36.0.20 fixes RUSTSEC-2026-0316, -0363, -0379, -0380, -0424.
+# T728: tests/wasmtime_features.rs pins this list against the locked
+# wasmtime default set and fails on every wasmtime version change.
 wasmtime = { version = "36.0.20", default-features = false, features = [
     "addr2line",
     "async",

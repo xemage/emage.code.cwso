@@ -24,16 +24,20 @@ require_cmd glab
 mkdir -p "$DIST_DIR"
 
 echo "==> Building Linux binaries for $TAG"
+# T728 (SEC-T695-09, SEC-T696-01): the same pinned images as the CI jobs
+# go:test and rust:test in .gitlab-ci.yml, and `--locked`, so the shipped
+# binaries are built with the audited toolchains and services/Cargo.lock.
+# Change these pins together with .gitlab-ci.yml (scripts/check-image-pins.sh).
 docker run --rm \
   -v "$ROOT_DIR":/workspace \
   -w /workspace/orchestrator \
-  golang:1.26.10-bookworm \
+  golang:1.26.10@sha256:670bb5aa5349ae03b8516764718486f4f16399134bdc9acd0c46a23f043ab05c \
   sh -lc 'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 /usr/local/go/bin/go build -buildvcs=false -o /workspace/dist/'"$TAG"'/cwso-orchestrator-linux-amd64 ./cmd/cwso-orchestrator'
 
 docker run --rm \
   -v "$ROOT_DIR":/workspace \
   -w /workspace/services \
-  rust:1.86-bookworm \
+  rust:1.99.1-slim-trixie@sha256:b8e062b1c3a80183df83d9ba187cadd2b5ab84bc78d453dbfeb2fccd5f982247 \
   sh -lc 'apt-get update -qq && apt-get install -y -qq build-essential pkg-config cmake ca-certificates >/dev/null && /usr/local/cargo/bin/cargo build --release --locked -p cwso-git-shadow -p cwso-merge-engine && cp target/release/cwso-git-shadow /workspace/dist/'"$TAG"'/cwso-git-shadow-linux-amd64 && cp target/release/cwso-merge-engine /workspace/dist/'"$TAG"'/cwso-merge-engine-linux-amd64'
 
 echo "==> Building container image archives for $TAG"

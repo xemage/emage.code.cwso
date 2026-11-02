@@ -22,7 +22,7 @@ var version = "0.1.0-dev"
 
 func main() {
 	transport := flag.String("transport", "stdio", "transport: stdio | http")
-	addr := flag.String("addr", ":8080", "HTTP listen address (http transport only)")
+	addr := flag.String("addr", "", "HTTP listen address (http transport only; default: CWSO_HTTP_ADDR, else "+config.DefaultHTTPAddr+")")
 	configPath := flag.String("config", "", "optional config file path")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
@@ -32,13 +32,11 @@ func main() {
 		return
 	}
 
-	cfg, err := config.Load(*configPath)
+	cfg, err := loadConfig(*configPath, *transport, *addr)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "config error:", err)
 		os.Exit(2)
 	}
-	cfg.Transport = *transport
-	cfg.HTTPAddr = *addr
 
 	log := logging.New(cfg.LogLevel)
 	log.Info().Str("version", version).Str("transport", cfg.Transport).Msg("cwso-orchestrator starting")
@@ -55,4 +53,24 @@ func main() {
 		log.Fatal().Err(err).Msg("server exited with error")
 	}
 	log.Info().Msg("cwso-orchestrator stopped cleanly")
+}
+
+// loadConfig reads the configuration, applies the command-line overrides and
+// re-runs the HTTP security checks on the result, so that `-transport http`
+// meets the same JWT secret and Origin checks as CWSO_TRANSPORT=http
+// (SEC-T695-03, SEC-T695-07). An empty addr keeps CWSO_HTTP_ADDR or the
+// loopback default (SEC-T695-10).
+func loadConfig(path, transport, addr string) (*config.Config, error) {
+	cfg, err := config.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Transport = transport
+	if addr != "" {
+		cfg.HTTPAddr = addr
+	}
+	if err := cfg.ValidateHTTPSecurity(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }

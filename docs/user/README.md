@@ -255,6 +255,15 @@ An empty value falls back to the default list,
 Entries are matched exactly on `scheme://host[:port]`; a request without an
 `Origin` header is matched on its host name only.
 
+The orchestrator checks every entry at startup and **refuses to start** on an
+invalid one, naming the entry in the error. Each entry must be
+`http://` or `https://` followed by a host and an optional port. Rejected:
+`*`, `null`, an empty list, an entry without a scheme or host
+(`cwso.example.com`, `http://`, `http://:8080`), and an entry with a path
+(even a trailing `/`), a query, a fragment, userinfo or a port outside
+1-65535. Entries are lower-cased and de-duplicated, and the startup log line
+`http transport listening` shows the effective list (`allowed_origins`).
+
 **What the Origin list does and does not do.** `CWSO_ALLOWED_ORIGINS`
 protects browsers: it stops a web page from another site, or a DNS-rebinding
 attack, from driving CWSO through a user's browser. It is **not** network
@@ -263,22 +272,56 @@ sends none), so the list does not decide who can connect. The JWT is the
 real access control: keep tokens short-lived and treat them as secrets.
 
 **Who can connect at the network level.** `deploy/docker-compose.yml`
-publishes the port as `"8080:8080"`, which listens on **all** interfaces of
-the CWSO host. To accept connections from the host itself only (the SSH
-tunnel and a proxy on the same host still work), bind it to loopback, either
-in that `ports:` entry or in an override file of your own:
+publishes the port on **loopback only** by default
+(`"${CWSO_HTTP_PUBLISH_ADDR:-127.0.0.1}:8080:8080"`): only the CWSO host
+itself can connect, and the SSH tunnel and a proxy on the same host still
+work. The binary run outside Docker also listens on `127.0.0.1:8080` unless
+you pass `-addr` or set `CWSO_HTTP_ADDR`.
+
+To accept connections on other interfaces you must **opt in explicitly**
+with `CWSO_HTTP_PUBLISH_ADDR`, for example for a TLS proxy on another host.
+Plain HTTP across the network sends the bearer token in cleartext (see
+above), so do this only for a network whose risk you have accepted:
+
+| Value | Listens on | Note |
+|---|---|---|
+| unset or empty | `127.0.0.1` | default |
+| `0.0.0.0` | all IPv4 interfaces of the CWSO host | the behaviour before this change; `make up`'s health wait on `127.0.0.1` still works |
+| a host IPv4 address, e.g. `192.0.2.10` | that interface only | `make up`'s health wait on `127.0.0.1:8080` then fails; start with `docker compose ... up -d` and check `http://<that address>:8080/healthz` |
+
+Set it in the environment of `docker compose` or `make up`, or put the line
+`CWSO_HTTP_PUBLISH_ADDR=0.0.0.0` in `deploy/.env` (Compose reads the `.env`
+file of the project directory, which is `deploy/` because
+`deploy/docker-compose.yml` is the first `-f` file). `docker compose -f
+deploy/docker-compose.yml config` shows the effective `host_ip`. A client
+on another host also needs its host in `CWSO_ALLOWED_ORIGINS` (for example
+`http://192.0.2.10:8080`), because a request without an `Origin` header is
+matched on its host name.
+
+If you publish the port in an override file of your own instead, use
+`ports: !override`; a plain `ports:` list is **appended** to the default
+one, so both `127.0.0.1:8080` and `8080` would be published:
 
 ```yaml
 # deploy/docker-compose.override.yml
 services:
   orchestrator:
     ports: !override
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
 ```
 
 Compose does not load that file by itself when a compose file is named with
 `-f`, as `make up` does, so pass it as a second `-f`:
 `docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.override.yml up -d`.
+
+**Upgrading an existing deployment.** A deployment that reached CWSO from
+other hosts through the old all-interfaces default loses that access on the
+next `docker compose up -d` (Compose recreates the container with the new
+port binding, with or without an image rebuild) unless it opts in as above.
+A rebuilt image also refuses to start when the JWT secret is shorter than
+32 bytes or a `CWSO_ALLOWED_ORIGINS` entry is invalid; `docker compose logs
+orchestrator` names the cause. `scripts/cwso-bootstrap-secrets.sh` creates a
+64-character secret.
 
 `orchestrator`, `git-shadow` and `merge-engine` have
 `restart: unless-stopped`, so they come back after a crash or a Docker/host

@@ -12,6 +12,15 @@
 #   * tag `dind`   — build / e2e / deploy (runner mounts /var/run/docker.sock)
 #
 # Do NOT set DOCKER_TLS_CERTDIR globally; that forces tcp://docker:2375 (DinD).
+#
+# Image pins (T728, SEC-T696-04): every image below, in deploy/Dockerfile.*,
+# deploy/docker-compose.yml and scripts/release-assets.sh is pinned as
+# `<tag>@sha256:<index digest>`; the tag is for humans, the digest is what is
+# pulled. To update, read the new digest from the registry
+# (`docker buildx imagetools inspect <tag>`), change tag and digest together
+# in every file, and run scripts/check-image-pins.sh. One Rust toolchain
+# (SEC-T696-02, SEC-T695-09): rust:1.99.1 (released 2026-10-15) in CI, in the
+# Rust Dockerfiles and in scripts/release-assets.sh.
 
 stages:
   - lint
@@ -61,7 +70,7 @@ default:
 # scripts/check-version-drift.sh.
 check:version-drift:
   stage: lint
-  image: alpine:3.20
+  image: alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
   before_script:
     - apk add --no-cache bash grep sed >/dev/null
   script:
@@ -71,9 +80,24 @@ check:version-drift:
     - if: $CI_COMMIT_BRANCH
     - if: $CI_COMMIT_TAG
 
+# T728 (SEC-T696-04, SEC-T695-09): every external image is pinned by digest,
+# and CI, the Dockerfiles and scripts/release-assets.sh name one Rust and one
+# Go version. Offline; see scripts/check-image-pins.sh.
+check:image-pins:
+  stage: lint
+  image: alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+  before_script:
+    - apk add --no-cache bash grep sed >/dev/null
+  script:
+    - bash scripts/check-image-pins.sh
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+
 go:lint:
   stage: lint
-  image: golang:1.26.10
+  image: golang:1.26.10@sha256:670bb5aa5349ae03b8516764718486f4f16399134bdc9acd0c46a23f043ab05c
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
@@ -87,7 +111,7 @@ go:lint:
 
 rust:lint:
   stage: lint
-  image: rust:1.87
+  image: rust:1.99.1@sha256:09027f873d45b8ecd1dc86f1fa13b7a62b875c961f017a0e331267b350430137
   cache:
     key: cargo-$CI_COMMIT_REF_SLUG
     paths: [.cargo, services/target]
@@ -106,7 +130,7 @@ rust:lint:
 
 go:test:
   stage: test
-  image: golang:1.26.10
+  image: golang:1.26.10@sha256:670bb5aa5349ae03b8516764718486f4f16399134bdc9acd0c46a23f043ab05c
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
@@ -137,7 +161,7 @@ go:test:
 # reviewable diff.
 go:mcp-contract-snapshot:
   stage: test
-  image: golang:1.26.10
+  image: golang:1.26.10@sha256:670bb5aa5349ae03b8516764718486f4f16399134bdc9acd0c46a23f043ab05c
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
@@ -150,7 +174,7 @@ go:mcp-contract-snapshot:
 
 rust:test:
   stage: test
-  image: rust:1.87-slim
+  image: rust:1.99.1-slim-trixie@sha256:b8e062b1c3a80183df83d9ba187cadd2b5ab84bc78d453dbfeb2fccd5f982247
   cache:
     key: cargo-$CI_COMMIT_REF_SLUG
     paths: [.cargo, services/target]
@@ -176,7 +200,7 @@ rust:test:
 
 go:audit:
   stage: audit
-  image: golang:1.26.10
+  image: golang:1.26.10@sha256:670bb5aa5349ae03b8516764718486f4f16399134bdc9acd0c46a23f043ab05c
   cache:
     key: go-mod-$CI_COMMIT_REF_SLUG
     paths: [.gopath/pkg/mod]
@@ -193,7 +217,7 @@ go:audit:
 
 rust:audit:
   stage: audit
-  image: rust:1.87
+  image: rust:1.99.1@sha256:09027f873d45b8ecd1dc86f1fa13b7a62b875c961f017a0e331267b350430137
   cache:
     key: cargo-$CI_COMMIT_REF_SLUG
     paths: [.cargo, services/target]
@@ -220,12 +244,52 @@ rust:audit:
 security:ipc-gid-drift:
   extends: .docker-socket
   stage: audit
-  image: docker:27
+  image: docker:27.5.1@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
   before_script:
     - apk add --no-cache bash
     - docker info >/dev/null
   script:
     - bash scripts/check-ipc-gid-drift.sh
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# T728 (SEC-T696-03): OS-package scan of the four service images with Trivy.
+# Scans the images build:* tagged on the shared daemon (builds one itself if
+# it is missing, like security:ipc-gid-drift) and fails on a HIGH or CRITICAL
+# OS-package vulnerability that has a fixed version; such a finding means the
+# pinned base digest must be raised. Language packages are left to go:audit
+# and rust:audit. Trivy runs as one container on the daemon (socket binding,
+# so the -v source is the daemon host's own socket) and downloads its
+# vulnerability DB once per job. Trivy is pinned by digest: v0.69.4 to
+# v0.69.6 images were compromised in March 2026 (GHSA-69fq-xp46-6x23);
+# 0.76.0 was released 2026-10-14, and its digest is the same on GHCR,
+# Docker Hub and ECR Public.
+security:image-scan:
+  extends: .docker-socket
+  stage: audit
+  image: docker:27.5.1@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
+  needs: ["build:orchestrator", "build:git-shadow", "build:merge-engine", "build:rollout"]
+  variables:
+    TRIVY_IMAGE: "ghcr.io/aquasecurity/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222"
+  before_script:
+    - docker info >/dev/null
+  script:
+    - |
+      refs=""
+      for svc in orchestrator git-shadow merge-engine rollout; do
+        ref="$CI_REGISTRY_IMAGE/$svc:$CI_COMMIT_SHORT_SHA"
+        docker image inspect "$ref" >/dev/null 2>&1 || docker build -t "$ref" -f "deploy/Dockerfile.$svc" .
+        refs="$refs $ref"
+      done
+      docker run --rm -v /var/run/docker.sock:/var/run/docker.sock --entrypoint sh "$TRIVY_IMAGE" -c '
+        rc=0
+        for ref in "$@"; do
+          echo "==> trivy: $ref"
+          trivy image --image-src docker --scanners vuln --pkg-types os --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress "$ref" || rc=1
+        done
+        exit $rc' sh $refs
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "develop"
@@ -238,7 +302,7 @@ security:ipc-gid-drift:
 .docker-base:
   extends: .docker-socket
   stage: build
-  image: docker:27
+  image: docker:27.5.1@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
   before_script:
     - docker info >/dev/null
 
@@ -286,17 +350,33 @@ build:rollout:
 # End-to-end integration tests
 # -----------------------------------------------------------------------------
 
-# T695: every job that starts the compose stack shares one Docker daemon on
-# the runner, and the stack has fixed container names (`container_name:`) and
-# a fixed project name (`name: cwso`). Two such jobs at once collide ("container
-# name ... is already in use", pipeline 3011461095). The resource group
-# `cwso-e2e-docker` runs them one at a time, across pipelines too, and each
-# job first removes leftovers of an earlier, killed job with `down -v
-# --remove-orphans` (same -f files and profiles as the job itself).
+# T728 (SEC-T695-05): every e2e job runs its stack as its own Compose
+# project, `cwso-ci-<job id>` (COMPOSE_PROJECT_NAME beats the `name: cwso` of
+# deploy/docker-compose.yml), and deploy/docker-compose.ci.yml drops the fixed
+# `container_name:`s, so containers are `cwso-ci-<job id>-<service>-1` and
+# volumes `cwso-ci-<job id>_<volume>`. Every `docker compose` call of the job,
+# its scripts and its after_script inherits the variable, so no CI job
+# touches a non-CI `cwso` stack on the shared daemon.
+.e2e-project:
+  variables:
+    COMPOSE_PROJECT_NAME: "cwso-ci-$CI_JOB_ID"
+    # scripts/cwso-projection-e2e.sh `docker exec`s into git-shadow by name.
+    CWSO_GIT_SHADOW_CONTAINER: "cwso-ci-$CI_JOB_ID-git-shadow-1"
+
+# T695: the jobs share one Docker daemon and all publish port 8080, so the
+# resource group `cwso-e2e-docker` runs them one at a time, across pipelines
+# too. Each job first removes the stacks of earlier, killed CI jobs (a left-
+# over stack would hold port 8080). T728: only projects named
+# `cwso-ci-<digits>` are removed, never a `cwso` stack; while this job holds
+# the resource group no other e2e job is running, so none of them is live.
+.e2e-stale-cleanup:
+  script:
+    - for p in $(docker compose ls -a -q --filter name=cwso-ci- | grep -E '^cwso-ci-[0-9]+$' || true); do docker compose -p "$p" down -v --remove-orphans; done
+
 .e2e-base:
-  extends: .docker-socket
+  extends: [.docker-socket, .e2e-project]
   stage: e2e
-  image: docker:27
+  image: docker:27.5.1@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
   resource_group: cwso-e2e-docker
   before_script:
     - apk add --no-cache python3 docker-cli-compose iproute2
@@ -305,8 +385,7 @@ build:rollout:
     # Compose publishes 8080 on the host; reach it via the container default gateway.
     - export CWSO_BASE_URL="http://$(ip route | awk '/default/ {print $3}'):8080"
     - docker info >/dev/null
-    # scripts/phase2-integration.py uses --profile per CWSO_COMPOSE_PROFILES (default phase2).
-    - COMPOSE_PROFILES="${CWSO_COMPOSE_PROFILES:-phase2}" docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml down -v --remove-orphans
+    - !reference [.e2e-stale-cleanup, script]
   script:
     - python3 scripts/phase2-integration.py
 
@@ -336,16 +415,16 @@ e2e:phase4-swarm:
 # assertions and its own EXIT-trap teardown (containers + volumes), which
 # runs regardless of this job's outcome.
 e2e:smoke:
-  extends: .docker-socket
+  extends: [.docker-socket, .e2e-project]
   stage: e2e
-  image: docker:27
+  image: docker:27.5.1@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
   resource_group: cwso-e2e-docker  # T695: see .e2e-base
   needs: ["build:orchestrator", "build:git-shadow", "build:merge-engine"]
   before_script:
     - apk add --no-cache bash curl python3 docker-cli-compose iproute2
     - !reference [.ci-jwt-secret, script]
     - docker info >/dev/null
-    - docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml down -v --remove-orphans
+    - !reference [.e2e-stale-cleanup, script]
     # Compose publishes 8080 on the host; reach it via the container default
     # gateway (same resolution .e2e-base uses for the phase2/phase4 suites).
     - export CWSO_BASE_URL="http://$(ip route | awk '/default/ {print $3}'):8080"
@@ -392,16 +471,16 @@ e2e:smoke:
 # matching that recipe exactly (and running regardless of script exit code,
 # same guarantee e2e:smoke's own trap gives it).
 e2e:projection:
-  extends: .docker-socket
+  extends: [.docker-socket, .e2e-project]
   stage: e2e
-  image: docker:27
+  image: docker:27.5.1@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
   resource_group: cwso-e2e-docker  # T695: see .e2e-base
   needs: ["build:orchestrator", "build:git-shadow", "build:merge-engine"]
   before_script:
     - apk add --no-cache bash curl python3 docker-cli-compose iproute2
     - !reference [.ci-jwt-secret, script]
     - docker info >/dev/null
-    - docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ci.yml down -v --remove-orphans
+    - !reference [.e2e-stale-cleanup, script]
     - export CWSO_BASE_URL="http://$(ip route | awk '/default/ {print $3}'):8080"
     # Same rationale as e2e:smoke above: local .env.jwt.dev only feeds
     # scripts/cwso-token.sh; the orchestrator container itself resolves its
@@ -425,7 +504,7 @@ e2e:projection:
 deploy:registry:
   extends: .docker-socket
   stage: deploy
-  image: docker:27
+  image: docker:27.5.1@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
   needs:
     - job: build:orchestrator
     - job: build:git-shadow

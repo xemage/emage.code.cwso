@@ -734,7 +734,12 @@ fn cstring_component(part: &OsStr) -> Result<CString> {
 fn open_root_dir(dir: &Path) -> Result<OwnedFd> {
     let c = CString::new(dir.as_os_str().as_bytes())
         .map_err(|_| anyhow!("workspace root path contains a NUL byte: {dir:?}"))?;
-    let fd = unsafe { libc::open(c.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC) };
+    let fd = unsafe {
+        libc::open(
+            c.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC,
+        )
+    };
     if fd < 0 {
         return Err(std::io::Error::last_os_error())
             .with_context(|| format!("open workspace root {dir:?}"));
@@ -815,8 +820,7 @@ fn openat_leaf_nofollow(parent: &OwnedFd, leaf: &OsStr) -> Result<OwnedFd> {
 /// (`File::from(OwnedFd)`), never via a path string.
 fn materialize_write_via_fd_walk(workspace_dir: &Path, rel: &Path, content: &[u8]) -> Result<()> {
     let components: Vec<&OsStr> = rel.iter().collect();
-    let (dirs, leaf_slice) = components
-        .split_at(components.len().saturating_sub(1));
+    let (dirs, leaf_slice) = components.split_at(components.len().saturating_sub(1));
     let leaf = *leaf_slice
         .first()
         .ok_or_else(|| anyhow!("empty relative path"))?;
@@ -958,8 +962,12 @@ fn open_entry_nofollow(parent_fd: RawFd, name: &OsStr) -> Result<EntryOpen> {
 fn open_scan_root_dir(dir: &Path) -> Result<Option<OwnedFd>> {
     let c = CString::new(dir.as_os_str().as_bytes())
         .map_err(|_| anyhow!("workspace root path contains a NUL byte: {dir:?}"))?;
-    let fd =
-        unsafe { libc::open(c.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC) };
+    let fd = unsafe {
+        libc::open(
+            c.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC,
+        )
+    };
     if fd < 0 {
         let err = std::io::Error::last_os_error();
         if err.kind() == std::io::ErrorKind::NotFound {
@@ -1160,8 +1168,8 @@ fn scan_dir_into(
     files: &mut HashMap<String, Vec<u8>>,
     dirs: &mut Vec<String>,
 ) -> Result<()> {
-    let dirp = fdopendir_dup(dir_fd.as_raw_fd())
-        .with_context(|| format!("fdopendir rel {rel_dir:?}"))?;
+    let dirp =
+        fdopendir_dup(dir_fd.as_raw_fd()).with_context(|| format!("fdopendir rel {rel_dir:?}"))?;
     let stream = OwnedDirStream(dirp);
     while let Some(name) =
         next_dir_entry_name(stream.0).with_context(|| format!("readdir rel {rel_dir:?}"))?

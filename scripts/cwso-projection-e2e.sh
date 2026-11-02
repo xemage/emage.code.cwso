@@ -96,7 +96,7 @@
 # as an explicit follow-up for the Architect/Tech Lead to weigh.
 #
 # The build step itself stages the fixture into (and the compiled binary out
-# of) the golang:1.22-bookworm builder container via `docker create` +
+# of) the golang:1.26.10 (pinned) builder container via `docker create` +
 # `docker cp` + `docker start -a`, deliberately NOT `docker run -v host:container`:
 # under CI's docker-socket-binding runner this script's own host path is not
 # visible to the actual daemon (same documented class of issue as
@@ -123,7 +123,7 @@
 #
 # Hermetic: fixtures live under scripts/fixtures/go/greet/ (checked into this
 # repo, no external Go module dependencies -- go.mod declares zero requires),
-# and no stage makes a network call except pulling the golang:1.22-bookworm
+# and no stage makes a network call except pulling the pinned golang:1.26.10
 # build image to compile the test binary (the same class of "pull a base
 # image to build with" already done by every build:* job in .gitlab-ci.yml;
 # nothing the fixture/test code itself does at runtime touches the network).
@@ -326,7 +326,7 @@ if ! docker create --name "$BUILD_CONTAINER" \
   -w /src \
   -e CGO_ENABLED=0 -e GOOS=linux -e GOARCH=amd64 \
   -e GOCACHE=/tmp/gocache -e GOPATH=/tmp/gopath \
-  golang:1.22-bookworm \
+  golang:1.26.10@sha256:670bb5aa5349ae03b8516764718486f4f16399134bdc9acd0c46a23f043ab05c \
   sh -c 'mkdir -p /tmp/gocache /tmp/gopath /out && go vet ./... && go test -c -o /out/greet.test .' >/dev/null; then
   fail "build-test-binary" "docker create for the build container failed"
   exit 1

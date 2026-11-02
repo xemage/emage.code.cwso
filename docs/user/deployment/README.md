@@ -23,6 +23,14 @@ getting-started flow (`make up`), which is **not** described by these guides.
 | Wiring a running CWSO stack to an emage.code orchestrator | [cwso-emage-orchestrator-connection-guide.md](cwso-emage-orchestrator-connection-guide.md) | Yes — validated 2026-08-05 (see guide's "Tested evidence") |
 | Cross-environment troubleshooting | [troubleshooting-guide.md](troubleshooting-guide.md) | N/A — reference document |
 
+> **Network exposure (T727, SEC-T695-10).** The current `deploy/docker-compose.yml`
+> publishes the orchestrator port 8080 on `127.0.0.1` only. Access from another host
+> needs an explicit opt-in, `CWSO_HTTP_PUBLISH_ADDR=0.0.0.0` (or one host IPv4
+> address), plus the client's host in `CWSO_ALLOWED_ORIGINS`. The listener is plain
+> HTTP, so the bearer token crosses the network in cleartext; prefer an SSH tunnel or a
+> TLS proxy. Details, the full opt-in and the upgrade impact:
+> [`docs/user/README.md`, "Reach CWSO from another host"](../README.md#reach-cwso-from-another-host).
+
 **Overlap note (flagged for the orchestrator, not resolved unilaterally by this task):**
 `local-docker-desktop-guide.md` documents an older, more manual local-deployment
 procedure — `deploy/docker-compose-t226.yml`, `scripts/deploy/cwso-docker-desktop.sh`,

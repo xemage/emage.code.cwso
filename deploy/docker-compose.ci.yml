@@ -17,17 +17,40 @@
 services:
   orchestrator:
     restart: "no"
+    # T727 (SEC-T695-10): the default stack publishes 8080 on 127.0.0.1 only.
+    # The e2e jobs reach the orchestrator through the job container's default
+    # gateway (CWSO_BASE_URL in .gitlab-ci.yml), which a loopback-only publish
+    # does not serve, so CI opts in to all interfaces of the runner's daemon
+    # host. The stack lives only for the job.
+    ports: !override
+      - "8080:8080"
     environment:
       CWSO_JWT_SECRET: ${CWSO_JWT_SECRET}
     volumes: !override
       - ${CWSO_WORKSPACE_HOST:-../sample-workspace}:/workspace:rw
       - cwso-runtime:/run/cwso
+    container_name: !reset null
 
+  # Container names in CI (T728, SEC-T695-05): the default stack fixes every
+  # container name (`container_name: cwso-...`). In CI each e2e job runs as
+  # its own Compose project (COMPOSE_PROJECT_NAME=cwso-ci-<job id>, set in
+  # .gitlab-ci.yml), and the fixed names are dropped here (`!reset null`) so
+  # Compose names the containers <project>-<service>-1. A CI job then never
+  # creates, stops or removes a container or volume of a non-CI `cwso` stack
+  # on the shared daemon.
   git-shadow:
     restart: "no"
+    container_name: !reset null
 
   merge-engine:
     restart: "no"
+    container_name: !reset null
+
+  jwt-secret-fix:
+    container_name: !reset null
+
+  rollout:
+    container_name: !reset null
 
   # C015 CI-fix (e2e:phase2 was red): same root cause as the JWT workaround above --
   # this runner setup binds the job container's Docker socket to a daemon that runs
@@ -63,6 +86,7 @@ services:
   # stack in deploy/docker-compose.yml (what developers/operators actually run) is
   # untouched and keeps failing loudly on a genuinely empty/missing workspace path.
   workspace-check:
+    container_name: !reset null
     command:
       - sh
       - -c
